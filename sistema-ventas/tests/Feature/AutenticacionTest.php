@@ -116,6 +116,20 @@ class AutenticacionTest extends TestCase
         $this->assertGuest();
     }
 
+    /**
+     * `/logout` solo responde a POST. Al escribir esa dirección en el
+     * navegador se llega a un 405, y sin la vista `errors/405` eso caía en la
+     * página por defecto de Symfony: en inglés y con aspecto de sistema roto.
+     */
+    public function test_abrir_una_direccion_de_solo_post_muestra_la_pagina_del_sistema(): void
+    {
+        $respuesta = $this->actingAs($this->cuentaAdmin())->get('/logout');
+
+        $respuesta->assertStatus(405);
+        $respuesta->assertSee('Esa dirección no se abre así');
+        $respuesta->assertDontSee('An Error Occurred');
+    }
+
     public function test_un_visitante_no_entra_a_las_pantallas_internas(): void
     {
         $this->get('/empleados')->assertRedirect('/login');

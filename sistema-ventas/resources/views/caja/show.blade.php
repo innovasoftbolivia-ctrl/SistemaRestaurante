@@ -129,7 +129,7 @@
                                         </td>
                                         <td class="px-5 py-4">
                                             <x-ui.estado :estado="$venta->estado === 'ANULADA' ? 'CESADO' : 'ACTIVO'"
-                                                :texto="ucfirst(mb_strtolower($venta->estado))" />
+                                                :texto="ucfirst(str_replace('_', ' ', mb_strtolower($venta->estado)))" />
                                         </td>
                                         <td class="px-5 py-4 whitespace-nowrap text-theme-sm font-medium {{ $venta->estado === 'ANULADA' ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-white/90' }}">
                                             {{ Config::importe($venta->total) }}
