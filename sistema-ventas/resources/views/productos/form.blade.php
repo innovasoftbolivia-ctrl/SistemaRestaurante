@@ -40,6 +40,20 @@
             @method('PUT')
         @endif
 
+        {{-- El código chocó con un producto que ya existe. El error del campo
+             lo dice, pero ahí termina: casi siempre lo que se quería era
+             sumarle stock a ese mismo producto, así que el atajo va aquí,
+             a un clic, en vez de obligar a buscarlo de nuevo a mano. --}}
+        @if (session('producto_duplicado'))
+            @php($duplicado = session('producto_duplicado'))
+            <div class="lg:col-span-3">
+                <x-ui.alert variant="warning" title="Ese producto ya está en el catálogo"
+                    :message="'«'.$duplicado['nombre'].'» ('.$duplicado['codigo'].') ya usa ese código. Si solo necesitas sumarle stock, no lo cargues de nuevo: hazlo desde el inventario y quedará en el kardex con su motivo y su responsable.'"
+                    :showLink="true" :linkHref="route('inventario.index', ['buscar' => $duplicado['codigo']])"
+                    linkText="Ir a cargarle stock" />
+            </div>
+        @endif
+
         <div class="space-y-6 lg:col-span-2">
             <x-common.component-card title="Identificación"
                 desc="El código interno se usa en el mostrador; el de barras, con el lector.">

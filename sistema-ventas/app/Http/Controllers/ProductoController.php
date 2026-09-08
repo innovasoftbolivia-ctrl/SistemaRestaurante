@@ -355,6 +355,24 @@ class ProductoController extends Controller
 
     private function validar(Request $request, ?Producto $producto = null): array
     {
+        // Se busca ANTES de validar para poder nombrar al culpable en el aviso.
+        // Decir «ya existe» y nada más deja al usuario en un callejón sin
+        // salida, y justo ahí acaba de demostrar cuál era su intención: casi
+        // siempre no quería crear nada, quería sumarle stock a ese producto.
+        $choque = $this->productoQueChoca($request, $producto);
+
+        if ($choque) {
+            session()->flash('producto_duplicado', [
+                'id' => $choque->id,
+                'nombre' => $choque->nombre,
+                'codigo' => $choque->codigo,
+            ]);
+        }
+
+        $sugerencia = $choque
+            ? ' Si lo que quieres es sumarle stock, no lo cargues de nuevo: entra a Almacén → Inventario y usa «Ingresar mercadería».'
+            : '';
+
         $datos = $request->validate([
             'categoria_id' => ['required', Rule::exists('categorias', 'id')],
             'unidad_medida_id' => ['required', Rule::exists('unidades_medida', 'id')],
@@ -379,9 +397,13 @@ class ProductoController extends Controller
             'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'quitar_imagen' => ['boolean'],
         ], [
-            'codigo.unique' => 'Ya existe un producto con ese código interno.',
+            'codigo.unique' => $choque
+                ? "El código ya es de «{$choque->nombre}».".$sugerencia
+                : 'Ya existe un producto con ese código interno.',
             'codigo.regex' => 'El código admite letras, números, punto, guion y guion bajo.',
-            'codigo_barras.unique' => 'Ese código de barras ya está asignado a otro producto.',
+            'codigo_barras.unique' => $choque
+                ? "Ese código de barras ya es de «{$choque->nombre}».".$sugerencia
+                : 'Ese código de barras ya está asignado a otro producto.',
             'codigo_barras.regex' => 'El código de barras solo admite dígitos.',
             'imagen.image' => 'La foto debe ser una imagen.',
             'imagen.mimes' => 'La foto tiene que ser JPG, PNG o WEBP.',
@@ -404,5 +426,37 @@ class ProductoController extends Controller
         unset($datos['imagen'], $datos['quitar_imagen']);
 
         return $datos;
+    }
+
+    /**
+     * El producto que ya usa ese código interno o de barras, si lo hay.
+     *
+     * Solo sirve para redactar el aviso: quien impide el duplicado sigue
+     * siendo la regla `unique` —y por debajo, el índice único de la tabla—.
+     */
+    private function productoQueChoca(Request $request, ?Producto $producto): ?Producto
+    {
+        $codigo = trim($request->string('codigo')->toString());
+        $barras = trim($request->string('codigo_barras')->toString());
+
+        // Sin ninguno de los dos no hay nada que comparar. Hace falta cortar
+        // aquí: un `where` con un grupo vacío no filtra nada y devolvería el
+        // primer producto del catálogo como si fuera el que choca.
+        if ($codigo === '' && $barras === '') {
+            return null;
+        }
+
+        return Producto::query()
+            ->when($producto, fn ($q) => $q->whereKeyNot($producto->id))
+            ->where(function ($q) use ($codigo, $barras) {
+                if ($codigo !== '') {
+                    $q->orWhere('codigo', $codigo);
+                }
+
+                if ($barras !== '') {
+                    $q->orWhere('codigo_barras', $barras);
+                }
+            })
+            ->first();
     }
 }

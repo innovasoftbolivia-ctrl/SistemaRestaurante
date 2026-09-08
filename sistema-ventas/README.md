@@ -349,6 +349,21 @@ un ingreso de 2.5 unidades. Y ningún movimiento puede dejar el stock en negativ
 Nótese que gestionar el catálogo y mover stock son permisos distintos: el almacenero puede hacer
 ambas cosas, pero un rol podría crear productos sin poder tocar el inventario.
 
+Las dos operaciones tienen **dos puertas**, y las dos terminan en el mismo servicio:
+
+- la ficha del producto (`/productos/{id}`), para cuando ya se está mirando ese producto;
+- el módulo de inventario (`/inventario`), que parte del stock —qué falta, qué se agotó— y deja
+  ingresar y ajustar desde cada fila. Es el camino del almacenero, que llega con la mercadería
+  en la mano y todavía tiene que encontrarla.
+
+`/inventario/movimientos` es el kardex de todo el almacén, con filtros por producto, tipo de
+movimiento, responsable y rango de fechas. Responde lo que la ficha de un producto no puede:
+qué se movió ayer, qué cargó esta persona, cuántos ajustes hubo este mes.
+
+Por eso, cuando alguien intenta dar de alta un producto con un código que ya existe, el aviso no
+se limita a decir «ya existe»: nombra al producto y ofrece el enlace para cargarle stock. Ese
+error casi siempre lo comete quien quería reponer, no crear.
+
 ### La venta: qué hace la aplicación y qué hace la base
 
 Este módulo delega a propósito en el esquema. `App\Services\Ventas` abre una transacción y
@@ -756,6 +771,8 @@ app/
     PosController.php            el mostrador: búsqueda, carrito y cobro
     VentaController.php          listado, ficha y anulación
     CajaController.php           apertura, movimientos y cierre del turno
+    CajaFisicaController.php     los puestos de cobro del local
+    InventarioController.php     el almacén: existencias y kardex global
     ComprobanteController.php    listado, impresión (ticket 80 mm / A4) y sustitución
     ClienteController.php        persona natural y persona jurídica
     ReporteController.php        reportes de ventas, productos e inventario
@@ -788,7 +805,8 @@ resources/views/
   auth/ empleados/ cargos/ usuarios/ roles/ perfil/
   productos/ categorias/ unidades/ proveedores/
   dashboard.blade.php            la portada
-  pos/ ventas/ caja/ comprobantes/ clientes/ devoluciones/ reportes/
+  pos/ ventas/ caja/ cajas/ comprobantes/ clientes/ devoluciones/ reportes/
+  inventario/                    existencias y kardex del almacén
 ```
 
 ## Lo que sigue

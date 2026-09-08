@@ -52,6 +52,19 @@ class Menu
             $grupos[] = ['title' => 'Ventas', 'items' => $ventas];
         }
 
+        // El almacén va aparte del catálogo: dar de alta un producto y cargarle
+        // stock son dos trabajos distintos, de dos personas distintas y en dos
+        // momentos distintos. Quien recibe la mercadería entra por aquí.
+        if (self::puedeAlguno('inventario.ingresar', 'inventario.ajustar', 'reportes.ver')) {
+            $grupos[] = [
+                'title' => 'Almacén',
+                'items' => [
+                    ['icon' => 'inventario', 'name' => 'Inventario', 'path' => '/inventario'],
+                    ['icon' => 'kardex', 'name' => 'Movimientos', 'path' => '/inventario/movimientos'],
+                ],
+            ];
+        }
+
         if (self::puede('reportes.ver')) {
             $grupos[] = [
                 'title' => 'Reportes',
@@ -211,6 +224,10 @@ class Menu
         'reportes' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 20.25h16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.75 16.75V11m4.5 5.75V6.25m4.5 10.5v-7.5m4.5 7.5V4.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
 
         'inventario' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 7.25 12 3.5l8.25 3.75-8.25 3.75L3.75 7.25Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3.75 12 12 15.75 20.25 12M3.75 16.75 12 20.5l8.25-3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
+        // Kardex: entra y sale. Las dos flechas dicen de qué va la pantalla sin
+        // tener que leer la etiqueta.
+        'kardex' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 8.25h11.5m0 0-3-3m3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.25 15.75H8.75m0 0 3-3m-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 
         'devoluciones' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.25 12a8.25 8.25 0 1 1-2.42-5.83" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M20.25 4.5V10h-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 12h5M12 9.5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
 

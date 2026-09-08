@@ -10,6 +10,7 @@ use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionController;
 use App\Http\Controllers\EmpleadoController;
+use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductoController;
@@ -199,6 +200,12 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     });
 
     // ---- Movimientos de stock: permisos propios, distintos del catálogo ----
+    //
+    // Las mismas dos operaciones tienen dos puertas: desde la ficha del
+    // producto (cuando ya se está mirando ese producto) y desde el módulo de
+    // inventario (cuando se llega con la mercadería en la mano y hay que
+    // buscarla). Las dos terminan en `Inventario`, que sigue siendo el único
+    // sitio donde cambia el stock.
     Route::post('productos/{producto}/ingreso', [ProductoController::class, 'ingresar'])
         ->middleware('permiso:inventario.ingresar')
         ->name('productos.ingreso');
@@ -206,6 +213,23 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     Route::post('productos/{producto}/ajuste', [ProductoController::class, 'ajustar'])
         ->middleware('permiso:inventario.ajustar')
         ->name('productos.ajuste');
+
+    // ---- Inventario: el almacén como módulo propio ----
+    // Se puede mirar con cualquiera de los tres permisos: quien carga, quien
+    // ajusta y quien solo consulta los reportes.
+    Route::middleware('permiso:inventario.ingresar,inventario.ajustar,reportes.ver')->group(function () {
+        Route::get('inventario', [InventarioController::class, 'index'])->name('inventario.index');
+        Route::get('inventario/movimientos', [InventarioController::class, 'movimientos'])
+            ->name('inventario.movimientos');
+    });
+
+    Route::post('inventario/ingreso', [InventarioController::class, 'ingreso'])
+        ->middleware('permiso:inventario.ingresar')
+        ->name('inventario.ingreso');
+
+    Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
+        ->middleware('permiso:inventario.ajustar')
+        ->name('inventario.ajuste');
 
     // ---- Usuarios y roles ----
     Route::middleware('permiso:usuarios.gestionar')->group(function () {
