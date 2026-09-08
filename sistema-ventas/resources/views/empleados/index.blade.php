@@ -37,7 +37,7 @@
 
         {{-- Tabla --}}
         <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-            <div class="max-w-full overflow-x-auto overscroll-contain">
+            <div class="max-w-full overflow-x-auto overscroll-x-contain">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>

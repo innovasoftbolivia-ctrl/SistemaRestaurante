@@ -49,7 +49,7 @@
                     {{-- Fichas en vez de desplegable: se ve de un golpe cuántos
                          productos hay en cada categoría y se elige de un toque.
                          El scroll horizontal las salva en pantallas estrechas. --}}
-                    <div class="-mx-1 mt-3 flex gap-2 overflow-x-auto overscroll-contain px-1 pb-1">
+                    <div class="-mx-1 mt-3 flex gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1">
                         <button type="button" @click="categoria = ''; cargar()"
                             :class="categoria === ''
                                 ? 'bg-brand-500 text-white'

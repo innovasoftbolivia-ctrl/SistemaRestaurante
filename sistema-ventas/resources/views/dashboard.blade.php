@@ -182,7 +182,7 @@
                         <x-ui.button size="xs" variant="outline" :href="route('ventas.index')">Ver todas</x-ui.button>
                     </div>
 
-                    <div class="max-w-full overflow-x-auto overscroll-contain border-t border-gray-100 dark:border-gray-800">
+                    <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                         <table class="min-w-full">
                             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                                 @forelse ($ultimas as $venta)

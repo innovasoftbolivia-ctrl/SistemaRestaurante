@@ -87,7 +87,7 @@
 
         {{-- Existencias --}}
         <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-            <div class="max-w-full overflow-x-auto overscroll-contain">
+            <div class="max-w-full overflow-x-auto overscroll-x-contain">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
@@ -215,7 +215,7 @@
         @if ($ultimos->isNotEmpty())
             <x-common.component-card title="Últimas entradas y ajustes"
                 desc="Solo los movimientos que se hacen desde aquí. Las salidas por venta están en el listado completo.">
-                <div class="max-w-full overflow-x-auto overscroll-contain">
+                <div class="max-w-full overflow-x-auto overscroll-x-contain">
                     <table class="min-w-full">
                         <thead class="border-b border-gray-100 dark:border-gray-800">
                             <tr>
