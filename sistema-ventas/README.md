@@ -7,7 +7,15 @@ Aplicación web del sistema descrito en [`../docs`](../docs). Lo entregado hasta
   proveedores, con kardex por producto.
 - **Punto de venta:** mostrador con lector de código de barras, carrito, descuento, cobro y
   vuelto; caja por turno con arqueo; comprobantes (factura y recibo) imprimibles; clientes;
-  anulación de ventas.
+  anulación de ventas. Una venta puede **repartirse entre varias formas de pago** —una parte por
+  QR, el resto en efectivo—, y al arqueo entra solo lo que pasó por el cajón.
+- **Cobro por QR:** el código se genera con el **importe ya puesto**, así el cliente escanea y
+  paga lo que debe sin teclear nada. La venta se registra recién cuando el pago está confirmado:
+  un cliente que se arrepiente no deja stock descontado ni comprobante emitido. Sin convenio con
+  el banco corre en modo simulado y lo confirma el cajero — ver el paso 9 de
+  [Nueva instalación](#nueva-instalación-un-cliente).
+- **Almacén:** existencias con alerta de faltantes, ingreso de mercadería a un producto que ya
+  existe (sin darlo de alta otra vez), ajustes por merma y kardex global de movimientos.
 - **Devoluciones:** totales y parciales, con reingreso selectivo de stock.
 - **Sustitución de comprobante:** recibo → factura (y al revés) sin tocar la venta.
   La parte **tributaria** (tasa e identificación fiscal) está marcada como en construcción.
@@ -652,14 +660,38 @@ sus propios datos de negocio.
    cliente de base de datos sin autenticación propia no tiene por qué estar instalado en el
    servidor de un negocio. (En desarrollo sigue disponible con `--profile tools`.)
 
-9. **HTTPS**, si el servidor es accesible por internet (no solo en la red del local): un proxy
-   (nginx, Caddy, un balanceador del proveedor) delante del contenedor `nginx`, con su
-   certificado. Este proyecto no lo resuelve por sí solo. Una vez que HTTPS esté activo, pon
-   también en `sistema-ventas/.env.docker`:
-   - `SESSION_SECURE_COOKIE=true` — si lo pones en true sin HTTPS, nadie puede iniciar sesión.
-   - `TRUSTED_PROXIES` con la IP de ese proxy (o `*` si está en la misma red privada) — sin
-     esto la bitácora registra la IP del proxy en vez de la del cliente, y las URLs que arma
-     Laravel salen en `http://` aunque el visitante haya entrado por `https://`.
+9. **Cobro por QR**, si el negocio lo va a usar. De fábrica queda en `QR_PASARELA=simulado`:
+   el mostrador genera un QR **real y escaneable, con el importe ya puesto**, pero sin banco
+   detrás el pago no llega solo — lo confirma el cajero con «Ya me pagó», y la pantalla lo avisa
+   con todas las letras. Se hizo así a propósito: un simulador que se pagara solo daría la falsa
+   impresión de que el cobro funciona.
+
+   Cuando el banco entregue credenciales, en `sistema-ventas/.env.docker`:
+
+   ```
+   QR_PASARELA=banco
+   QR_URL_BASE=https://...
+   QR_TOKEN=...
+   QR_SECRETO_WEBHOOK=...
+   ```
+
+   Lo que hay que pedirle al banco está anotado en la cabecera de
+   `app/Services/Qr/QrBanco.php`. El aviso de pago del banco entra sin sesión y sin CSRF —el
+   banco no inicia sesión—, así que **la firma es su única defensa**: sin `QR_SECRETO_WEBHOOK`
+   se rechaza todo aviso. Falla cerrado, no abierto.
+
+   Confirmar a mano sigue haciendo falta con el banco conectado: si su API se cae, el cajero
+   tiene que poder cobrar mirando el comprobante en el celular del cliente. Queda con su nombre
+   en la bitácora, porque es el punto por donde se colaría un cobro que nunca entró.
+
+10. **HTTPS**, si el servidor es accesible por internet (no solo en la red del local): un proxy
+    (nginx, Caddy, un balanceador del proveedor) delante del contenedor `nginx`, con su
+    certificado. Este proyecto no lo resuelve por sí solo. Una vez que HTTPS esté activo, pon
+    también en `sistema-ventas/.env.docker`:
+    - `SESSION_SECURE_COOKIE=true` — si lo pones en true sin HTTPS, nadie puede iniciar sesión.
+    - `TRUSTED_PROXIES` con la IP de ese proxy (o `*` si está en la misma red privada) — sin
+      esto la bitácora registra la IP del proxy en vez de la del cliente, y las URLs que arma
+      Laravel salen en `http://` aunque el visitante haya entrado por `https://`.
 
 ---
 
@@ -778,6 +810,7 @@ app/
     ReporteController.php        reportes de ventas, productos e inventario
     DashboardController.php      la portada, por bloques según el rol
     DevolucionController.php     devoluciones totales y parciales
+    CobroQrController.php        cobro por QR: generar, consultar, confirmar y el aviso del banco
   Http/Middleware/
     VerificarPermiso.php         corta por permiso de rol
     VerificarCuentaVigente.php   corta si la cuenta dejó de tener acceso
@@ -786,7 +819,7 @@ app/
                                  MovimientoInventario, Cliente, Caja, SesionCaja,
                                  MovimientoCaja, Venta, VentaDetalle, VentaPago,
                                  Comprobante, SerieComprobante, TipoComprobante,
-                                 MetodoPago, Devolucion, DevolucionDetalle
+                                 MetodoPago, Devolucion, DevolucionDetalle, CobroQr
   Services/
     Auditor.php                  bitácora
     Inventario.php               único punto por el que cambia el stock
@@ -794,6 +827,10 @@ app/
     Cajas.php                    abrir, mover efectivo y cerrar el turno
     Devoluciones.php             devolver mercadería de una venta cobrada
     Comprobantes.php             sustituir el documento de una venta
+    CobrosQr.php                 el cobro por QR, de generarlo a atarlo a su venta
+    Qr/PasarelaQr.php            lo que tiene que saber hacer un banco
+    Qr/QrSimulado.php            QR real sin banco detrás: lo confirma el cajero
+    Qr/QrBanco.php               la plantilla a completar cuando haya convenio
   Support/
     Menu.php                     barra lateral y pantalla de inicio según permisos
     Config.php                   parámetros del negocio (tasa, moneda, formatos)
