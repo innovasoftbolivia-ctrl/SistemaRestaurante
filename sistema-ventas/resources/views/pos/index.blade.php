@@ -337,54 +337,181 @@
                     </div>
 
                     {{-- Pago --}}
-                    <div class="space-y-3 border-t border-gray-100 px-5 py-4 dark:border-gray-800">
-                        <div class="flex flex-wrap gap-2">
-                            @foreach ($metodosPago as $metodo)
-                                <button type="button" @click="metodoId = {{ $metodo->id }}"
-                                    :class="metodoId === {{ $metodo->id }}
-                                        ? 'bg-brand-500 text-white'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10'"
-                                    class="rounded-lg px-3 py-2 text-theme-xs font-medium transition">
-                                    {{ $metodo->nombre }}
-                                </button>
-                            @endforeach
-                        </div>
+                    <div class="space-y-4 border-t border-gray-100 px-5 py-4 dark:border-gray-800">
 
-                        <template x-if="esEfectivo">
-                            <div>
-                                <label for="recibido" class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                                    Efectivo recibido
-                                </label>
-                                <input id="recibido" type="number" inputmode="decimal" step="0.01" min="0" x-model.number="recibido"
-                                    :placeholder="total.toFixed(2)"
-                                    class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                        {{-- Una tarjeta por forma de pago. Con una sola línea se ve
+                             igual que antes; la segunda aparece solo si el cliente
+                             parte el pago. --}}
+                        <template x-for="(pago, i) in pagos" :key="i">
+                            <div class="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
 
-                                <div class="mt-2 flex flex-wrap gap-1.5">
-                                    <template x-for="s in sugerencias" :key="s">
-                                        <button type="button" @click="recibido = s"
-                                            class="rounded-lg bg-gray-100 px-2.5 py-1 text-theme-xs text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10"
-                                            x-text="'{{ $moneda }} ' + s.toFixed(2)"></button>
+                                <div class="mb-2 flex items-center justify-between gap-2">
+                                    <span class="text-theme-xs font-medium text-gray-500 dark:text-gray-400"
+                                        x-text="pagos.length > 1 ? 'Forma de pago ' + (i + 1) : 'Forma de pago'"></span>
+
+                                    <button type="button" x-show="pagos.length > 1" @click="quitarPago(i)"
+                                        class="rounded-lg px-2 py-1 text-theme-xs text-gray-400 transition hover:bg-gray-100 hover:text-error-600 dark:hover:bg-white/[0.05]">
+                                        Quitar
+                                    </button>
+                                </div>
+
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="m in metodos" :key="m.id">
+                                        <button type="button" @click="pago.metodoId = m.id"
+                                            :class="pago.metodoId === m.id
+                                                ? 'bg-brand-500 text-white'
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10'"
+                                            class="rounded-lg px-3 py-2 text-theme-xs font-medium transition"
+                                            x-text="m.nombre"></button>
                                     </template>
                                 </div>
 
-                                <div x-show="recibido >= total && total > 0"
-                                    class="mt-3 flex items-baseline justify-between rounded-xl bg-success-50 px-4 py-3 dark:bg-success-500/10">
-                                    <span class="text-theme-sm font-medium text-success-700 dark:text-success-500">Vuelto</span>
-                                    <span class="text-lg font-semibold text-success-700 dark:text-success-500"
-                                        x-text="'{{ $moneda }} ' + vuelto.toFixed(2)"></span>
+                                {{-- El importe solo hace falta cuando hay más de una
+                                     forma: con una sola, cubre el total y punto. --}}
+                                <div x-show="pagos.length > 1" class="mt-3">
+                                    <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                        Importe
+                                        <span x-show="vacio(pago)" class="text-brand-500">— el resto</span>
+                                    </label>
+                                    <input type="number" inputmode="decimal" step="0.01" min="0" x-model="pago.monto"
+                                        :placeholder="montoDe(pago).toFixed(2)"
+                                        class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">
+                                        Cubre <span class="font-medium" x-text="'{{ $moneda }} ' + montoDe(pago).toFixed(2)"></span>.
+                                        Déjalo vacío para que tome lo que falte.
+                                    </p>
+                                </div>
+
+                                <div x-show="esEfectivo(pago)" class="mt-3">
+                                    <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                        Efectivo recibido
+                                    </label>
+                                    <input type="number" inputmode="decimal" step="0.01" min="0" x-model.number="pago.recibido"
+                                        :placeholder="montoDe(pago).toFixed(2)"
+                                        class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+
+                                    <div class="mt-2 flex flex-wrap gap-1.5">
+                                        <template x-for="s in sugerenciasDe(pago)" :key="s">
+                                            <button type="button" @click="pago.recibido = s"
+                                                class="rounded-lg bg-gray-100 px-2.5 py-1 text-theme-xs text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10"
+                                                x-text="'{{ $moneda }} ' + s.toFixed(2)"></button>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div x-show="!esEfectivo(pago) && !esQr(pago)" class="mt-3">
+                                    <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                                        Número de operación
+                                    </label>
+                                    <input type="text" x-model="pago.referencia" placeholder="Opcional"
+                                        class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                </div>
+
+                                {{-- Cobro por QR ------------------------------------------------
+                                     El código se genera con el importe ya puesto: el cliente
+                                     escanea y paga exactamente lo que debe, sin teclear nada.
+                                     La venta NO existe todavía; se registra recién cuando el
+                                     pago está confirmado. --}}
+                                <div x-show="esQr(pago)" class="mt-3">
+
+                                    {{-- Todavía sin generar --}}
+                                    <template x-if="!pago.qr">
+                                        <div>
+                                            <button type="button" @click="generarQr(pago)"
+                                                :disabled="montoDe(pago) <= 0 || pago.qrCargando"
+                                                class="w-full rounded-lg bg-brand-500 px-3 py-2.5 text-theme-sm font-medium text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-white/10">
+                                                <span x-show="!pago.qrCargando"
+                                                    x-text="'Generar QR por {{ $moneda }} ' + montoDe(pago).toFixed(2)"></span>
+                                                <span x-show="pago.qrCargando">Generando…</span>
+                                            </button>
+                                            <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                                                El código lleva el importe: el cliente no tiene que escribirlo.
+                                            </p>
+                                        </div>
+                                    </template>
+
+                                    {{-- Ya generado: se muestra y se espera --}}
+                                    <template x-if="pago.qr">
+                                        <div class="rounded-xl border border-gray-200 p-3 text-center dark:border-gray-800">
+
+                                            <div x-show="!pago.qr.pagado" class="flex flex-col items-center">
+                                                <canvas :id="'qr-' + pago.qr.id" class="rounded-lg bg-white p-2"></canvas>
+
+                                                <p class="mt-2 text-theme-sm font-medium text-gray-800 dark:text-white/90"
+                                                    x-text="'{{ $moneda }} ' + pago.qr.monto.toFixed(2)"></p>
+
+                                                <p class="mt-0.5 flex items-center justify-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                                                    <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500"></span>
+                                                    <span x-text="pago.qr.etiqueta"></span>
+                                                </p>
+
+                                                {{-- Sin banco detrás, el pago no puede llegar solo:
+                                                     se dice, para que nadie crea que está roto. --}}
+                                                <p x-show="pago.qr.simulado"
+                                                    class="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-theme-xs text-warning-700 dark:bg-orange-500/10 dark:text-orange-400">
+                                                    Sin banco conectado: el pago se confirma a mano.
+                                                </p>
+
+                                                <div class="mt-3 flex w-full flex-wrap gap-2">
+                                                    {{-- Confirmar a mano hace falta igual cuando el
+                                                         banco está conectado: si su API se cae, el
+                                                         cajero mira el comprobante en el celular del
+                                                         cliente. Queda con su nombre en la bitácora. --}}
+                                                    <button type="button" @click="confirmarQr(pago)"
+                                                        class="flex-1 rounded-lg bg-success-500 px-3 py-2 text-theme-xs font-medium text-white transition hover:bg-success-600">
+                                                        Ya me pagó
+                                                    </button>
+                                                    <button type="button" @click="anularQr(pago)"
+                                                        class="rounded-lg border border-gray-300 px-3 py-2 text-theme-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div x-show="pago.qr.pagado" class="py-3">
+                                                <p class="text-lg font-semibold text-success-700 dark:text-success-500">
+                                                    Pago confirmado
+                                                </p>
+                                                <p class="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400"
+                                                    x-text="'{{ $moneda }} ' + pago.qr.monto.toFixed(2)"></p>
+                                                <p x-show="pago.qr.referencia" class="mt-1 font-mono text-theme-xs text-gray-500 dark:text-gray-400"
+                                                    x-text="pago.qr.referencia"></p>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <p x-show="pago.qrError"
+                                        class="mt-2 text-theme-xs text-error-600 dark:text-error-400"
+                                        x-text="pago.qrError"></p>
                                 </div>
                             </div>
                         </template>
 
-                        <template x-if="!esEfectivo">
-                            <div>
-                                <label for="referencia" class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                                    Número de operación
-                                </label>
-                                <input id="referencia" type="text" x-model="referencia" placeholder="Opcional"
-                                    class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
-                            </div>
-                        </template>
+                        <button type="button" @click="agregarPago()"
+                            x-show="pagos.length < metodos.length && total > 0"
+                            class="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-theme-xs font-medium text-gray-500 transition hover:border-brand-400 hover:text-brand-500 dark:border-gray-700 dark:text-gray-400">
+                            + Dividir el pago en otra forma
+                        </button>
+
+                        {{-- Lo que todavía no está repartido: es el número que el
+                             cajero mira cuando el cliente paga en dos partes. --}}
+                        <div x-show="pagos.length > 1 && lineasSinMonto === 0 && Math.abs(restante) >= 0.005"
+                            class="flex items-baseline justify-between rounded-xl px-4 py-3"
+                            :class="restante > 0 ? 'bg-warning-50 dark:bg-orange-500/10' : 'bg-error-50 dark:bg-error-500/10'">
+                            <span class="text-theme-sm font-medium"
+                                :class="restante > 0 ? 'text-warning-700 dark:text-orange-400' : 'text-error-600 dark:text-error-400'"
+                                x-text="restante > 0 ? 'Falta por asignar' : 'Asignado de más'"></span>
+                            <span class="text-lg font-semibold"
+                                :class="restante > 0 ? 'text-warning-700 dark:text-orange-400' : 'text-error-600 dark:text-error-400'"
+                                x-text="'{{ $moneda }} ' + Math.abs(restante).toFixed(2)"></span>
+                        </div>
+
+                        <div x-show="vuelto > 0"
+                            class="flex items-baseline justify-between rounded-xl bg-success-50 px-4 py-3 dark:bg-success-500/10">
+                            <span class="text-theme-sm font-medium text-success-700 dark:text-success-500">Vuelto</span>
+                            <span class="text-lg font-semibold text-success-700 dark:text-success-500"
+                                x-text="'{{ $moneda }} ' + vuelto.toFixed(2)"></span>
+                        </div>
                     </div>
                     {{-- Cierra la zona con scroll: de aquí para abajo el pie
                          (botón de cobrar) queda fuera y siempre a la vista. --}}
@@ -561,9 +688,29 @@
                         carrito: [],
                         clienteId: {{ (int) request('cliente') ?: 'null' }},
                         descuento: 0,
-                        metodoId: {{ $metodosPago->first()?->id ?? 'null' }},
-                        recibido: null,
-                        referencia: '',
+                        /* Formas de pago de esta venta. El cliente puede pagar una
+                           parte en efectivo y otra por QR o tarjeta, así que esto es
+                           una lista y no un método suelto.
+
+                           `monto` vacío significa «el resto»: es la misma convención
+                           que ya entendía `Ventas::registrarPagos`, donde UNA línea
+                           puede omitir el importe y el servidor le asigna lo que
+                           falta. Dejarlo así evita que el navegador y el servidor
+                           discutan por un céntimo de redondeo. */
+                        pagos: [{
+                            metodoId: {{ $metodosPago->first()?->id ?? 'null' }},
+                            monto: '',
+                            recibido: null,
+                            referencia: '',
+                            qr: null,          // el cobro generado, mientras se espera al cliente
+                            qrCargando: false,
+                            qrError: '',
+                        }],
+                        metodosQr: @js($metodosQr),
+                        qrSimulado: {{ $qrSimulado ? 'true' : 'false' }},
+                        qrSegundos: {{ $qrSegundosConsulta }},
+                        rutaQrCrear: '{{ route('qr.crear') }}',
+                        rutaQr: '{{ url('pos/qr') }}',
                         enviando: false,
                         verificando: false,
                         precioActualizado: false,
@@ -585,6 +732,7 @@
                         maxDescuento: {{ $descuentoMaximo }},
                         puedeDescontar: {{ $puedeDescontar ? 'true' : 'false' }},
                         efectivos: @js($metodosPago->where('codigo', 'EFECTIVO')->pluck('id')->values()),
+                        metodos: @js($metodosPago->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre])->values()),
 
                         async cargar() {
                             const url = new URL('{{ route('pos.productos') }}', window.location.origin);
@@ -785,17 +933,194 @@
                             return (this.descuentoValido / this.subtotal * 100) > this.maxDescuento;
                         },
 
-                        get esEfectivo() {
-                            return this.efectivos.includes(this.metodoId);
+                        /* ---------------------------------------- formas de pago */
+
+                        esEfectivo(pago) {
+                            return this.efectivos.includes(pago.metodoId);
+                        },
+
+                        vacio(pago) {
+                            return pago.monto === '' || pago.monto === null;
+                        },
+
+                        get lineasSinMonto() {
+                            return this.pagos.filter(p => this.vacio(p)).length;
+                        },
+
+                        /* Lo ya repartido entre las líneas que sí tienen importe. */
+                        get asignado() {
+                            return this.redondear(this.pagos.reduce(
+                                (suma, p) => suma + (this.vacio(p) ? 0 : Number(p.monto) || 0), 0));
+                        },
+
+                        get restante() {
+                            return this.redondear(this.total - this.asignado);
+                        },
+
+                        /* Lo que cubre esta línea: su importe, o el resto si la
+                           dejaron en blanco y es la única así. */
+                        montoDe(pago) {
+                            if (!this.vacio(pago)) return this.redondear(Number(pago.monto) || 0);
+
+                            return this.lineasSinMonto === 1 ? Math.max(this.restante, 0) : 0;
+                        },
+
+                        vueltoDe(pago) {
+                            if (!this.esEfectivo(pago) || pago.recibido === null || pago.recibido === '') return 0;
+
+                            return this.redondear(Math.max((Number(pago.recibido) || 0) - this.montoDe(pago), 0));
                         },
 
                         get vuelto() {
-                            return this.redondear(Math.max((Number(this.recibido) || 0) - this.total, 0));
+                            return this.redondear(this.pagos.reduce((s, p) => s + this.vueltoDe(p), 0));
                         },
 
-                        /* Billetes con los que suele pagar la gente. */
-                        get sugerencias() {
-                            const t = this.total;
+                        agregarPago() {
+                            // El método que se propone es el primero que aún no se usó.
+                            const usados = this.pagos.map(p => p.metodoId);
+                            const libre = this.metodos.find(m => !usados.includes(m.id));
+
+                            // Al abrir una segunda línea, la primera deja de ser «el
+                            // resto» y toma un importe concreto: si no, quedarían dos
+                            // líneas en blanco y no se sabría cuál cubre qué.
+                            if (this.lineasSinMonto >= 1) {
+                                this.pagos.forEach(p => {
+                                    if (this.vacio(p)) p.monto = this.montoDe(p).toFixed(2);
+                                });
+                            }
+
+                            this.pagos.push({
+                                metodoId: libre ? libre.id : this.metodos[0].id,
+                                monto: '',
+                                recibido: null,
+                                referencia: '',
+                                qr: null,
+                                qrCargando: false,
+                                qrError: '',
+                            });
+                        },
+
+                        /* ------------------------------------------- cobro por QR */
+
+                        esQr(pago) {
+                            return this.metodosQr.includes(pago.metodoId);
+                        },
+
+                        /* Una línea de QR solo sirve si su cobro está pagado. */
+                        qrPendiente(pago) {
+                            return this.esQr(pago) && !(pago.qr && pago.qr.pagado);
+                        },
+
+                        get cabecera() {
+                            return {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content ?? '',
+                            };
+                        },
+
+                        async generarQr(pago) {
+                            const monto = this.montoDe(pago);
+                            if (monto <= 0 || pago.qrCargando) return;
+
+                            pago.qrCargando = true;
+                            pago.qrError = '';
+
+                            try {
+                                const r = await fetch(this.rutaQrCrear, {
+                                    method: 'POST',
+                                    headers: this.cabecera,
+                                    body: JSON.stringify({ monto: monto.toFixed(2) }),
+                                });
+                                const datos = await r.json();
+
+                                if (!r.ok) {
+                                    pago.qrError = datos.error ?? 'No se pudo generar el QR.';
+                                    return;
+                                }
+
+                                pago.qr = datos;
+                                this.$nextTick(() => this.pintarQr(pago));
+                                this.vigilarQr(pago);
+                            } catch (e) {
+                                pago.qrError = 'No se pudo generar el QR.';
+                            } finally {
+                                pago.qrCargando = false;
+                            }
+                        },
+
+                        pintarQr(pago) {
+                            const lienzo = document.getElementById('qr-' + pago.qr.id);
+                            if (lienzo && window.dibujarQr) window.dibujarQr(lienzo, pago.qr.payload);
+                        },
+
+                        /* Le pregunta al banco cada pocos segundos si ya pagaron.
+                           Se detiene solo cuando el cobro deja de estar pendiente,
+                           para no quedar consultando de por vida. */
+                        vigilarQr(pago) {
+                            if (!pago.qr || pago.qr.estado !== 'PENDIENTE') return;
+
+                            const id = pago.qr.id;
+
+                            setTimeout(async () => {
+                                /* Si el cajero cambió de método o generó otro QR,
+                                   esta vigilancia ya no corresponde. */
+                                if (!pago.qr || pago.qr.id !== id) return;
+
+                                try {
+                                    const r = await fetch(this.rutaQr + '/' + id, {
+                                        headers: { 'Accept': 'application/json' },
+                                    });
+                                    if (r.ok) pago.qr = await r.json();
+                                } catch (e) {
+                                    /* Sin conexión con el banco: se reintenta en la
+                                       vuelta siguiente, no se rompe la pantalla. */
+                                }
+
+                                this.vigilarQr(pago);
+                            }, this.qrSegundos * 1000);
+                        },
+
+                        /* El cajero ve el comprobante en el celular del cliente y lo
+                           da por pagado. Queda registrado con su nombre. */
+                        async confirmarQr(pago) {
+                            if (!pago.qr) return;
+
+                            const r = await fetch(this.rutaQr + '/' + pago.qr.id + '/confirmar', {
+                                method: 'POST',
+                                headers: this.cabecera,
+                                body: JSON.stringify({ referencia: pago.referencia || null }),
+                            });
+                            const datos = await r.json();
+
+                            if (r.ok) pago.qr = datos;
+                            else pago.qrError = datos.error ?? 'No se pudo confirmar el pago.';
+                        },
+
+                        async anularQr(pago) {
+                            if (!pago.qr) return;
+
+                            await fetch(this.rutaQr + '/' + pago.qr.id + '/anular', {
+                                method: 'POST',
+                                headers: this.cabecera,
+                            });
+
+                            pago.qr = null;
+                            pago.qrError = '';
+                        },
+
+                        quitarPago(indice) {
+                            if (this.pagos.length <= 1) return;
+                            this.pagos.splice(indice, 1);
+
+                            // Si queda una sola, vuelve a ser «el resto».
+                            if (this.pagos.length === 1) this.pagos[0].monto = '';
+                        },
+
+                        /* Billetes con los que suele pagar la gente, para el importe
+                           que cubre ESTA línea (que no siempre es el total). */
+                        sugerenciasDe(pago) {
+                            const t = this.montoDe(pago);
                             if (t <= 0) return [];
 
                             const billetes = [10, 20, 50, 100, 200];
@@ -810,11 +1135,28 @@
                             return this.carrito.some(l => l.cantidad > l.stock);
                         },
 
+                        /* Un efectivo al que no se le puso «recibido» se toma como
+                           justo: el cajero no siempre lo teclea si le dieron exacto. */
+                        efectivoCorto(pago) {
+                            return this.esEfectivo(pago)
+                                && pago.recibido !== null && pago.recibido !== ''
+                                && Number(pago.recibido) < this.montoDe(pago);
+                        },
+
+                        get pagoCubierto() {
+                            if (this.lineasSinMonto > 1) return false;
+
+                            return this.lineasSinMonto === 1
+                                ? this.restante > 0                                 // la línea en blanco toma el resto
+                                : Math.abs(this.asignado - this.total) < 0.005;     // todas con importe: tienen que sumar
+                        },
+
                         get puedeCobrar() {
                             if (!this.carrito.length || this.total <= 0 || this.sinStock) return false;
                             if (this.excedeDescuento && !this.puedeDescontar) return false;
-                            if (this.esEfectivo && this.recibido !== null && this.recibido !== ''
-                                && Number(this.recibido) < this.total) return false;
+                            if (!this.pagoCubierto) return false;
+                            if (this.pagos.some(p => this.efectivoCorto(p))) return false;
+                            if (this.pagos.some(p => this.qrPendiente(p))) return false;
 
                             return true;
                         },
@@ -822,7 +1164,16 @@
                         get motivoBloqueo() {
                             if (this.sinStock) return 'Hay líneas por encima del stock disponible.';
                             if (this.excedeDescuento && !this.puedeDescontar) return 'El descuento necesita autorización.';
-                            if (this.esEfectivo && Number(this.recibido) < this.total) return 'El efectivo recibido no alcanza.';
+                            if (this.lineasSinMonto > 1) return 'Solo una forma de pago puede quedar sin importe.';
+                            if (this.lineasSinMonto === 1 && this.restante <= 0) return 'Las formas de pago ya cubren el total.';
+                            if (this.lineasSinMonto === 0 && this.restante > 0) {
+                                return 'Faltan {{ $moneda }} ' + this.restante.toFixed(2) + ' por asignar.';
+                            }
+                            if (this.lineasSinMonto === 0 && this.restante < 0) {
+                                return 'Las formas de pago suman {{ $moneda }} ' + Math.abs(this.restante).toFixed(2) + ' de más.';
+                            }
+                            if (this.pagos.some(p => this.efectivoCorto(p))) return 'El efectivo recibido no alcanza.';
+                            if (this.pagos.some(p => this.qrPendiente(p))) return 'Falta que se confirme el pago por QR.';
                             return '';
                         },
 
@@ -914,16 +1265,33 @@
                                 oculto(`lineas[${i}][precio_unitario]`, l.precio);
                             });
 
-                            /* No se manda el importe: el servidor cobra su propio total.
-                               Así un céntimo de diferencia en el redondeo del navegador
-                               no puede tumbar la venta. */
-                            oculto('pagos[0][metodo_pago_id]', this.metodoId);
+                            /* De la línea que va «por el resto» NO se manda el importe:
+                               lo calcula el servidor sobre su propio total, así un
+                               céntimo de diferencia en el redondeo del navegador no
+                               puede tumbar la venta. Las demás sí lo llevan, porque
+                               son un reparto que decidió el cajero. */
+                            this.pagos.forEach((p, i) => {
+                                oculto(`pagos[${i}][metodo_pago_id]`, p.metodoId);
 
-                            if (this.esEfectivo && Number(this.recibido) >= this.total) {
-                                oculto('pagos[0][monto_recibido]', Number(this.recibido).toFixed(2));
-                            } else if (!this.esEfectivo && this.referencia) {
-                                oculto('pagos[0][referencia]', this.referencia);
-                            }
+                                if (!this.vacio(p)) {
+                                    oculto(`pagos[${i}][monto]`, this.montoDe(p).toFixed(2));
+                                }
+
+                                if (this.esEfectivo(p)) {
+                                    if (p.recibido !== null && p.recibido !== '' && Number(p.recibido) >= this.montoDe(p)) {
+                                        oculto(`pagos[${i}][monto_recibido]`, Number(p.recibido).toFixed(2));
+                                    }
+                                } else if (p.referencia) {
+                                    oculto(`pagos[${i}][referencia]`, p.referencia);
+                                }
+
+                                /* El cobro por QR viaja con su línea: el servidor
+                                   comprueba que esté pagado, libre y por el mismo
+                                   importe antes de registrar la venta. */
+                                if (p.qr && p.qr.pagado) {
+                                    oculto(`pagos[${i}][cobro_qr_id]`, p.qr.id);
+                                }
+                            });
 
                             if (this.clienteId) oculto('cliente_id', this.clienteId);
                             if (this.descuentoValido > 0) oculto('descuento', this.descuentoValido.toFixed(2));

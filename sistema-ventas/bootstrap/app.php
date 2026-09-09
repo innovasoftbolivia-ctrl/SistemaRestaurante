@@ -27,6 +27,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // del proxy, no la del cliente, y las URLs que arma Laravel salen en
         // http:// aunque el visitante haya entrado por https://.
         $middleware->trustProxies(at: array_filter(explode(',', (string) env('TRUSTED_PROXIES', ''))));
+
+        // El aviso de pago del banco no puede traer token CSRF: quien llama es
+        // el banco, no un formulario del sistema. Su defensa es la firma del
+        // aviso, no la sesión.
+        $middleware->validateCsrfTokens(except: ['qr/aviso']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -109,7 +109,9 @@ INSERT INTO metodos_pago (id, codigo, nombre, afecta_caja) VALUES
     (1, 'EFECTIVO', 'Efectivo',            1),
     (2, 'TARJETA',  'Tarjeta débito/crédito', 0),
     (3, 'BILLETERA','Billetera digital',   0),
-    (4, 'TRANSFER', 'Transferencia bancaria', 0);
+    (4, 'TRANSFER', 'Transferencia bancaria', 0),
+    -- El QR no entra al cajón: el dinero cae en la cuenta del banco.
+    (5, 'QR',       'Pago por QR',          0);
 
 INSERT INTO cajas (id, nombre, ubicacion) VALUES
     (1, 'Caja 1', 'Mostrador principal');

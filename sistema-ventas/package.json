@@ -30,6 +30,7 @@
         "apexcharts": "^6.10.0",
         "axios": "^1.19.0",
         "flatpickr": "^4.6.13",
-        "prismjs": "^1.30.0"
+        "prismjs": "^1.30.0",
+        "qrcode": "^1.5.4"
     }
 }

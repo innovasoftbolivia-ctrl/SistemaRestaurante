@@ -458,6 +458,69 @@ CREATE TABLE venta_pagos (
 ) ENGINE=InnoDB;
 
 -- =============================================================================
+--  6.a.bis COBROS POR QR
+--
+--  Un cobro con el importe ya puesto, para que el cliente escanee y pague
+--  exactamente lo que debe.
+--
+--  `venta_id` es NULL hasta que el pago se confirma, y es deliberado: el QR se
+--  genera contra el CARRITO, antes de que la venta exista. Si colgara de la
+--  venta habría que registrarla primero, y una venta creada antes de cobrar ya
+--  descontó stock y ya emitió comprobante; si el cliente entonces no paga,
+--  queda una venta fantasma con mercadería que nadie se llevó.
+--
+--  `confirmado_por` distingue si lo dio por pagado la pasarela o una persona.
+--  Confirmar a mano es legítimo —la API del banco se cae— pero tiene que
+--  quedar con nombre: es el punto por donde se colaría un cobro que no entró.
+-- =============================================================================
+
+CREATE TABLE cobros_qr (
+    id                  INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+    sesion_caja_id      INT UNSIGNED    NOT NULL,
+    usuario_id          INT UNSIGNED    NOT NULL,
+    venta_id            BIGINT UNSIGNED NULL,        -- BIGINT: `ventas.id` lo es
+
+    monto               DECIMAL(12,2)   NOT NULL,
+    moneda              CHAR(3)         NOT NULL DEFAULT 'BOB',
+    glosa               VARCHAR(120)    NULL,
+
+    pasarela            VARCHAR(30)     NOT NULL,    -- 'simulado' o el código del banco
+    id_externo          VARCHAR(80)     NULL,        -- el identificador que devuelve el banco
+    payload             TEXT            NULL,        -- lo que se codifica en el QR
+
+    estado              ENUM('PENDIENTE','PAGADO','EXPIRADO','ANULADO')
+                        NOT NULL DEFAULT 'PENDIENTE',
+
+    expira_en           DATETIME        NULL,
+    pagado_en           DATETIME        NULL,
+    confirmado_por      ENUM('PASARELA','MANUAL') NULL,
+    confirmado_por_id   INT UNSIGNED    NULL,
+    referencia_bancaria VARCHAR(80)     NULL,
+    respuesta           TEXT            NULL,
+
+    creado_en           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_cobro_externo (pasarela, id_externo),
+    KEY ix_cobros_qr_estado (estado),
+    KEY ix_cobros_qr_sesion (sesion_caja_id),
+    KEY ix_cobros_qr_venta  (venta_id),
+
+    CONSTRAINT fk_cobros_qr_sesion  FOREIGN KEY (sesion_caja_id)    REFERENCES sesiones_caja (id),
+    CONSTRAINT fk_cobros_qr_usuario FOREIGN KEY (usuario_id)        REFERENCES usuarios (id),
+    CONSTRAINT fk_cobros_qr_venta   FOREIGN KEY (venta_id)          REFERENCES ventas (id),
+    CONSTRAINT fk_cobros_qr_conf    FOREIGN KEY (confirmado_por_id) REFERENCES usuarios (id),
+
+    CONSTRAINT ck_cobros_qr_monto CHECK (monto > 0),
+    CONSTRAINT ck_cobros_qr_pagado CHECK (
+        (estado = 'PAGADO'  AND pagado_en IS NOT NULL AND confirmado_por IS NOT NULL)
+     OR (estado <> 'PAGADO' AND pagado_en IS NULL)
+    )
+) ENGINE=InnoDB;
+
+-- =============================================================================
 --  6.b COMPROBANTES EMITIDOS (FACTURA / RECIBO)
 -- =============================================================================
 -- Apartado donde se guarda el documento entregado al cliente. Una venta tiene como

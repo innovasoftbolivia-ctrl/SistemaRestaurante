@@ -6,6 +6,7 @@ use App\Http\Controllers\CajaFisicaController;
 use App\Http\Controllers\CargoController;
 use App\Http\Controllers\CategoriaController;
 use App\Http\Controllers\ClienteController;
+use App\Http\Controllers\CobroQrController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionController;
@@ -85,6 +86,21 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
             ->middleware('throttle:60,1')
             ->name('pos.precios');
         Route::post('pos', [PosController::class, 'store'])->name('pos.store');
+
+        // ---- Cobro por QR ----
+        // El QR se pide con el carrito armado y ANTES de que exista la venta:
+        // si el cliente no llega a pagar, no queda una venta con stock ya
+        // descontado. Todo responde JSON porque el cajero espera de pie.
+        Route::post('pos/qr', [CobroQrController::class, 'crear'])
+            ->middleware('throttle:30,1')->name('qr.crear');
+        Route::get('pos/qr/{cobro}', [CobroQrController::class, 'consultar'])
+            // El mostrador pregunta cada pocos segundos mientras el cliente
+            // escanea: el tope va holgado para que no lo corte a mitad.
+            ->middleware('throttle:240,1')->name('qr.consultar');
+        Route::post('pos/qr/{cobro}/confirmar', [CobroQrController::class, 'confirmar'])
+            ->middleware('throttle:30,1')->name('qr.confirmar');
+        Route::post('pos/qr/{cobro}/anular', [CobroQrController::class, 'anular'])
+            ->middleware('throttle:30,1')->name('qr.anular');
     });
 
     Route::middleware('permiso:ventas.registrar,reportes.ver')->group(function () {
@@ -247,3 +263,20 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
         Route::delete('roles/{rol}', [RolController::class, 'destroy'])->name('roles.destroy');
     });
 });
+
+/*
+|------------------------------------------------------------------------------
+| Aviso de pago del banco (webhook del QR)
+|------------------------------------------------------------------------------
+| Fuera de toda sesión y fuera de CSRF, porque quien llama es el banco: no
+| inicia sesión ni tiene un token de formulario. Eso la deja como una dirección
+| pública, así que la ÚNICA defensa es la firma del aviso, que comprueba la
+| pasarela antes de tocar nada (ver `QrBanco::verificarAviso`). Sin secreto
+| configurado se rechaza todo: falla cerrado, no abierto.
+|
+| La exención de CSRF está en bootstrap/app.php.
+*/
+
+Route::post('qr/aviso', [CobroQrController::class, 'aviso'])
+    ->middleware('throttle:120,1')
+    ->name('qr.aviso');

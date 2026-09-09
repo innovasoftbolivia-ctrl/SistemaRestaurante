@@ -10,6 +10,9 @@ import 'flatpickr/dist/flatpickr.min.css';
 // pantallas que declaran algún `[data-apexchart]`.
 import { iniciarGraficos } from './graficos';
 
+// Igual que los gráficos: el dibujante de QR se trae solo donde se usa.
+import './qr';
+
 window.Alpine = Alpine;
 window.flatpickr = flatpickr;
 

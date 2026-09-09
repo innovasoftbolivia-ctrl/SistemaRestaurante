@@ -44,6 +44,12 @@ class PuntoDeVentaTest extends TestCase
         return MetodoPago::where('codigo', 'EFECTIVO')->firstOrFail();
     }
 
+    /** Un medio que NO pasa por el cajón: tarjeta, transferencia o billetera. */
+    private function noEfectivo(): MetodoPago
+    {
+        return MetodoPago::where('codigo', '<>', 'EFECTIVO')->where('activo', 1)->firstOrFail();
+    }
+
     /** Abre un turno para el usuario dado. */
     private function turno(?Usuario $usuario = null, float $inicial = 100): SesionCaja
     {
@@ -625,5 +631,108 @@ class PuntoDeVentaTest extends TestCase
         $this->actingAs($this->admin())->delete("/clientes/{$cliente->id}")->assertRedirect('/clientes');
 
         $this->assertDatabaseHas('clientes', ['id' => $cliente->id, 'activo' => 0]);
+    }
+
+    // ------------------------------------------------- pago partido en varios
+
+    /**
+     * El cliente paga una parte en efectivo y otra por otro medio.
+     *
+     * El dominio ya lo admitía; lo que faltaba era el mostrador. Estas pruebas
+     * fijan el comportamiento para que un cambio en el punto de venta no se lo
+     * lleve por delante.
+     */
+    public function test_una_venta_admite_varias_formas_de_pago(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+
+        $venta = Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 2]],
+            pagos: [
+                ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 5.00, 'monto_recibido' => 10.00],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+            ],
+        );
+
+        $pagos = $venta->pagos()->get();
+        $this->assertCount(2, $pagos);
+
+        // La suma de las formas de pago es exactamente el total.
+        $this->assertEqualsWithDelta(
+            (float) $venta->total,
+            $pagos->sum(fn ($p) => (float) $p->monto),
+            0.01,
+        );
+
+        // El vuelto sale de SU línea, no del total de la venta.
+        $efectivo = $pagos->firstWhere('metodo_pago_id', $this->efectivo()->id);
+        $this->assertEqualsWithDelta(5.00, (float) $efectivo->vuelto, 0.01);
+    }
+
+    /** La línea sin importe recibe lo que falte, no el total. */
+    public function test_la_forma_de_pago_sin_importe_toma_el_resto(): void
+    {
+        $sesion = $this->turno();
+        $venta = Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
+            pagos: [
+                ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 3.00],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+            ],
+        );
+
+        $resto = $venta->pagos()->where('metodo_pago_id', $this->noEfectivo()->id)->value('monto');
+        $this->assertEqualsWithDelta((float) $venta->total - 3.00, (float) $resto, 0.01);
+    }
+
+    /** Dos líneas en blanco no se pueden repartir: no se sabe cuál cubre qué. */
+    public function test_dos_formas_de_pago_sin_importe_se_rechazan(): void
+    {
+        $sesion = $this->turno();
+
+        $this->expectExceptionMessage('Solo una forma de pago puede quedar sin importe.');
+
+        Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
+            pagos: [
+                ['metodo_pago_id' => $this->efectivo()->id, 'monto' => null],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+            ],
+        );
+    }
+
+    /**
+     * De un pago partido, al cajón entra SOLO la parte en efectivo. Es la razón
+     * de ser de `metodos_pago.afecta_caja`, y si esto se rompe el arqueo acusa
+     * de faltante a un cajero que no debe nada.
+     */
+    public function test_al_arqueo_solo_entra_la_parte_en_efectivo(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $venta = Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
+            pagos: [
+                ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 4.00],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+            ],
+        );
+
+        $this->assertGreaterThan(4.00, (float) $venta->total, 'la venta debe superar la parte en efectivo');
+
+        $cerrada = Cajas::cerrar($sesion->fresh(), $this->admin(), 104.00);
+
+        // 100 de apertura + 4 en efectivo: lo pagado por el otro medio no entra.
+        $this->assertEqualsWithDelta(104.00, (float) $cerrada->monto_esperado, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $cerrada->diferencia, 0.01);
     }
 }

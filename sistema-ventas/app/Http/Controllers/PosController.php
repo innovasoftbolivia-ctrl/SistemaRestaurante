@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Categoria;
 use App\Models\Cliente;
+use App\Models\CobroQr;
 use App\Models\MetodoPago;
 use App\Models\Producto;
+use App\Models\Venta;
 use App\Services\Cajas;
+use App\Services\CobrosQr;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Http\JsonResponse;
@@ -51,6 +54,11 @@ class PosController extends Controller
             'descuentoMaximo' => (float) Config::get('descuento_max_cajero', '0'),
             'puedeDescontar' => Auth::user()->tienePermiso('ventas.descuento'),
             'clienteGenerico' => Config::get('cliente_generico_nombre', 'Cliente varios'),
+            // El mostrador necesita saber QUÉ métodos se cobran por QR para
+            // mostrar el código en vez de un campo de referencia.
+            'metodosQr' => MetodoPago::activos()->where('codigo', 'QR')->pluck('id')->values(),
+            'qrSimulado' => CobrosQr::estaSimulado(),
+            'qrSegundosConsulta' => (int) config('qr.segundos_consulta', 4),
         ]);
     }
 
@@ -144,6 +152,10 @@ class PosController extends Controller
             'pagos.*.monto' => ['nullable', 'numeric', 'gt:0'],
             'pagos.*.monto_recibido' => ['nullable', 'numeric', 'min:0'],
             'pagos.*.referencia' => ['nullable', 'string', 'max:60'],
+            // Una forma de pago puede venir respaldada por un cobro por QR ya
+            // confirmado. Se valida abajo que esté pagado, libre y por el
+            // importe correcto antes de registrar nada.
+            'pagos.*.cobro_qr_id' => ['nullable', 'integer', 'exists:cobros_qr,id'],
         ], [
             'lineas.required' => 'La venta no tiene productos.',
             'pagos.required' => 'Falta indicar cómo se pagó.',
@@ -153,6 +165,12 @@ class PosController extends Controller
         $descuento = (float) ($datos['descuento'] ?? 0);
 
         if ($error = $this->descuentoNoAutorizado($descuento, $datos['lineas'])) {
+            return back()->with('error', $error)->withInput();
+        }
+
+        // Los cobros por QR se revisan ANTES de tocar el stock: si uno no está
+        // pagado o ya se usó, la venta no llega a existir.
+        if ($error = $this->cobrosQrNoUtilizables($datos['pagos'])) {
             return back()->with('error', $error)->withInput();
         }
 
@@ -173,8 +191,77 @@ class PosController extends Controller
             return back()->with('error', $this->mensajeDeBase($e))->withInput();
         }
 
+        $this->consumirCobrosQr($datos['pagos'], $venta);
+
         return redirect()->route('ventas.show', $venta)
             ->with('exito', 'Venta registrada. Comprobante '.$venta->comprobante?->numero_completo.'.');
+    }
+
+    /**
+     * Revisa que cada cobro por QR sirva para pagar esta venta.
+     *
+     * Se hace antes de registrar: un cobro sin pagar, vencido o ya usado en
+     * otra venta tiene que detener la operación mientras todavía no se
+     * descontó stock ni se emitió comprobante.
+     *
+     * @param  array<int, array<string, mixed>>  $pagos
+     */
+    private function cobrosQrNoUtilizables(array $pagos): ?string
+    {
+        foreach ($pagos as $pago) {
+            $id = $pago['cobro_qr_id'] ?? null;
+
+            if (! $id) {
+                continue;
+            }
+
+            $cobro = CobroQr::find($id);
+
+            if (! $cobro || $cobro->usuario_id !== Auth::id()) {
+                return 'Ese cobro por QR no es tuyo.';
+            }
+
+            if (! $cobro->estaPagado()) {
+                return 'El cobro por QR todavía no está pagado.';
+            }
+
+            if ($cobro->venta_id !== null) {
+                return 'Ese cobro por QR ya se usó en otra venta.';
+            }
+
+            // El importe del QR y el de la línea tienen que coincidir: si no,
+            // se cobraría de menos amparándose en un QR de otro monto.
+            $monto = $pago['monto'] ?? null;
+
+            if ($monto !== null && abs((float) $monto - (float) $cobro->monto) > 0.01) {
+                return 'El importe del cobro por QR no coincide con el de la venta.';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ata los cobros a la venta ya registrada.
+     *
+     * Si algo falla aquí el dinero ya entró y la venta ya existe, así que no se
+     * deshace nada: se deja constancia para poder atarlo a mano.
+     *
+     * @param  array<int, array<string, mixed>>  $pagos
+     */
+    private function consumirCobrosQr(array $pagos, Venta $venta): void
+    {
+        foreach ($pagos as $pago) {
+            if (! ($pago['cobro_qr_id'] ?? null)) {
+                continue;
+            }
+
+            try {
+                CobrosQr::consumir((int) $pago['cobro_qr_id'], $venta);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /**
