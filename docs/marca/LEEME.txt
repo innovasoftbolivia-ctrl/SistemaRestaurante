@@ -1,0 +1,134 @@
+=====================================================================
+  INNOVASOFTBO — LA MARCA
+  Que archivo usar en cada caso, y con que no meter la pata
+=====================================================================
+
+
+EL SIMBOLO, EN UNA LINEA
+---------------------------------------------------------------------
+Cuatro piezas: tres puestas y una todavia por poner. Es lo que vende la
+empresa —sistemas armados por modulos— y la pieza vacia deja la frase
+servida: «y si te falta una, se agrega».
+
+
+LOS COLORES
+---------------------------------------------------------------------
+  Verde profundo   #14503F   El principal: simbolo y nombre.
+  Salvia           #4E8C74   El acento: el «bo» de Bolivia.
+  Salvia clara     #7FC3A4   El mismo acento, para fondo oscuro.
+  Gris             #7B8794   La bajada.
+  Negro puro       #000000   SOLO para la version de una tinta.
+
+Se eligio verde por dos razones, y ninguna es de gusto:
+
+  * La primera version usaba el azul #1D4ED8, que es el que trae
+    Tailwind por defecto —el mismo de medio internet— y se habia
+    elegido para que la marca combinara con la pantalla del Sistema de
+    Ventas. Eso estaba mal de raiz: la empresa va a vender varios
+    sistemas y no puede vestirse del color de uno solo.
+  * En software casi nadie usa verde. Entre diez folletos sobre un
+    mostrador, este se distingue.
+
+El acento salvia sobre blanco da 3,9:1 de contraste. Para texto de
+lectura seria poco; para un logo, a los tamaños en que se usa, se lee
+bien. No lo uses para parrafos.
+
+
+QUE ARCHIVO USAR
+---------------------------------------------------------------------
+SVG (el original: se agranda todo lo que quieras sin pixelarse)
+
+  innovasoftbo-horizontal.svg
+      La principal. Encabezado del folleto, facturas, correo, web.
+
+  innovasoftbo-horizontal-compacta.svg
+      La misma con la cuarta pieza LLENA. Usala por debajo de 150 px
+      de ancho: tarjeta personal, pie de pagina, sello. Mas chico que
+      eso, el punteado se convierte en una mancha gris.
+
+  innovasoftbo-horizontal-sin-bajada.svg
+      Cuando el contexto ya dice a que se dedica la empresa.
+
+  innovasoftbo-vertical.svg
+      Simbolo arriba, nombre abajo. Para el folleto y las redes,
+      donde sobra alto y falta ancho.
+
+  innovasoftbo-negativo.svg
+      Sobre fondo oscuro o sobre una foto. NO uses la normal ahi: el
+      verde profundo desaparece contra un fondo oscuro.
+
+  innovasoftbo-una-tinta.svg
+      Todo en negro puro. Fotocopias, sellos de goma, diarios, fax.
+
+  innovasoftbo-simbolo.svg / -compacto.svg / -avatar.svg
+      El simbolo suelto y la version sobre teja verde.
+
+PNG (para donde no entra un SVG)
+
+  innovasoftbo-horizontal-1200.png      Word, propuestas, facturas.
+  innovasoftbo-horizontal-600.png       Firma de correo.
+  innovasoftbo-horizontal-compacta-300.png   Tarjeta personal.
+  innovasoftbo-negativo-1200.png        Sobre oscuro.
+  innovasoftbo-una-tinta-1200.png       Original de fotocopia.
+  innovasoftbo-avatar-512.png           WhatsApp, Facebook, Instagram.
+  innovasoftbo-avatar-256.png           La misma, mas chica.
+  innovasoftbo-favicon-64.png / -32.png Pestaña del navegador.
+  innovasoftbo-simbolo-512.png          El simbolo, fondo transparente.
+
+OTROS
+
+  hoja-de-marca.svg   Todas las variantes juntas, para revisar.
+  paletas.svg         Las cinco paletas que se compararon y por que
+                      gano el verde. Es el registro de la decision.
+
+
+CINCO COSAS QUE NO HAY QUE HACER
+---------------------------------------------------------------------
+1. No lo estires. Si cambias el ancho, cambia el alto en la misma
+   proporcion. Un logo aplastado se nota y queda mal.
+
+2. No le cambies el color. Hay una version para cada fondo; si ninguna
+   sirve, usa la de una tinta.
+
+3. No uses la punteada en chico. Por debajo de 150 px de ancho va la
+   compacta. Mira la ultima fila de hoja-de-marca.svg y se entiende
+   sin explicacion.
+
+4. No lo pongas sobre un fondo con el que no contrasta. Sobre verde,
+   sobre una foto cargada o sobre un fondo medio: usa el negativo o
+   ponle una caja blanca detras.
+
+5. No rehagas el texto escribiendolo. El nombre esta convertido a
+   curvas: es un dibujo, no texto. Si alguien lo reescribe con la
+   tipografia de su computadora, va a salir distinto y no va a coincidir
+   con nada de lo ya impreso.
+
+
+LA TIPOGRAFIA
+---------------------------------------------------------------------
+DejaVu Sans, que ya venia en el proyecto con dompdf. Se eligio por su
+licencia: Bitstream Vera, con los cambios de DejaVu en dominio publico.
+Permite usarla, modificarla y vender lo que se haga con ella.
+
+Las de Windows —Segoe UI, Calibri— NO sirven para esto: su licencia las
+ata a productos de Microsoft, y hacer con ellas el logo de una empresa
+es un problema legal que no se ve hasta que alguien lo mira.
+
+Si mas adelante quieres un nombre con mas caracter, Montserrat o
+Poppins (Google Fonts, licencia OFL, permiten logos) son buenas
+candidatas. Se baja la tipografia y se regenera todo el juego.
+
+
+COMO SE REGENERA
+---------------------------------------------------------------------
+Todo esto sale de scripts, no de un programa de diseño:
+
+    pip install fonttools pillow
+    cd docs/marca
+    python logo.py          # los SVG
+    python logo_png.py      # los PNG
+    python hoja_marca.py    # la hoja de revision
+
+Para cambiar un color se toca UNA linea en logo.py y se regenera el
+juego completo. Asi no puede pasar que la tarjeta tenga un verde y el
+folleto otro.
