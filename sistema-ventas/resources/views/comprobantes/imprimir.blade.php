@@ -177,6 +177,17 @@
         <a href="{{ route('ventas.show', $venta) }}">Volver a la venta</a>
     </div>
 
+    @if ($autoImprimir ?? false)
+        <script>
+            /* Se espera a `load` y no a que el documento esté listo: si se
+               dispara antes de que bajen las imágenes y la tipografía, la
+               impresora saca el ticket a medio armar. El respiro de 150 ms es
+               para el navegador, que a veces reporta `load` un instante antes
+               de haber pintado. */
+            window.addEventListener('load', () => setTimeout(() => window.print(), 150));
+        </script>
+    @endif
+
     <div class="hoja">
         @if ($comprobante->estado === 'ANULADO')
             <div class="sello">ANULADO</div>

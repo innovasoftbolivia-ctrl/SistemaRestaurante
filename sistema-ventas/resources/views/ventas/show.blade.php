@@ -34,7 +34,8 @@
 
                 <div class="flex flex-wrap gap-2">
                     @if ($comprobante)
-                        <x-ui.button size="sm" :href="route('comprobantes.imprimir', $comprobante)" target="_blank">
+                        <x-ui.button size="sm" target="_blank"
+                            :href="route('comprobantes.imprimir', [$comprobante, 'imprimir' => 1])">
                             Imprimir ticket
                         </x-ui.button>
                         <x-ui.button size="sm" variant="outline" target="_blank"

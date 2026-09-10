@@ -42,6 +42,11 @@ class ComprobanteController extends Controller
         return view('comprobantes.imprimir', [
             'comprobante' => $comprobante,
             'formato' => $formato,
+            // Con `?imprimir=1` la hoja abre el diálogo de impresión sola. Lo
+            // pide el botón de la venta recién cobrada, donde la intención es
+            // imprimir; abrir el documento desde el listado NO lo pide, porque
+            // ahí la intención es mirarlo.
+            'autoImprimir' => $request->boolean('imprimir'),
             'negocio' => [
                 'nombre' => Config::get('negocio_nombre', config('app.name')),
                 'documento' => Config::get('negocio_documento'),

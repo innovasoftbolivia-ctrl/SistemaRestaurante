@@ -354,4 +354,47 @@ class SustitucionComprobanteTest extends TestCase
             ->assertOk()
             ->assertDontSee('Sustituir comprobante');
     }
+
+    /**
+     * El ticket se manda a imprimir solo cuando se lo piden.
+     *
+     * El botón de la venta recién cobrada abre la hoja con `?imprimir=1` y el
+     * diálogo de impresión aparece sin un segundo clic. Abrir el mismo
+     * documento desde el listado NO lo hace: ahí la intención es mirarlo, y
+     * saltar el diálogo de la impresora encima sería molesto.
+     */
+    public function test_el_comprobante_solo_se_autoimprime_cuando_se_lo_pide(): void
+    {
+        $comprobante = $this->ventaConRecibo($this->turno())->comprobante;
+
+        // Se busca el DISPARO automático, no «window.print()» a secas: el
+        // botón manual de la barra también lo lleva, así que buscar eso daría
+        // por buenas las dos versiones sin distinguirlas.
+        $marca = "addEventListener('load'";
+
+        $mirar = $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', $comprobante));
+        $mirar->assertOk();
+        $mirar->assertDontSee($marca, false);
+        $mirar->assertSee('onclick="window.print()"', false);   // el botón sí está
+
+        $imprimir = $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', [$comprobante, 'imprimir' => 1]));
+        $imprimir->assertOk();
+        $imprimir->assertSee($marca, false);
+    }
+
+    /** El ticket sale a 80 mm y la otra vista, en A4. */
+    public function test_cada_formato_declara_su_tamano_de_papel(): void
+    {
+        $comprobante = $this->ventaConRecibo($this->turno())->comprobante;
+
+        $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', $comprobante))
+            ->assertSee('size: 80mm auto', false);
+
+        $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', [$comprobante, 'formato' => 'a4']))
+            ->assertSee('size: A4', false);
+    }
 }
