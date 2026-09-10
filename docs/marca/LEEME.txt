@@ -70,8 +70,10 @@ PNG (para donde no entra un SVG)
   innovasoftbo-horizontal-compacta-300.png   Tarjeta personal.
   innovasoftbo-negativo-1200.png        Sobre oscuro.
   innovasoftbo-una-tinta-1200.png       Original de fotocopia.
-  innovasoftbo-avatar-512.png           WhatsApp, Facebook, Instagram.
-  innovasoftbo-avatar-256.png           La misma, mas chica.
+  innovasoftbo-whatsapp-perfil.png      FOTO DE PERFIL: WhatsApp, Facebook,
+                                        Instagram. 1000x1000.
+  innovasoftbo-avatar-512.png           Teja cuadrada, para donde NO recorten
+  innovasoftbo-avatar-256.png           en circulo. La misma, mas chica.
   innovasoftbo-favicon-64.png / -32.png Pestaña del navegador.
   innovasoftbo-simbolo-512.png          El simbolo, fondo transparente.
 
@@ -82,7 +84,7 @@ OTROS
                       gano el verde. Es el registro de la decision.
 
 
-CINCO COSAS QUE NO HAY QUE HACER
+SEIS COSAS QUE NO HAY QUE HACER
 ---------------------------------------------------------------------
 1. No lo estires. Si cambias el ancho, cambia el alto en la misma
    proporcion. Un logo aplastado se nota y queda mal.
@@ -98,7 +100,13 @@ CINCO COSAS QUE NO HAY QUE HACER
    sobre una foto cargada o sobre un fondo medio: usa el negativo o
    ponle una caja blanca detras.
 
-5. No rehagas el texto escribiendolo. El nombre esta convertido a
+5. No uses la teja normal de foto de perfil. WhatsApp, Facebook e
+   Instagram recortan un CIRCULO inscrito en el cuadrado, y las esquinas
+   del simbolo quedan justo afuera: sobresalen 1,1 unidades y se las come
+   el recorte. Para eso esta innovasoftbo-whatsapp-perfil.png, que lleva
+   mas margen.
+
+6. No rehagas el texto escribiendolo. El nombre esta convertido a
    curvas: es un dibujo, no texto. Si alguien lo reescribe con la
    tipografia de su computadora, va a salir distinto y no va a coincidir
    con nada de lo ya impreso.

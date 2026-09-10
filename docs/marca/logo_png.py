@@ -143,8 +143,16 @@ def horizontal(ancho_px, c_sim, c_txt, c_bo, c_baj, compacto=False, fondo=None):
     return img.resize((ancho_px, int(round(H / SS))), Image.LANCZOS)
 
 
-def marca_cuadrada(lado_px, color, compacto=True, fondo=None):
-    margen = 8.0
+def marca_cuadrada(lado_px, color, compacto=True, fondo=None, margen=8.0):
+    """
+    El símbolo dentro de una teja.
+
+    `margen` importa más de lo que parece cuando la imagen es una foto de
+    perfil: WhatsApp, Facebook e Instagram recortan un CÍRCULO inscrito en el
+    cuadrado, y las esquinas del símbolo quedan fuera de ese círculo. Con el
+    margen de 8 que usa la teja normal, las esquinas sobresalen 1,1 unidades y
+    se las come el recorte. Para perfil hay que pasar 14.
+    """
     lado_u = L.LADO + margen * 2
     k = lado_px * SS / lado_u
     W = int(lado_px * SS)
@@ -175,7 +183,7 @@ SALIDAS = [
      'Original para fotocopias y sellos.'),
     ('innovasoftbo-avatar-512.png',
      lambda: marca_cuadrada(512, L.BLANCO, fondo=L.VERDE),
-     'Foto de perfil de WhatsApp, Facebook e Instagram.'),
+     'Teja cuadrada. NO usar de foto de perfil: ver whatsapp-perfil.'),
     ('innovasoftbo-avatar-256.png',
      lambda: marca_cuadrada(256, L.BLANCO, fondo=L.VERDE), 'La misma, más chica.'),
     ('innovasoftbo-favicon-64.png',
@@ -185,6 +193,10 @@ SALIDAS = [
     ('innovasoftbo-simbolo-512.png',
      lambda: marca_cuadrada(512, L.VERDE, compacto=False),
      'El símbolo suelto, sin teja, con fondo transparente.'),
+    ('innovasoftbo-whatsapp-perfil.png',
+     # Margen 14 y no 8: acá el recorte circular se come las esquinas.
+     lambda: marca_cuadrada(1000, L.BLANCO, fondo=L.VERDE, margen=14.0),
+     'FOTO DE PERFIL: WhatsApp, Facebook, Instagram. Aguanta el recorte redondo.'),
 ]
 
 
