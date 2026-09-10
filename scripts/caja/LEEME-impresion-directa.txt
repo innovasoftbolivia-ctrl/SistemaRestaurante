@@ -1,0 +1,72 @@
+=====================================================================
+  QUE EL TICKET SALGA SIN PREGUNTAR NADA
+  Configuracion de la computadora de la caja
+=====================================================================
+
+EL PROBLEMA
+---------------------------------------------------------------------
+Al dar "Imprimir ticket" aparece el dialogo de Chrome: elegir impresora,
+vista previa, boton Imprimir. Un clic de mas en cada venta.
+
+Ese dialogo NO lo pone el sistema. Lo pone el navegador, y ninguna
+pagina web puede saltarselo: es una proteccion para que un sitio no
+pueda imprimir en tu impresora sin que te enteres.
+
+La solucion no esta en el sistema sino en como se abre Chrome.
+
+
+LO QUE HAY QUE HACER, UNA SOLA VEZ
+---------------------------------------------------------------------
+
+PASO 1 - La impresora del ticket como predeterminada de Windows
+
+    Configuracion -> Bluetooth y dispositivos -> Impresoras
+    -> clic en la impresora termica -> "Establecer como predeterminada"
+
+    IMPORTANTE: desactivar arriba la opcion
+    "Permitir que Windows administre mi impresora predeterminada".
+    Si queda activada, Windows cambia la predeterminada sola cuando
+    alguien imprime en otra, y el ticket se va a la impresora de hojas.
+
+PASO 2 - Ponerle el papel de 80 mm
+
+    En esa misma pantalla -> Preferencias de impresion
+    -> tamaño de papel: 80 mm (o "80 x 297 mm", segun el modelo).
+
+PASO 3 - El acceso directo de la caja
+
+    Clic derecho en el escritorio -> Nuevo -> Acceso directo
+    y pegar esto como ubicacion (en UNA sola linea):
+
+    "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing --app=http://localhost:8100
+
+    Cambiar la direccion por la del sistema del negocio.
+    Ponerle de nombre: Caja
+
+    Si Chrome esta en otra carpeta, buscarlo con:
+    clic derecho en el icono de Chrome -> Propiedades -> Destino.
+
+
+COMO QUEDA
+---------------------------------------------------------------------
+Se abre el sistema desde ese acceso directo "Caja" y listo:
+
+    cobrar  ->  el ticket sale  ->  la pestaña se cierra sola
+
+Sin dialogos, sin vista previa, sin clics de mas.
+
+Se abre en modo aplicacion (--app), o sea sin barra de direcciones ni
+pestañas a la vista: la computadora de la caja parece un sistema de
+punto de venta y no un navegador con una pagina abierta.
+
+
+DOS AVISOS
+---------------------------------------------------------------------
+1. Con --kiosk-printing, TODO lo que se imprima desde esa ventana va
+   directo a la impresora predeterminada, sin preguntar. Es lo que se
+   busca en la caja. Para imprimir un comprobante en hoja A4 conviene
+   abrir el sistema en un Chrome normal.
+
+2. El boton "Ver comprobante" NO imprime: abre el documento en
+   pantalla y se queda. Ese es el que se usa para mirar una venta
+   vieja o mostrarsela al cliente.

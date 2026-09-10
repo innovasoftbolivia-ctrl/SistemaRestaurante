@@ -34,13 +34,16 @@
 
                 <div class="flex flex-wrap gap-2">
                     @if ($comprobante)
+{{-- Dos botones, dos intenciones distintas. «Imprimir» imprime y cierra;
+                             «Ver» abre el documento y se queda. Antes había uno solo y
+                             había que adivinar cuál de las dos cosas iba a pasar. --}}
                         <x-ui.button size="sm" target="_blank"
                             :href="route('comprobantes.imprimir', [$comprobante, 'imprimir' => 1])">
                             Imprimir ticket
                         </x-ui.button>
                         <x-ui.button size="sm" variant="outline" target="_blank"
-                            :href="route('comprobantes.imprimir', [$comprobante, 'formato' => 'a4'])">
-                            Ver en A4
+                            :href="route('comprobantes.imprimir', $comprobante)">
+                            Ver comprobante
                         </x-ui.button>
                     @endif
 

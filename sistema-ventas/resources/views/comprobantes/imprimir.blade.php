@@ -185,6 +185,12 @@
                para el navegador, que a veces reporta `load` un instante antes
                de haber pintado. */
             window.addEventListener('load', () => setTimeout(() => window.print(), 150));
+
+            /* Y se cierra sola después. En un turno de cien ventas, si no, la
+               caja termina con cien pestañas de tickets abiertas. Se cierra
+               igual si el cajero cancela el diálogo: para MIRAR el comprobante
+               está el otro botón, que abre la hoja y se queda. */
+            window.addEventListener('afterprint', () => window.close());
         </script>
     @endif
 
