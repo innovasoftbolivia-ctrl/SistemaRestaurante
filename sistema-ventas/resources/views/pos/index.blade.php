@@ -15,7 +15,8 @@
         </div>
     @else
         {{-- `pb-28` deja sitio en móvil a la barra flotante del carrito. --}}
-        <div x-data="mostrador()" x-init="cargar()" @keydown.window="atajos($event)"
+        <div x-data="mostrador()" x-init="cargar(); $nextTick(() => $refs.buscador?.focus())"
+        @keydown.window="atajos($event)"
             class="grid grid-cols-1 gap-6 pb-28 xl:grid-cols-5 xl:pb-0">
 
             {{-- Catálogo --}}
@@ -36,6 +37,17 @@
                                 class="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 h-12 w-full rounded-lg border border-gray-300 bg-transparent py-2.5 pr-4 pl-12 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30" />
                         </div>
 
+                    </div>
+
+                    {{-- Un código escaneado que no está en el catálogo se dice.
+                         Antes se agregaba el primero de la pantalla y el cajero
+                         cobraba otra cosa sin enterarse. --}}
+                    <div x-show="codigoNoEncontrado" x-cloak
+                        class="mt-3 flex items-center gap-2 rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700 dark:bg-error-500/10 dark:text-error-400">
+                        <span>No hay ningún producto con el código
+                            <strong x-text="codigoNoEncontrado"></strong>. Revisá que esté cargado en el catálogo.</span>
+                        <button type="button" @click="codigoNoEncontrado = ''"
+                            class="ml-auto text-theme-xs underline">Cerrar</button>
                     </div>
 
                     {{-- Los atajos dibujados como teclas: se leen de un vistazo,
@@ -689,6 +701,8 @@
                 function mostrador() {
                     return {
                         q: '',
+                        buscandoCodigo: false,
+                        codigoNoEncontrado: '',
                         categoria: '',
                         productos: [],
                         carrito: [],
@@ -805,17 +819,70 @@
                             }
                         },
 
-                        /* Con el lector, el código llega completo y termina en Enter. */
-                        porCodigo() {
-                            const exacto = this.productos.find(
-                                p => p.codigo_barras === this.q.trim() || p.codigo === this.q.trim()
-                            );
-                            const elegido = exacto ?? this.productos[0];
+                        /*
+                         * Con el lector, el código llega completo y termina en Enter.
+                         *
+                         * La búsqueda tiene 250 ms de espera antes de consultar al
+                         * servidor, y una pistola teclea el código entero en tres
+                         * milisegundos: cuando llega el Enter, la lista en pantalla
+                         * todavía es la anterior. Si acá se resolviera contra esa
+                         * lista, escanear un producto que no estuviera en ella
+                         * agregaría EL PRIMERO DE LA PANTALLA, en silencio, y el
+                         * cajero cobraría otra cosa. Con catorce productos no se
+                         * nota porque están todos en memoria; con un catálogo de
+                         * verdad —el servidor manda de a 24— pasaría a diario.
+                         *
+                         * Por eso primero se consulta y recién después se decide.
+                         * Cuesta un viaje al servidor por escaneo; cobrar mal cuesta
+                         * mucho más.
+                         */
+                        async porCodigo() {
+                            const texto = this.q.trim();
 
-                            if (elegido) {
+                            if (! texto || this.buscandoCodigo) {
+                                return;
+                            }
+
+                            this.buscandoCodigo = true;
+
+                            try {
+                                await this.cargar();
+
+                                /* Si mientras se consultaba llegó otro escaneo, esta
+                                   respuesta ya no corresponde: la manda la siguiente. */
+                                if (this.q.trim() !== texto) {
+                                    return;
+                                }
+
+                                const exacto = this.productos.find(
+                                    p => p.codigo_barras === texto || p.codigo === texto
+                                );
+
+                                /* Solo se cae en «el primero» cuando lo tecleado NO
+                                   parece un código: escribir «papaya» y pulsar Enter
+                                   sigue funcionando. Un código sin coincidencia exacta
+                                   se avisa, no se adivina.
+
+                                   La regla es estrecha a propósito: ocho dígitos o más
+                                   —un EAN-13 tiene trece, un UPC doce— o el formato del
+                                   código interno, «P-1001». Una primera versión aceptaba
+                                   cualquier cosa alfanumérica de seis o más y rompió la
+                                   búsqueda por nombre: «papaya» pasaba por código. */
+                                const pareceCodigo = /^\d{8,}$/.test(texto)
+                                    || /^[A-Za-z]{1,4}-\d+$/.test(texto);
+                                const elegido = exacto ?? (pareceCodigo ? null : this.productos[0]);
+
+                                if (! elegido) {
+                                    this.codigoNoEncontrado = texto;
+                                    return;
+                                }
+
+                                this.codigoNoEncontrado = '';
                                 this.agregar(elegido);
                                 this.q = '';
-                                this.cargar();
+                                await this.cargar();
+                            } finally {
+                                this.buscandoCodigo = false;
                             }
                         },
 

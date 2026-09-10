@@ -561,12 +561,15 @@ class PuntoDeVentaTest extends TestCase
     {
         $this->turno();
 
+        $conCodigo = Producto::activos()->whereNotNull('codigo_barras')->firstOrFail();
+
         $respuesta = $this->actingAs($this->cajero())
-            ->getJson('/pos/productos?q=7750001000011')
+            ->getJson('/pos/productos?q='.$conCodigo->codigo_barras)
             ->assertOk();
 
-        $this->assertSame('P-0001', $respuesta->json('0.codigo'));
-        $this->assertSame(4.5, $respuesta->json('0.precio_estante'));
+        $this->assertSame($conCodigo->codigo, $respuesta->json('0.codigo'),
+            'el código escaneado tiene que devolver SU producto, no uno parecido');
+        $this->assertSame($conCodigo->precio_estante, $respuesta->json('0.precio_estante'));
     }
 
     /** La venta completa por HTTP, tal como la envía el mostrador. */

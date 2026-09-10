@@ -154,18 +154,18 @@ INSERT INTO productos
      codigo, codigo_barras, nombre,
      precio_compra, precio_venta, stock_actual, stock_minimo) VALUES
     --                                                                    costo  base   stock min   -- estante c/imp.
-    (1, 2, NULL, NULL,      1, 'P-0001', '7750001000011', 'Arroz extra 1 kg',      3.20,  3.81,  120, 20),  --  4.50
-    (1, 3, NULL, NULL,      1, 'P-0002', '7750001000028', 'Aceite vegetal 1 L',    6.10,  6.95,   60, 12),  --  8.20
-    (1, 2, NULL, NULL,      1, 'P-0003', '7750001000035', 'Azúcar rubia 1 kg',     3.00,  3.56,   45, 15),  --  4.20
-    (1, 1,   24, 'Caja',    2, 'P-0004', '7750001000042', 'Leche evaporada 400 g', 2.80,  3.39,   90, 24),  --  4.00
-    (2, 3,   12, 'Caja',    2, 'P-0005', '7750001000059', 'Gaseosa 1.5 L',         4.00,  5.51,   75, 18),  --  6.50
-    (2, 3,   15, 'Paquete', 2, 'P-0006', '7750001000066', 'Agua mineral 625 ml',   0.90,  1.27,  150, 30),  --  1.50
-    (3, 2, NULL, NULL,      1, 'P-0007', '7750001000073', 'Detergente 1 kg',       7.50,  9.24,   40, 10),  -- 10.90
-    (3, 3, NULL, NULL,      1, 'P-0008', '7750001000080', 'Lejía 1 L',             2.20,  2.97,   35, 10),  --  3.50
-    (4, 1,   72, 'Caja',    2, 'P-0009', '7750001000097', 'Jabón de tocador',      1.60,  2.37,   80, 20),  --  2.80
-    (4, 1, NULL, NULL,      2, 'P-0010', '7750001000103', 'Papel higiénico x4',    4.20,  5.51,   55, 12),  --  6.50
-    (5, 1,   50, 'Caja',    2, 'P-0011', '7750001000110', 'Galletas surtidas',     0.70,  1.02,  200, 40),  --  1.20
-    (5, 1,   24, 'Caja',    2, 'P-0012', '7750001000127', 'Chocolate barra 40 g',  1.10,  2.12,  110, 25);  --  2.50
+    (1, 2, NULL, NULL,      1, 'P-0001', '7790001000019', 'Arroz extra 1 kg',      3.20,  3.81,  120, 20),  --  4.50
+    (1, 3, NULL, NULL,      1, 'P-0002', '7790001000026', 'Aceite vegetal 1 L',    6.10,  6.95,   60, 12),  --  8.20
+    (1, 2, NULL, NULL,      1, 'P-0003', '7790001000033', 'Azúcar rubia 1 kg',     3.00,  3.56,   45, 15),  --  4.20
+    (1, 1,   24, 'Caja',    2, 'P-0004', '7790001000040', 'Leche evaporada 400 g', 2.80,  3.39,   90, 24),  --  4.00
+    (2, 3,   12, 'Caja',    2, 'P-0005', '7790001000057', 'Gaseosa 1.5 L',         4.00,  5.51,   75, 18),  --  6.50
+    (2, 3,   15, 'Paquete', 2, 'P-0006', '7790001000064', 'Agua mineral 625 ml',   0.90,  1.27,  150, 30),  --  1.50
+    (3, 2, NULL, NULL,      1, 'P-0007', '7790001000071', 'Detergente 1 kg',       7.50,  9.24,   40, 10),  -- 10.90
+    (3, 3, NULL, NULL,      1, 'P-0008', '7790001000088', 'Lejía 1 L',             2.20,  2.97,   35, 10),  --  3.50
+    (4, 1,   72, 'Caja',    2, 'P-0009', '7790001000095', 'Jabón de tocador',      1.60,  2.37,   80, 20),  --  2.80
+    (4, 1, NULL, NULL,      2, 'P-0010', '7790001000101', 'Papel higiénico x4',    4.20,  5.51,   55, 12),  --  6.50
+    (5, 1,   50, 'Caja',    2, 'P-0011', '7790001000118', 'Galletas surtidas',     0.70,  1.02,  200, 40),  --  1.20
+    (5, 1,   24, 'Caja',    2, 'P-0012', '7790001000125', 'Chocolate barra 40 g',  1.10,  2.12,  110, 25);  --  2.50
 
 -- Verificación: esta consulta debe devolver el precio de estante redondo de cada producto.
 -- SELECT codigo, nombre, precio_venta,

@@ -166,8 +166,13 @@ class CatalogoTest extends TestCase
 
     public function test_no_se_repite_el_codigo_de_barras(): void
     {
+        // El código sale de la base y no escrito a mano: cuando los de la
+        // semilla cambiaron de prefijo, esta prueba se cayó sin que hubiera
+        // nada roto en el sistema.
+        $usado = Producto::whereNotNull('codigo_barras')->value('codigo_barras');
+
         $this->actingAs($this->admin())
-            ->post('/productos', $this->datosProducto(['codigo_barras' => '7750001000011']))
+            ->post('/productos', $this->datosProducto(['codigo_barras' => $usado]))
             ->assertSessionHasErrors('codigo_barras');
     }
 
