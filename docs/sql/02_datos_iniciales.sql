@@ -182,13 +182,11 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
     ('tasa_impuesto',       '0.1800',                'Tasa del impuesto a las ventas (IGV)'),
-    ('precio_incluye_impuesto', '0',                 '0 = el precio de venta NO incluye impuesto; se agrega al calcular el total'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
     ('serie_factura',       '1',                     'ID de serie F001 usada para facturas (persona jurídica)'),
-    ('serie_recibo',        '2',                     'ID de serie R001 usada para recibos (persona natural)'),
-    ('serie_nota_venta',    '3',                     'ID de serie NV01 usada para notas de venta internas');
+    ('serie_recibo',        '2',                     'ID de serie R001 usada para recibos (persona natural)');
 
 -- =============================================================================
 --  EJEMPLO A: VENTA A PERSONA NATURAL -> se emite RECIBO

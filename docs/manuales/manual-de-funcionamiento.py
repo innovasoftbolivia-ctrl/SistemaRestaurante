@@ -344,7 +344,7 @@ doc.add_heading('Paso 3 — Se elige el cliente', level=2)
 p('Hay tres caminos:')
 vineta('la venta sale a nombre del cliente genérico y emite recibo;', 'Sin identificar: ')
 vineta('emite recibo a su nombre;', 'Persona natural: ')
-vineta('emite factura, con su razón social, su RUC y su dirección fiscal.', 'Persona jurídica: ')
+vineta('emite factura, con su razón social, su NIT y su dirección fiscal.', 'Persona jurídica: ')
 p('El sistema elige el tipo de documento a partir del tipo de persona del cliente. El cajero no '
   'tiene que decidirlo.')
 
@@ -532,7 +532,7 @@ doc.add_heading('4.8 Clientes', level=2)
 p('El tipo de persona cambia qué campos son obligatorios, porque cambia qué documento se le puede '
   'emitir.')
 tabla(['Campo', 'Persona natural', 'Persona jurídica'],
-      [['Tipo de documento', 'DNI, CE o PAS', 'RUC, obligatoriamente'],
+      [['Tipo de documento', 'CI, CE o PAS', 'NIT, obligatoriamente'],
        ['Número de documento', 'Opcional', 'Obligatorio'],
        ['Nombres y apellidos', 'Obligatorios', 'No aplica'],
        ['Razón social', 'No aplica', 'Obligatoria'],

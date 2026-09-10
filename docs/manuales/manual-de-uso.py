@@ -340,7 +340,7 @@ p('Repite el ejercicio anterior, pero antes de cobrar despliega «Cliente» y el
   '«Pensión Doña Martha S.R.L.» o «Comedor Popular El Sabor Ltda.».')
 rico([('Qué comprobar: ', True),
       ('el comprobante ya no es un recibo sino una FACTURA, de la serie F001, y sale con el nombre '
-       'y el RUC del cliente. El sistema elige solo el tipo de documento según si el cliente es '
+       'y el NIT del cliente. El sistema elige solo el tipo de documento según si el cliente es '
        'persona o empresa: el cajero no tiene que acordarse.', False)])
 
 doc.add_heading('Ejercicio 5 — Imprimir el comprobante', level=2)
@@ -356,7 +356,7 @@ p('Caso real: cobraste, saliste con un recibo, y recién entonces el cliente te 
   'nombre de su empresa.')
 numerada('Abre una venta reciente que tenga recibo.')
 numerada('Pulsa «Sustituir comprobante».')
-numerada('Elige un cliente con RUC y escribe el motivo.')
+numerada('Elige un cliente con NIT y escribe el motivo.')
 rico([('Qué comprobar: ', True),
       ('se emite una factura nueva y el recibo anterior queda marcado como SUSTITUIDO. Los dos '
        'siguen visibles, encadenados, en el bloque «Documentos». Nada se borra: la corrección '
@@ -547,7 +547,7 @@ vineta('un comprobante se anula o se sustituye, y la cadena queda visible. Nunca
 vineta('el nombre y el precio quedan copiados en el documento. Cambiar el catálogo después no '
        'reescribe el pasado.',
        'Los precios se congelan. ')
-vineta('empresa con RUC recibe factura; persona natural recibe recibo. El sistema lo decide solo.',
+vineta('empresa con NIT recibe factura; persona natural recibe recibo. El sistema lo decide solo.',
        'El tipo de documento sale del cliente. ')
 vineta('cada serie lleva su propio correlativo, sin saltos.', 'La numeración es correlativa. ')
 
@@ -605,12 +605,12 @@ p('Las categorías Abarrotes y Cigarrillos están creadas pero vacías: sirven p
 
 doc.add_heading('6.2 Los clientes de prueba', level=2)
 tabla(['Cliente', 'Tipo', 'Documento', 'Recibe'],
-      [['Rosa Mamani Quispe', 'Persona', 'DNI 4821567', 'Recibo'],
-       ['Carlos Villarroel Soto', 'Persona', 'DNI 6193842', 'Recibo'],
-       ['Elena Choque Apaza', 'Persona', 'DNI 3745129', 'Recibo'],
-       ['Juan Ticona Flores', 'Persona', 'DNI 5028471', 'Recibo'],
-       ['Pensión Doña Martha S.R.L.', 'Empresa', 'RUC 1023456789', 'Factura'],
-       ['Comedor Popular El Sabor Ltda.', 'Empresa', 'RUC 1098765432', 'Factura']],
+      [['Rosa Mamani Quispe', 'Persona', 'CI 4821567', 'Recibo'],
+       ['Carlos Villarroel Soto', 'Persona', 'CI 6193842', 'Recibo'],
+       ['Elena Choque Apaza', 'Persona', 'CI 3745129', 'Recibo'],
+       ['Juan Ticona Flores', 'Persona', 'CI 5028471', 'Recibo'],
+       ['Pensión Doña Martha S.R.L.', 'Empresa', 'NIT 1023456789', 'Factura'],
+       ['Comedor Popular El Sabor Ltda.', 'Empresa', 'NIT 1098765432', 'Factura']],
       anchos=[6.2, 2.4, 3.9, 3.0])
 
 p('Quien no se identifica se cobra como «Cliente varios» y recibe recibo.', cursiva=True)
@@ -652,9 +652,6 @@ vineta('el nombre, el NIT, la dirección y el teléfono que salen en los comprob
 vineta('en esta demo la tasa está en 0 %, así que la columna «Impuesto» dice «exonerado». El '
        'cálculo está hecho y funciona: se activa poniendo la tasa que corresponda.',
        'El impuesto está en cero. ')
-vineta('el tipo de documento del cliente usa las categorías DNI y RUC. Para Bolivia corresponde '
-       'CI y NIT; es un cambio pequeño y pendiente.',
-       'Los documentos son genéricos. ')
 vineta('el nombre del negocio, la tasa de impuesto y el tope de descuento se guardan en la base '
        'de datos, pero todavía no hay una pantalla para editarlos desde el sistema.',
        'Falta la pantalla de configuración. ')
