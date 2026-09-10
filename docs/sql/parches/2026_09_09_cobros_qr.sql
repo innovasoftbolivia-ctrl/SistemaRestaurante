@@ -100,7 +100,14 @@ CREATE TABLE IF NOT EXISTS cobros_qr (
         (estado = 'PAGADO'  AND pagado_en IS NOT NULL AND confirmado_por IS NOT NULL)
      OR (estado <> 'PAGADO' AND pagado_en IS NULL)
     )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Sin CHARSET ni COLLATE: se heredan de la base, como TODAS las demás tablas.
+-- Declararlos acá fue un error que costó caro. La base se crea con
+-- utf8mb4_0900_ai_ci; esta tabla salía con utf8mb4_unicode_ci y quedaba
+-- descolgada del resto. Un procedimiento almacenado fija su colación al
+-- crearse, así que en una base con las dos mezcladas cualquier comparación
+-- dentro de un procedimiento revienta con «Illegal mix of collations» —y el
+-- error aparece al cobrar, no al aplicar el parche.
+) ENGINE=InnoDB;
 
 -- El medio de pago con el que se registra un cobro por QR. No afecta caja: el
 -- dinero cae en la cuenta del banco, no en el cajón, así que no entra al
