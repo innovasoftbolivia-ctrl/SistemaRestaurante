@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\IngresaPorEmpaque;
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Categoria;
 use App\Models\MovimientoInventario;
@@ -15,7 +16,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -32,7 +32,7 @@ use Illuminate\View\View;
  */
 class InventarioController extends Controller
 {
-    use OrdenaTablas;
+    use IngresaPorEmpaque, OrdenaTablas;
 
     /** Existencias: qué hay, qué falta y qué se puede hacer al respecto. */
     public function index(Request $request): View
@@ -142,44 +142,43 @@ class InventarioController extends Controller
     {
         $datos = $request->validate([
             'producto_id' => ['required', Rule::exists('productos', 'id')->where('activo', 1)],
-            'cantidad' => ['required', 'numeric', 'gt:0', 'max:999999'],
+            ...$this->reglasDeCantidad(),
             'proveedor_id' => ['nullable', Rule::exists('proveedores', 'id')],
             'documento_externo' => ['nullable', 'string', 'max:30'],
             'costo_unitario' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'motivo' => ['nullable', 'string', 'max:255'],
         ], [
-            'cantidad.gt' => 'La cantidad que ingresa debe ser mayor que cero.',
             'producto_id.exists' => 'Ese producto no existe o está descatalogado.',
         ], [
             'producto_id' => 'producto',
             'cantidad' => 'cantidad',
+            'empaques' => 'cantidad',
             'proveedor_id' => 'proveedor',
             'documento_externo' => 'guía o factura',
             'costo_unitario' => 'costo unitario',
         ]);
 
-        $producto = Producto::findOrFail($datos['producto_id']);
-        $this->verificarDecimales($producto, (float) $datos['cantidad'], 'cantidad');
+        $producto = Producto::with('unidadMedida')->findOrFail($datos['producto_id']);
+        ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
 
         $movimiento = Inventario::ingreso(
             producto: $producto,
-            cantidad: (float) $datos['cantidad'],
+            cantidad: $cantidad,
             proveedorId: $datos['proveedor_id'] ?? null,
             documentoExterno: $datos['documento_externo'] ?? null,
-            costoUnitario: isset($datos['costo_unitario']) ? (float) $datos['costo_unitario'] : null,
-            motivo: $datos['motivo'] ?? null,
+            costoUnitario: $this->costoPorUnidad($request, $producto),
+            motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
         );
 
         Auditor::registrar('INVENTARIO_INGRESO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,
-            'cantidad' => $datos['cantidad'],
+            'cantidad' => $cantidad,
+            'detalle' => $detalle,
             'stock_resultante' => $movimiento->stock_resultante,
         ]);
 
-        return back()->with(
-            'exito',
-            "Ingresaron {$datos['cantidad']} {$producto->unidadMedida?->codigo} de «{$producto->nombre}». Stock: {$movimiento->stock_resultante}."
-        );
+        return back()->with('exito', $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante));
     }
 
     /** Ajuste por conteo físico, con el producto elegido en la pantalla. */
@@ -198,8 +197,8 @@ class InventarioController extends Controller
             'motivo' => 'motivo',
         ]);
 
-        $producto = Producto::findOrFail($datos['producto_id']);
-        $this->verificarDecimales($producto, (float) $datos['stock_contado'], 'stock_contado');
+        $producto = Producto::with('unidadMedida')->findOrFail($datos['producto_id']);
+        $this->exigirCantidadEntera($producto, (float) $datos['stock_contado'], 'stock_contado');
 
         $movimiento = Inventario::ajuste($producto, (float) $datos['stock_contado'], $datos['motivo']);
 
@@ -223,23 +222,6 @@ class InventarioController extends Controller
     }
 
     // ------------------------------------------------------------- auxiliares
-
-    /**
-     * La unidad manda: no se ingresan 2,5 gaseosas.
-     *
-     * Mismo control que en {@see ProductoController}; se repite aquí porque
-     * esta pantalla no pasa por aquel formulario.
-     */
-    private function verificarDecimales(Producto $producto, float $cantidad, string $campo): void
-    {
-        $producto->loadMissing('unidadMedida');
-
-        if (! $producto->unidadMedida?->permite_decimal && fmod($cantidad, 1.0) !== 0.0) {
-            throw ValidationException::withMessages([
-                $campo => "La unidad «{$producto->unidadMedida?->nombre}» no admite cantidades con decimales.",
-            ]);
-        }
-    }
 
     /**
      * @return array<string, float|int>

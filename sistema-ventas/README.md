@@ -355,6 +355,35 @@ diferencia. Si el conteo coincide con el sistema, no se escribe ningún movimien
 La unidad de medida manda sobre la cantidad: si `permite_decimal` es falso, el sistema rechaza
 un ingreso de 2.5 unidades. Y ningún movimiento puede dejar el stock en negativo.
 
+### Comprar por caja y vender por unidad
+
+El negocio compra cajas de 24 y despacha gaseosas de a una. Eso no son dos unidades de stock:
+`stock_actual` se cuenta **siempre** en la unidad de venta, y el empaque es solo la equivalencia
+con la que se escribe la entrada. Lo definen dos columnas de `productos`, que van juntas o no van:
+
+| Columna | Ejemplo | Qué es |
+|---------|---------|--------|
+| `contenido_empaque` | `24` | Cuántas unidades de venta trae un empaque. NULL = el producto no viene en empaque |
+| `nombre_empaque` | `Caja` | Cómo se llama: caja, paquete, plancha, fardo |
+
+Con eso, la pantalla de ingreso deja de pedir un total y pide lo que se cuenta en el depósito:
+cuántas cajas enteras llegaron y cuántas unidades vinieron sueltas. La multiplicación la hace el
+sistema y la muestra antes de guardar. El caso que motivó todo esto es el de la caja incompleta:
+**3 cajas y 5 sueltas** entran como 77 unidades, sin calculadora.
+
+El desglose no se pierde al guardar. El kardex anota «3 cajas de 24 + 5 sueltas» junto al motivo,
+porque la factura del proveedor está expresada en cajas y el número solo no se puede contrastar
+con ella. Por el mismo motivo el costo se puede escribir **por caja**: el sistema divide entre el
+contenido y guarda siempre el costo por unidad, que es como lo lee el resto del sistema.
+
+Nada de esto llega al mostrador: el punto de venta sigue vendiendo y descontando en unidades de
+venta, sin enterarse de que el producto vino en caja. Un producto a granel —el arroz por kilo—
+deja las dos columnas en NULL y su pantalla de ingreso es la de siempre, con una sola casilla.
+
+La cuenta vive en un solo sitio (`App\Http\Controllers\Concerns\IngresaPorEmpaque`), que usan
+las tres puertas por las que entra stock: el alta del producto, la ficha y el almacén. Si se
+repitiera en cada una, un día el almacén cargaría distinto que la ficha.
+
 Nótese que gestionar el catálogo y mover stock son permisos distintos: el almacenero puede hacer
 ambas cosas, pero un rol podría crear productos sin poder tocar el inventario.
 

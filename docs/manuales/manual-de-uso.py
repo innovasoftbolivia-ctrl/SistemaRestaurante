@@ -393,6 +393,9 @@ p('Esta es la pantalla del depósito. Arriba, cuánto vale el inventario y cuán
   'bajo el mínimo o agotados. Abajo, cada producto con su stock y dos botones.')
 numerada('Pulsa «Solo lo que falta»: quedan a la vista los productos por reponer.')
 numerada('En cualquier fila, pulsa «Ingresar»: registra la mercadería que llegó, con cantidad, costo, proveedor y número de factura.')
+p('Si el producto viene en caja, ahí no te pide un total: te pide cuántas cajas llegaron y '
+  'cuántas unidades vinieron sueltas, y hace la multiplicación a la vista. Es el Ejercicio 9 ter.',
+  cursiva=True)
 numerada('En otra fila, pulsa «Ajustar»: escribe cuántas unidades contaste de verdad.')
 rico([('Qué comprobar en el ajuste: ', True),
       ('antes de guardar, el sistema te muestra la diferencia contra lo que él creía, y si sobra '
@@ -415,6 +418,34 @@ numerada('Escribe un código que ya exista, por ejemplo P-1002, completa el rest
 rico([('Qué comprobar: ', True),
       ('el sistema no te deja crear el duplicado, pero tampoco te deja a pie: te dice de qué '
        'producto es ese código y te ofrece un botón para ir a cargarle stock directamente.', False)])
+
+doc.add_heading('Ejercicio 9 ter — Compras por caja y vendes por unidad', level=2)
+p('Es lo más común del rubro: el proveedor te trae cajas de 24 y tú despachas de a una. El '
+  'sistema no te obliga a elegir. El stock se cuenta SIEMPRE en la unidad con la que vendes, y '
+  'la caja es solo la forma de escribir la entrada sin sacar la calculadora.')
+numerada('Ve a Productos → Nuevo producto.')
+numerada('Pon el nombre y la categoría. El código lo propone el sistema: está abajo, en «Más datos», y no hace falta que lo toques.')
+numerada('En «Cómo se vende y cómo se compra», elige la unidad con la que VENDES: Unidad.')
+numerada('Marca «Lo compro en caja, paquete o plancha» y escribe: Caja, 24.')
+rico([('Qué comprobar: ', True),
+      ('debajo aparece la frase completa —compras de a caja de 24 UND y vendes de a unidad— para '
+       'que no quede ninguna duda de qué eligió cada cosa.', False)])
+numerada('En «Stock inicial», a la derecha, ya no hay una casilla sino dos: cajas y sueltas.')
+numerada('Escribe 3 cajas y 5 sueltas, como cuando la última caja vino incompleta.')
+rico([('Qué comprobar: ', True),
+      ('el sistema te muestra 77 unidades ANTES de guardar. Ese es el número que entra al stock, '
+       'y es el que después descuenta el mostrador de a una.', False)])
+numerada('Guarda y mira la ficha del producto.')
+rico([('Qué comprobar: ', True),
+      ('el stock dice 77 y, debajo, «3 cajas y 5 sueltas». Y en el kardex el movimiento no anota '
+       'solo el 77: anota «3 cajas de 24 + 5 sueltas», que es como viene escrita la factura del '
+       'proveedor y lo único con lo que se puede contrastar el mes que viene.', False)])
+p('El precio de compra y el de venta se escriben siempre POR UNIDAD. Si lo que tienes delante es '
+  'el precio de la caja, al ingresar mercadería hay un selector al lado del costo que dice «por '
+  'unidad / por caja»: elige «por caja», escribe lo que costó la caja entera y el sistema divide.',
+  cursiva=True)
+p('Un producto a granel —el arroz por kilo— no marca esa casilla, y su pantalla de ingreso sigue '
+  'siendo la de siempre: una sola cantidad.', cursiva=True)
 
 doc.add_heading('Ejercicio 10 — Los reportes', level=2)
 rico([('Con ', False), ('admin', True), (' o ', False), ('almacen', True), (', ve a Reportes.', False)])
@@ -490,7 +521,7 @@ tabla(['Módulo', 'Para qué sirve'],
 
 doc.add_heading('4.5 Catálogo', level=2)
 tabla(['Módulo', 'Para qué sirve'],
-      [['Productos', 'El catálogo: código, código de barras, nombre, foto, categoría, unidad, proveedor, precio de compra, precio de venta y stock mínimo. Cada producto tiene su kardex.'],
+      [['Productos', 'El catálogo: código, código de barras, nombre, foto, categoría, unidad de venta, empaque en el que se compra, proveedor, precio de compra, precio de venta y stock mínimo. Cada producto tiene su kardex.'],
        ['Categorías', 'Cómo se agrupan los productos. Ordena el catálogo y el mostrador.'],
        ['Unidades de medida', 'Unidad, paquete, kilo, litro. Define si el producto admite decimales.'],
        ['Proveedores', 'A quién se le compra. Se usa al registrar ingresos de mercadería.']],

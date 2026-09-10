@@ -27,6 +27,12 @@
                     <div class="mt-3 flex flex-wrap gap-2">
                         <x-ui.estado estado="INDEFINIDO" :texto="$producto->categoria?->nombre" />
                         <x-ui.estado estado="PRACTICAS" :texto="$unidad?->etiqueta" />
+                        @if ($producto->tieneEmpaque())
+                            {{-- Solo se baja el nombre del empaque: el código de la
+                                 unidad es una sigla y en minúsculas se lee mal. --}}
+                            <x-ui.estado estado="PRACTICAS"
+                                :texto="'Llega en '.mb_strtolower($producto->nombre_empaque).' de '.$producto->contenido_empaque.' '.$unidad?->codigo" />
+                        @endif
                         <x-ui.estado :estado="$producto->activo ? 'ACTIVO' : 'CESADO'"
                             :texto="$producto->activo ? 'En catálogo' : 'Descatalogado'" />
                         @if ($producto->sin_stock)
@@ -61,9 +67,12 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
             @php
                 $cifras = [
+                    // El desglose gana a la línea del mínimo cuando existe: al
+                    // almacenero le sirve más «son 3 cajas y 5» que el mínimo,
+                    // que ya está avisado con el color y con la etiqueta.
                     ['Stock actual', Config::cantidad($producto->stock_actual).' '.$unidad?->codigo,
                         $producto->bajo_minimo ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90',
-                        'mínimo '.Config::cantidad($producto->stock_minimo)],
+                        $producto->stock_desglosado ?? 'mínimo '.Config::cantidad($producto->stock_minimo)],
                     // Sin impuesto el precio de estante y el de venta son el mismo
                     // numero: no tiene sentido anunciarlo como si fueran dos cosas.
                     [Config::tasaImpuesto() > 0 ? 'Precio de estante' : 'Precio de venta',
@@ -165,20 +174,32 @@
 
             {{-- Datos --}}
             <div class="space-y-6">
+                @php
+                    $filasDePrecio = Config::tasaImpuesto() > 0
+                        ? [
+                            'Precio de compra' => Config::importe($producto->precio_compra).' (sin impuesto)',
+                            'Precio de venta base' => Config::importe($producto->precio_venta).' (sin impuesto)',
+                            'Precio de estante' => Config::importe($producto->precio_estante),
+                        ]
+                        : [
+                            'Precio de compra' => Config::importe($producto->precio_compra),
+                            'Precio de venta' => Config::importe($producto->precio_venta),
+                            'Ganancia por unidad' => Config::importe($producto->margen)
+                                .($producto->margen_porcentaje !== null ? ' ('.$producto->margen_porcentaje.'% de margen)' : ''),
+                        ];
+
+                    // Todos los precios del sistema son por unidad de venta. El
+                    // de la caja se muestra calculado, y solo para poder
+                    // contrastarlo con la factura del proveedor de un vistazo.
+                    if ($producto->tieneEmpaque()) {
+                        $filasDePrecio['Costo por '.mb_strtolower($producto->nombre_empaque).' de '.$producto->contenido_empaque] =
+                            Config::importe((float) $producto->precio_compra * $producto->contenido_empaque);
+                    }
+                @endphp
+
                 <x-common.component-card title="Precios">
                     <dl class="space-y-4">
-                        @foreach (Config::tasaImpuesto() > 0
-        ? [
-            'Precio de compra' => Config::importe($producto->precio_compra).' (sin impuesto)',
-            'Precio de venta base' => Config::importe($producto->precio_venta).' (sin impuesto)',
-            'Precio de estante' => Config::importe($producto->precio_estante),
-        ]
-        : [
-            'Precio de compra' => Config::importe($producto->precio_compra),
-            'Precio de venta' => Config::importe($producto->precio_venta),
-            'Ganancia por unidad' => Config::importe($producto->margen)
-                .($producto->margen_porcentaje !== null ? ' ('.$producto->margen_porcentaje.'% de margen)' : ''),
-        ] as $etiqueta => $valor)
+                        @foreach ($filasDePrecio as $etiqueta => $valor)
                             <div>
                                 <dt class="mb-1 text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     {{ $etiqueta }}
@@ -242,23 +263,47 @@
                     <h2 id="titulo-modal-ingreso" class="mb-2 text-xl font-semibold text-gray-800 dark:text-white/90">Ingresar mercadería</h2>
                     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
                         Entrada de <b>{{ $producto->nombre }}</b>. Stock actual:
-                        {{ Config::cantidad($producto->stock_actual) }} {{ $unidad?->codigo }}.
+                        {{ Config::cantidad($producto->stock_actual) }} {{ $unidad?->codigo }}@if ($producto->stock_desglosado)
+                            ({{ $producto->stock_desglosado }})
+                        @endif.
                     </p>
 
                     <form method="POST" action="{{ route('productos.ingreso', $producto) }}" class="space-y-5">
                         @csrf
 
-                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                            <x-form.campo label="Cantidad que ingresa" for="cantidad" name="cantidad" required
-                                :help="$unidad?->permite_decimal ? 'Admite decimales.' : 'Solo números enteros.'">
-                                <x-form.input id="cantidad" name="cantidad" type="number" step="{{ $paso }}"
-                                    min="{{ $paso }}" required autofocus />
-                            </x-form.campo>
+                        <x-form.cantidad-empaque :help="$unidad?->permite_decimal ? 'Admite decimales.' : 'Solo números enteros.'"
+                            :hay-empaque="$producto->tieneEmpaque() ? 'true' : 'false'"
+                            :contenido="(int) $producto->contenido_empaque"
+                            :empaque="json_encode(mb_strtolower($producto->nombre_empaque ?? ''))"
+                            :unidad="json_encode($unidad?->codigo ?? '')" :paso="$paso" />
 
-                            <x-form.campo label="Costo unitario" for="costo_unitario" name="costo_unitario"
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <x-form.campo :label="$producto->tieneEmpaque() ? 'Costo' : 'Costo unitario'"
+                                for="costo_unitario" name="costo_unitario"
+                                :class="$producto->tieneEmpaque() ? 'sm:col-span-2' : ''"
                                 help="Opcional. Lo que costó esta compra, sin impuesto.">
-                                <x-form.input id="costo_unitario" name="costo_unitario" type="number" step="0.01"
-                                    min="0" :value="$producto->precio_compra" />
+                                {{-- El ancho va en un envoltorio y no en el propio
+                                     control: los componentes de formulario traen
+                                     `w-full`, y una clase de ancho puesta encima
+                                     pierde por orden de la hoja de estilos. --}}
+                                <div class="flex gap-2">
+                                    <div class="min-w-0 flex-1">
+                                        <x-form.input id="costo_unitario" name="costo_unitario" type="number"
+                                            step="0.01" min="0" :value="$producto->precio_compra" />
+                                    </div>
+
+                                    {{-- La factura del proveedor viene por caja, no por
+                                         unidad. Se acepta como está y la división la hace
+                                         el sistema. --}}
+                                    @if ($producto->tieneEmpaque())
+                                        <div class="w-36 shrink-0">
+                                            <x-form.select name="costo_por" :opciones="[
+                                                'UNIDAD' => 'por '.mb_strtolower($unidad?->nombre ?? 'unidad'),
+                                                'EMPAQUE' => 'por '.mb_strtolower($producto->nombre_empaque),
+                                            ]" />
+                                        </div>
+                                    @endif
+                                </div>
                             </x-form.campo>
 
                             <x-form.campo label="Proveedor" for="ingreso_proveedor" name="proveedor_id">
@@ -272,11 +317,11 @@
                                 <x-form.input id="documento_externo" name="documento_externo"
                                     placeholder="F001-00123" />
                             </x-form.campo>
-                        </div>
 
-                        <x-form.campo label="Observación" for="ingreso_motivo" name="motivo">
-                            <x-form.input id="ingreso_motivo" name="motivo" placeholder="Opcional" />
-                        </x-form.campo>
+                            <x-form.campo label="Observación" for="ingreso_motivo" name="motivo">
+                                <x-form.input id="ingreso_motivo" name="motivo" placeholder="Opcional" />
+                            </x-form.campo>
+                        </div>
 
                         <div class="flex justify-end gap-3">
                             <x-ui.button type="button" variant="outline" size="sm" @click="ingresando = false">Cancelar</x-ui.button>

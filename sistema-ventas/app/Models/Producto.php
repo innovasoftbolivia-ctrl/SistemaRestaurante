@@ -21,6 +21,14 @@ use Illuminate\Support\Facades\Storage;
  * Sobre el stock: `stock_actual` NO se edita a mano. Cambia solo a través de
  * {@see Inventario}, que deja siempre un movimiento con su
  * responsable y su motivo.
+ *
+ * Sobre el empaque: el negocio compra por caja y vende por unidad. La regla
+ * que ordena todo el modelo es que el stock, el precio y cada movimiento se
+ * cuentan SIEMPRE en la unidad de venta (`unidad_medida_id`). El empaque
+ * —`contenido_empaque` unidades dentro de un `nombre_empaque`— no es una
+ * segunda unidad de stock: es solo la equivalencia que deja escribir «3 cajas
+ * y 5 sueltas» en vez de hacer la multiplicación de cabeza. Los dos campos van
+ * juntos o no van: un producto a granel los tiene en NULL.
  */
 class Producto extends Model
 {
@@ -32,6 +40,7 @@ class Producto extends Model
 
     protected $fillable = [
         'categoria_id', 'unidad_medida_id', 'proveedor_id',
+        'contenido_empaque', 'nombre_empaque',
         'codigo', 'codigo_barras', 'nombre', 'descripcion',
         'precio_compra', 'precio_venta', 'afecto_impuesto',
         'stock_minimo', 'imagen', 'activo',
@@ -44,6 +53,7 @@ class Producto extends Model
             'precio_venta' => 'decimal:2',
             'stock_actual' => 'decimal:3',
             'stock_minimo' => 'decimal:3',
+            'contenido_empaque' => 'integer',
             'afecto_impuesto' => 'boolean',
             'activo' => 'boolean',
         ];
@@ -117,6 +127,115 @@ class Producto extends Model
             ->whereColumn('p.stock_actual', '<=', 'p.stock_minimo')
             ->selectRaw('p.id, p.codigo, p.nombre, c.nombre AS categoria')
             ->selectRaw('p.stock_actual, p.stock_minimo, (p.stock_minimo - p.stock_actual) AS faltante');
+    }
+
+    // --------------------------------------------------------------- empaque
+
+    /** ¿Llega del proveedor dentro de un empaque con varias unidades? */
+    public function tieneEmpaque(): bool
+    {
+        return $this->contenido_empaque !== null && $this->contenido_empaque > 1 && filled($this->nombre_empaque);
+    }
+
+    /** «Caja de 24 UND», para decir de una vez de qué empaque se habla. */
+    public function getEtiquetaEmpaqueAttribute(): ?string
+    {
+        if (! $this->tieneEmpaque()) {
+            return null;
+        }
+
+        return "{$this->nombre_empaque} de {$this->contenido_empaque} ".($this->unidadMedida?->codigo ?? '');
+    }
+
+    /** El nombre del empaque en plural: «cajas», «planchas», «cartones». */
+    public function getEmpaquePluralAttribute(): ?string
+    {
+        return $this->tieneEmpaque() ? self::pluralizar($this->nombre_empaque) : null;
+    }
+
+    /**
+     * Cuántas unidades de venta suman N empaques más M sueltas.
+     *
+     * Es la única cuenta que hace falta para el ingreso por caja, y vive aquí
+     * —y no en cada controlador— para que las dos pantallas que ingresan
+     * mercadería no puedan discrepar.
+     */
+    public function unidadesDe(float $empaques, float $sueltas = 0): float
+    {
+        return round($empaques * (int) $this->contenido_empaque + $sueltas, 3);
+    }
+
+    /**
+     * Cómo se dice una cantidad en el almacén: 77 unidades de un producto que
+     * viene en cajas de 24 son «3 cajas y 5 sueltas».
+     *
+     * Devuelve null si el producto no viene en empaque o si no llega ni a un
+     * empaque completo: ahí el número suelto ya se entiende solo, y añadir
+     * «0 cajas y 5 sueltas» sería ruido.
+     */
+    public function desglosar(int|float|string|null $cantidad): ?string
+    {
+        if (! $this->tieneEmpaque()) {
+            return null;
+        }
+
+        $cantidad = (float) $cantidad;
+        $enteros = (int) floor($cantidad / $this->contenido_empaque);
+
+        if ($enteros < 1) {
+            return null;
+        }
+
+        $sueltas = round($cantidad - $enteros * $this->contenido_empaque, 3);
+        $texto = $enteros.' '.($enteros === 1 ? mb_strtolower($this->nombre_empaque) : $this->empaque_plural);
+
+        return $sueltas > 0
+            ? $texto.' y '.Config::cantidad($sueltas).' '.($sueltas === 1.0 ? 'suelta' : 'sueltas')
+            : $texto;
+    }
+
+    /** El desglose del stock que hay ahora mismo. */
+    public function getStockDesglosadoAttribute(): ?string
+    {
+        return $this->desglosar($this->stock_actual);
+    }
+
+    /**
+     * Plural del nombre del empaque.
+     *
+     * El campo es texto libre —cada rubro llama distinto a su empaque— así que
+     * no alcanza con pegarle una «s». Se aplican las reglas del castellano que
+     * hacen falta de verdad para estas palabras: vocal + s (caja→cajas),
+     * z → ces (haz→haces), aguda acabada en -ón/-ín/-án que pierde la tilde
+     * (cartón→cartones), y consonante + es (pack→packs queda como excepción
+     * porque es un préstamo y «packes» no lo diría nadie).
+     */
+    private static function pluralizar(string $palabra): string
+    {
+        $palabra = mb_strtolower(trim($palabra));
+
+        if ($palabra === '') {
+            return $palabra;
+        }
+
+        // Préstamos del inglés de uso corriente en el rubro: plural con «s».
+        if (preg_match('/(pack|display|blister|six)$/u', $palabra)) {
+            return $palabra.'s';
+        }
+
+        if (preg_match('/[aeiou]$/u', $palabra)) {
+            return $palabra.'s';
+        }
+
+        if (str_ends_with($palabra, 'z')) {
+            return mb_substr($palabra, 0, -1).'ces';
+        }
+
+        // Aguda terminada en -ón, -ín, -án…: al alargarse deja de necesitar la
+        // tilde, porque el acento ya no cae en la última sílaba.
+        $sinTilde = strtr(mb_substr($palabra, -2), ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+
+        return mb_substr($palabra, 0, -2).$sinTilde.'es';
     }
 
     // ------------------------------------------------------------- derivados

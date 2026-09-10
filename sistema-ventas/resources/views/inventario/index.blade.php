@@ -11,7 +11,13 @@
     <div class="space-y-6" x-data="{
         ingresando: false,
         ajustando: false,
-        sel: { id: null, nombre: '', codigo: '', stock: 0, unidad: '', paso: 1, proveedor: '', compra: 0 },
+        sel: {
+            id: null, nombre: '', codigo: '', stock: 0, unidad: '', unidadNombre: '', paso: 1,
+            proveedor: '', compra: 0,
+            /* Empaque: `contenido` en 0 significa «este producto no viene en
+               caja», y es lo que decide qué casillas muestra el modal. */
+            contenido: 0, empaque: '', desglose: null,
+        },
         abrir(modal, producto) {
             this.sel = producto;
             this[modal] = true;
@@ -113,9 +119,13 @@
                                     'codigo' => $producto->codigo,
                                     'stock' => (float) $producto->stock_actual,
                                     'unidad' => $unidad?->codigo,
+                                    'unidadNombre' => mb_strtolower($unidad?->nombre ?? 'unidad'),
                                     'paso' => $unidad?->permite_decimal ? 0.001 : 1,
                                     'proveedor' => $producto->proveedor_id,
                                     'compra' => (float) $producto->precio_compra,
+                                    'contenido' => (int) $producto->contenido_empaque,
+                                    'empaque' => mb_strtolower($producto->nombre_empaque ?? ''),
+                                    'desglose' => $producto->stock_desglosado,
                                 ];
                             @endphp
 
@@ -153,6 +163,12 @@
                                         <span class="block text-theme-xs text-error-600 dark:text-error-400">agotado</span>
                                     @elseif ($producto->bajo_minimo)
                                         <span class="block text-theme-xs text-warning-700 dark:text-orange-400">bajo el mínimo</span>
+                                    @elseif ($producto->stock_desglosado)
+                                        {{-- Cuántas cajas es eso: el número que se puede
+                                             contrastar mirando el depósito. --}}
+                                        <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                            {{ $producto->stock_desglosado }}
+                                        </span>
                                     @endif
                                 </td>
 
@@ -281,23 +297,43 @@
                     </h2>
                     <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
                         Entrada de <b x-text="sel.nombre"></b>. Stock actual:
-                        <span x-text="sel.stock"></span> <span x-text="sel.unidad"></span>.
+                        <span x-text="sel.stock"></span> <span x-text="sel.unidad"></span><span
+                            x-show="sel.desglose" x-cloak> (<span x-text="sel.desglose"></span>)</span>.
                     </p>
 
                     <form method="POST" action="{{ route('inventario.ingreso') }}" class="space-y-5">
                         @csrf
                         <input type="hidden" name="producto_id" :value="sel.id" />
 
-                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                            <x-form.campo label="Cantidad que ingresa" for="ing_cantidad" name="cantidad" required>
-                                <x-form.input id="ing_cantidad" name="cantidad" type="number" required
-                                    x-bind:step="sel.paso" x-bind:min="sel.paso" />
-                            </x-form.campo>
+                        {{-- Las expresiones apuntan a `sel`, que es el producto de la
+                             fila desde la que se abrió el modal: el mismo formulario
+                             sirve para uno que viene en cajas y para uno a granel. --}}
+                        <x-form.cantidad-empaque prefijo="ing_" hay-empaque="sel.contenido > 0"
+                            contenido="sel.contenido" empaque="sel.empaque" unidad="sel.unidad"
+                            paso="sel.paso" />
 
-                            <x-form.campo label="Costo unitario" for="ing_costo" name="costo_unitario"
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <x-form.campo label="Costo" for="ing_costo" name="costo_unitario" class="sm:col-span-2"
                                 help="Opcional. Lo que costó esta compra, sin impuesto.">
-                                <x-form.input id="ing_costo" name="costo_unitario" type="number" step="0.01"
-                                    min="0" x-bind:value="sel.compra" />
+                                {{-- El ancho va en un envoltorio y no en el propio
+                                     control: los componentes de formulario traen
+                                     `w-full`, y una clase de ancho puesta encima
+                                     pierde por orden de la hoja de estilos. --}}
+                                <div class="flex gap-2">
+                                    <div class="min-w-0 flex-1">
+                                        <x-form.input id="ing_costo" name="costo_unitario" type="number"
+                                            step="0.01" min="0" x-bind:value="sel.compra" />
+                                    </div>
+
+                                    {{-- La factura del proveedor está en cajas. Se acepta
+                                         así y el sistema divide. --}}
+                                    <div class="w-36 shrink-0" x-show="sel.contenido > 0" x-cloak>
+                                        <x-form.select name="costo_por">
+                                            <option value="UNIDAD" x-text="'por ' + sel.unidadNombre"></option>
+                                            <option value="EMPAQUE" x-text="'por ' + sel.empaque"></option>
+                                        </x-form.select>
+                                    </div>
+                                </div>
                             </x-form.campo>
 
                             <x-form.campo label="Proveedor" for="ing_proveedor" name="proveedor_id">
@@ -309,11 +345,11 @@
                                 help="El documento con el que llegó la mercadería.">
                                 <x-form.input id="ing_documento" name="documento_externo" placeholder="F001-00123" />
                             </x-form.campo>
-                        </div>
 
-                        <x-form.campo label="Observación" for="ing_motivo" name="motivo">
-                            <x-form.input id="ing_motivo" name="motivo" placeholder="Opcional" />
-                        </x-form.campo>
+                            <x-form.campo label="Observación" for="ing_motivo" name="motivo">
+                                <x-form.input id="ing_motivo" name="motivo" placeholder="Opcional" />
+                            </x-form.campo>
+                        </div>
 
                         <div class="flex justify-end gap-3">
                             <x-ui.button type="button" variant="outline" size="sm"

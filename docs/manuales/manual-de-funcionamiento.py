@@ -550,7 +550,8 @@ tabla(['Campo', 'Regla'],
       [['Código interno', 'Obligatorio y único. Letras, números, punto, guion y guion bajo.'],
        ['Código de barras', 'Opcional y único. Solo dígitos.'],
        ['Nombre', 'Obligatorio, hasta 120 caracteres.'],
-       ['Categoría y unidad de medida', 'Obligatorias.'],
+       ['Categoría y unidad de venta', 'Obligatorias. La unidad de venta es en la que se cuenta el stock.'],
+       ['Empaque de compra', 'Opcional. Nombre («Caja») y cuántas unidades trae («24»), mínimo 2. Van juntos o no van.'],
        ['Proveedor', 'Opcional.'],
        ['Precio de compra y de venta', 'Obligatorios. Se guardan SIN impuesto.'],
        ['Afecto a impuesto', 'Define si al precio se le suma la tasa vigente.'],
@@ -576,6 +577,20 @@ tabla(['Movimiento', 'Origen', 'Efecto', 'Quién'],
 p('El ingreso de mercadería pide cantidad y, opcionalmente, proveedor, número de guía o factura y '
   'costo unitario. El ajuste pide el stock realmente contado y un motivo obligatorio: el sistema '
   'calcula solo la diferencia.')
+
+doc.add_heading('Cuando se compra por caja y se vende por unidad', level=3)
+p('Un producto con empaque declarado no pide un total al ingresar: pide cuántos empaques enteros '
+  'llegaron y cuántas unidades vinieron sueltas. El sistema multiplica, muestra el resultado antes '
+  'de guardar y suma ese número al stock.')
+aviso('El stock no se cuenta en cajas:',
+      'se cuenta siempre en la unidad de venta. El empaque es una equivalencia de entrada, no una '
+      'segunda unidad de stock. Por eso el mostrador puede seguir despachando una unidad suelta de '
+      'un producto que llegó por caja, y los reportes, las alertas de mínimo y el kardex siguen '
+      'hablando el mismo idioma que antes.')
+p('El desglose se guarda junto al motivo del movimiento —«3 cajas de 24 + 5 sueltas»— porque la '
+  'factura del proveedor viene expresada en cajas, y un «77» pelado no se puede contrastar con '
+  'ella. Por lo mismo, el costo se puede escribir por caja: el sistema lo divide entre el '
+  'contenido y guarda siempre el costo por unidad.')
 
 doc.add_heading('El kardex', level=3)
 p('Cada producto lleva su historia completa: fecha, tipo de movimiento, origen, cantidad, stock '

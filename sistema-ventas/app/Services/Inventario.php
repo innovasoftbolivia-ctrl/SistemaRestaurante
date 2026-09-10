@@ -21,15 +21,21 @@ class Inventario
     /** Reintentos ante un deadlock; mismo criterio que `Ventas::REINTENTOS`. */
     private const REINTENTOS = 3;
 
-    /** Carga inicial de stock al dar de alta el producto. */
-    public static function cargaInicial(Producto $producto, float $cantidad): ?MovimientoInventario
+    /**
+     * Carga inicial de stock al dar de alta el producto.
+     *
+     * `$detalle` es cómo se contó esa carga cuando se hizo por empaques —«5
+     * cajas de 24»—. Se guarda junto al motivo porque el número solo no
+     * permite después contrastar el alta con lo que había físicamente.
+     */
+    public static function cargaInicial(Producto $producto, float $cantidad, ?string $detalle = null): ?MovimientoInventario
     {
         if ($cantidad <= 0) {
             return null;
         }
 
         return self::mover($producto, $cantidad, 'ENTRADA', 'INICIAL', [
-            'motivo' => 'Carga inicial de inventario',
+            'motivo' => 'Carga inicial de inventario'.($detalle ? " ({$detalle})" : ''),
             'costo_unitario' => (float) $producto->precio_compra,
         ]);
     }

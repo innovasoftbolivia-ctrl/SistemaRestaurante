@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\IngresaPorEmpaque;
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Categoria;
 use App\Models\Producto;
@@ -14,12 +15,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ProductoController extends Controller
 {
-    use OrdenaTablas;
+    use IngresaPorEmpaque, OrdenaTablas;
 
     public function index(Request $request): View
     {
@@ -83,19 +83,34 @@ class ProductoController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $datos = $this->validar($request);
-        $stockInicial = (float) $request->input('stock_inicial', 0);
+
+        $request->validate([
+            ...$this->reglasDeCantidad(),
+            'stock_inicial' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+        ], [], ['stock_inicial' => 'stock inicial', 'empaques' => 'stock inicial']);
 
         if ($request->hasFile('imagen')) {
             $datos['imagen'] = $request->file('imagen')->store('productos', 'public');
         }
 
-        $producto = DB::transaction(function () use ($datos, $stockInicial) {
+        [$producto, $stockInicial, $detalle] = DB::transaction(function () use ($request, $datos) {
             $producto = Producto::create($datos);
 
-            // El stock nunca se escribe directo: entra por el kardex.
-            Inventario::cargaInicial($producto, $stockInicial);
+            // La cuenta de cajas necesita la unidad de venta, y se acaba de
+            // crear: sin cargarla, `unidadesQueIngresan()` no sabría si esta
+            // unidad admite decimales.
+            $producto->load('unidadMedida');
 
-            return $producto;
+            // A diferencia de un ingreso, aquí un cero es una respuesta
+            // legítima: se da de alta el producto y la mercadería llega mañana.
+            ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan(
+                $request, $producto, campo: 'stock_inicial', obligatoria: false,
+            );
+
+            // El stock nunca se escribe directo: entra por el kardex.
+            Inventario::cargaInicial($producto, $cantidad, $detalle);
+
+            return [$producto, $cantidad, $detalle];
         });
 
         Auditor::registrar('PRODUCTO_CREADO', 'productos', $producto->id, [
@@ -103,6 +118,7 @@ class ProductoController extends Controller
             'nombre' => $producto->nombre,
             'precio_venta' => $producto->precio_venta,
             'stock_inicial' => $stockInicial,
+            'detalle' => $detalle,
         ]);
 
         return redirect()->route('productos.show', $producto)
@@ -195,38 +211,39 @@ class ProductoController extends Controller
     public function ingresar(Request $request, Producto $producto): RedirectResponse
     {
         $datos = $request->validate([
-            'cantidad' => ['required', 'numeric', 'gt:0', 'max:999999'],
+            ...$this->reglasDeCantidad(),
             'proveedor_id' => ['nullable', Rule::exists('proveedores', 'id')],
             'documento_externo' => ['nullable', 'string', 'max:30'],
             'costo_unitario' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'motivo' => ['nullable', 'string', 'max:255'],
-        ], [
-            'cantidad.gt' => 'La cantidad que ingresa debe ser mayor que cero.',
-        ], [
+        ], [], [
             'cantidad' => 'cantidad',
+            'empaques' => 'cantidad',
             'proveedor_id' => 'proveedor',
             'documento_externo' => 'guía o factura',
             'costo_unitario' => 'costo unitario',
         ]);
 
-        $this->verificarDecimales($producto, (float) $datos['cantidad'], 'cantidad');
+        ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
 
         $movimiento = Inventario::ingreso(
             producto: $producto,
-            cantidad: (float) $datos['cantidad'],
+            cantidad: $cantidad,
             proveedorId: $datos['proveedor_id'] ?? null,
             documentoExterno: $datos['documento_externo'] ?? null,
-            costoUnitario: isset($datos['costo_unitario']) ? (float) $datos['costo_unitario'] : null,
-            motivo: $datos['motivo'] ?? null,
+            costoUnitario: $this->costoPorUnidad($request, $producto),
+            motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
         );
 
         Auditor::registrar('INVENTARIO_INGRESO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,
-            'cantidad' => $datos['cantidad'],
+            'cantidad' => $cantidad,
+            'detalle' => $detalle,
             'stock_resultante' => $movimiento->stock_resultante,
         ]);
 
-        return back()->with('exito', "Ingresaron {$datos['cantidad']} {$producto->unidadMedida?->codigo} de «{$producto->nombre}». Stock: {$movimiento->stock_resultante}.");
+        return back()->with('exito', $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante));
     }
 
     /** Ajuste por conteo físico. */
@@ -242,7 +259,7 @@ class ProductoController extends Controller
             'motivo' => 'motivo',
         ]);
 
-        $this->verificarDecimales($producto, (float) $datos['stock_contado'], 'stock_contado');
+        $this->exigirCantidadEntera($producto, (float) $datos['stock_contado'], 'stock_contado');
 
         $movimiento = Inventario::ajuste($producto, (float) $datos['stock_contado'], $datos['motivo']);
 
@@ -291,18 +308,6 @@ class ProductoController extends Controller
         return $datos;
     }
 
-    /** Una unidad que no admite decimales no puede tener medio artículo. */
-    private function verificarDecimales(Producto $producto, float $cantidad, string $campo): void
-    {
-        $producto->loadMissing('unidadMedida');
-
-        if (! $producto->unidadMedida?->permite_decimal && fmod($cantidad, 1.0) !== 0.0) {
-            throw ValidationException::withMessages([
-                $campo => "La unidad «{$producto->unidadMedida?->nombre}» no admite cantidades con decimales.",
-            ]);
-        }
-    }
-
     /**
      * Cifras de cabecera del catálogo.
      *
@@ -345,10 +350,19 @@ class ProductoController extends Controller
     /** @return array<string, mixed> */
     private function opciones(): array
     {
+        $unidades = UnidadMedida::orderBy('codigo')->get();
+
         return [
             'categorias' => Categoria::activas()->orderBy('nombre')->pluck('nombre', 'id'),
-            'unidades' => UnidadMedida::orderBy('codigo')->get()
-                ->mapWithKeys(fn (UnidadMedida $u) => [$u->id => $u->etiqueta]),
+            'unidades' => $unidades->mapWithKeys(fn (UnidadMedida $u) => [$u->id => $u->etiqueta]),
+            // El formulario necesita algo más que la etiqueta: con la unidad
+            // elegida arma en vivo la frase «compras 1 caja de 24 UND y vendes
+            // de a 1 UND», y decide si el stock inicial admite decimales.
+            'unidadesInfo' => $unidades->mapWithKeys(fn (UnidadMedida $u) => [$u->id => [
+                'codigo' => $u->codigo,
+                'nombre' => mb_strtolower($u->nombre),
+                'decimal' => (bool) $u->permite_decimal,
+            ]]),
             'proveedores' => Proveedor::activos()->orderBy('razon_social')->pluck('razon_social', 'id'),
         ];
     }
@@ -377,6 +391,19 @@ class ProductoController extends Controller
             'categoria_id' => ['required', Rule::exists('categorias', 'id')],
             'unidad_medida_id' => ['required', Rule::exists('unidades_medida', 'id')],
             'proveedor_id' => ['nullable', Rule::exists('proveedores', 'id')],
+            // El empaque es opcional, pero a medias no vale: si se marca que
+            // el producto viene en caja hay que decir cómo se llama y cuántas
+            // unidades trae, que es lo único que hace útil el dato.
+            //
+            // `exclude_unless` y no `nullable`: los dos campos siguen en la
+            // página cuando la casilla se desmarca —solo se ocultan— y el
+            // navegador los envía igual, con lo que hubiera escrito antes de
+            // cambiar de idea. Sin excluirlos, un «Caja / 1» abandonado hacía
+            // fallar `min:2` y ya no se podía guardar un producto a granel.
+            // Excluidos, la casilla manda y esos restos ni se miran.
+            'viene_en_empaque' => ['boolean'],
+            'nombre_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'string', 'min:2', 'max:20'],
+            'contenido_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'integer', 'min:2', 'max:65535'],
             'codigo' => [
                 'required', 'string', 'max:30', 'regex:/^[A-Za-z0-9._-]+$/',
                 Rule::unique('productos', 'codigo')->ignore($producto?->id),
@@ -405,6 +432,9 @@ class ProductoController extends Controller
                 ? "Ese código de barras ya es de «{$choque->nombre}».".$sugerencia
                 : 'Ese código de barras ya está asignado a otro producto.',
             'codigo_barras.regex' => 'El código de barras solo admite dígitos.',
+            'nombre_empaque.required' => 'Ponle nombre al empaque: caja, paquete, plancha…',
+            'contenido_empaque.required' => 'Falta decir cuántas unidades trae el empaque.',
+            'contenido_empaque.min' => 'Un empaque de una sola unidad no ahorra ninguna cuenta. Si el producto no viene en caja, desmarca la casilla.',
             'imagen.image' => 'La foto debe ser una imagen.',
             'imagen.mimes' => 'La foto tiene que ser JPG, PNG o WEBP.',
             'imagen.max' => 'La foto no puede pesar más de 2 MB.',
@@ -412,6 +442,8 @@ class ProductoController extends Controller
             'categoria_id' => 'categoría',
             'unidad_medida_id' => 'unidad de medida',
             'proveedor_id' => 'proveedor',
+            'nombre_empaque' => 'nombre del empaque',
+            'contenido_empaque' => 'contenido del empaque',
             'codigo' => 'código',
             'codigo_barras' => 'código de barras',
             'precio_compra' => 'precio de compra',
@@ -424,6 +456,18 @@ class ProductoController extends Controller
         // La foto no se asigna en masa: el archivo se guarda aparte y lo que
         // llega aquí es el `UploadedFile`, no la ruta.
         unset($datos['imagen'], $datos['quitar_imagen']);
+
+        // La casilla decide, no los campos: si se desmarca «viene en empaque»,
+        // el contenido y el nombre se guardan en NULL. Si no, un producto que
+        // dejó de venir en caja seguiría ofreciendo la casilla de cajas al
+        // ingresar mercadería. Con la casilla desmarcada las dos claves ni
+        // llegan hasta aquí, porque las excluyó la validación.
+        $enEmpaque = $request->boolean('viene_en_empaque') && isset($datos['contenido_empaque']);
+
+        $datos['contenido_empaque'] = $enEmpaque ? (int) $datos['contenido_empaque'] : null;
+        $datos['nombre_empaque'] = $enEmpaque ? trim((string) $datos['nombre_empaque']) : null;
+
+        unset($datos['viene_en_empaque']);
 
         return $datos;
     }

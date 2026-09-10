@@ -302,6 +302,8 @@ referencias polimórficas ni claves foráneas implícitas.
 | `id` | INT UNSIGNED PK | No | Identificador |
 | `categoria_id` | SMALLINT FK | No | Categoría a la que pertenece |
 | `unidad_medida_id` | TINYINT FK | No | Unidad de venta (UND, KG, LT…) |
+| `contenido_empaque` | SMALLINT | Sí | Unidades de venta que trae un empaque (24). NULL = no viene en empaque |
+| `nombre_empaque` | VARCHAR(20) | Sí | Cómo se llama ese empaque: Caja, Paquete, Plancha |
 | `proveedor_id` | INT FK | Sí | Proveedor habitual |
 | `codigo` | VARCHAR(30) UQ | No | Código interno / SKU |
 | `codigo_barras` | VARCHAR(50) UQ | Sí | Código de barras para el lector |
