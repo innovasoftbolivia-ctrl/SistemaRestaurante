@@ -38,7 +38,7 @@ CREATE TABLE cargos (
 CREATE TABLE empleados (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     cargo_id            TINYINT UNSIGNED NOT NULL,
-    tipo_documento      ENUM('DNI','CE','PAS') NOT NULL DEFAULT 'DNI',
+    tipo_documento      ENUM('CI','CE','PAS') NOT NULL DEFAULT 'CI',
     documento           VARCHAR(20)  NOT NULL,
     nombres             VARCHAR(60)  NOT NULL,
     apellidos           VARCHAR(60)  NOT NULL,
@@ -194,14 +194,14 @@ CREATE TABLE productos (
 -- =============================================================================
 
 -- Un solo maestro de clientes con discriminador `tipo_persona`:
---   NATURAL  -> se identifica con nombres + apellidos y DNI/CE/PAS. Se le emite RECIBO.
---   JURIDICA -> se identifica con razón social y RUC. Se le emite FACTURA.
+--   NATURAL  -> se identifica con nombres + apellidos y CI/CE/PAS. Se le emite RECIBO.
+--   JURIDICA -> se identifica con razón social y NIT. Se le emite FACTURA.
 -- Las columnas propias de cada tipo son nulas para el otro y los CHECK garantizan
 -- que un cliente nunca quede a medio llenar.
 CREATE TABLE clientes (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     tipo_persona        ENUM('NATURAL','JURIDICA') NOT NULL DEFAULT 'NATURAL',
-    tipo_documento      ENUM('DNI','CE','PAS','RUC','SIN') NOT NULL DEFAULT 'DNI',
+    tipo_documento      ENUM('CI','CE','PAS','NIT','SIN') NOT NULL DEFAULT 'CI',
     documento           VARCHAR(20)  NULL,
     -- persona natural
     nombres             VARCHAR(60)  NULL,
@@ -233,7 +233,7 @@ CREATE TABLE clientes (
             nombres   IS NOT NULL AND
             apellidos IS NOT NULL AND
             razon_social IS NULL  AND
-            tipo_documento IN ('DNI','CE','PAS','SIN')
+            tipo_documento IN ('CI','CE','PAS','SIN')
         )
     ),
     CONSTRAINT ck_clientes_juridica CHECK (
@@ -243,7 +243,7 @@ CREATE TABLE clientes (
             direccion    IS NOT NULL AND
             nombres      IS NULL     AND
             apellidos    IS NULL     AND
-            tipo_documento = 'RUC'
+            tipo_documento = 'NIT'
         )
     )
 ) ENGINE=InnoDB;
@@ -326,7 +326,7 @@ CREATE TABLE movimientos_caja (
 -- =============================================================================
 
 -- Define qué documento se emite y a qué tipo de cliente corresponde:
---   FAC (Factura) -> solo persona JURIDICA, exige cliente con RUC y dirección fiscal
+--   FAC (Factura) -> solo persona JURIDICA, exige cliente con NIT y dirección fiscal
 --   REC (Recibo)  -> solo persona NATURAL
 --   NV  (Nota de venta, uso interno) -> AMBAS, sin exigencia de cliente
 CREATE TABLE tipos_comprobante (
@@ -551,7 +551,7 @@ CREATE TABLE comprobantes (
     cliente_id              INT UNSIGNED NULL,
     tipo_persona            ENUM('NATURAL','JURIDICA') NULL,
     cliente_nombre          VARCHAR(150) NOT NULL,      -- razón social o nombre completo
-    cliente_tipo_documento  ENUM('DNI','CE','PAS','RUC','SIN') NOT NULL DEFAULT 'SIN',
+    cliente_tipo_documento  ENUM('CI','CE','PAS','NIT','SIN') NOT NULL DEFAULT 'SIN',
     cliente_documento       VARCHAR(20)  NULL,
     cliente_direccion       VARCHAR(200) NULL,          -- dirección fiscal (factura)
     representante_legal     VARCHAR(120) NULL,          -- solo persona jurídica
@@ -935,7 +935,7 @@ BEGIN
 END$$
 
 -- 10.4 El comprobante debe corresponder al tipo de persona del cliente:
---      FACTURA solo a persona jurídica con RUC, RECIBO solo a persona natural.
+--      FACTURA solo a persona jurídica con NIT, RECIBO solo a persona natural.
 CREATE TRIGGER trg_comprobantes_before_insert
 BEFORE INSERT ON comprobantes
 FOR EACH ROW

@@ -92,7 +92,7 @@ class ProveedoresTest extends TestCase
     public function test_el_documento_rechaza_caracteres_raros(): void
     {
         $this->actingAs($this->admin())
-            ->post('/proveedores', $this->datos(['documento' => 'RUC #20/778']))
+            ->post('/proveedores', $this->datos(['documento' => 'NIT #20/778']))
             ->assertSessionHasErrors(['documento']);
     }
 

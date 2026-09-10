@@ -590,7 +590,7 @@ class PuntoDeVentaTest extends TestCase
     {
         $this->actingAs($this->admin())->post('/clientes', [
             'tipo_persona' => 'JURIDICA',
-            'tipo_documento' => 'RUC',
+            'tipo_documento' => 'NIT',
             'razon_social' => 'Empresa Sin Datos S.A.C.',
         ])->assertSessionHasErrors(['documento', 'direccion']);
     }
@@ -599,7 +599,7 @@ class PuntoDeVentaTest extends TestCase
     {
         $this->actingAs($this->admin())->post('/clientes', [
             'tipo_persona' => 'JURIDICA',
-            'tipo_documento' => 'RUC',
+            'tipo_documento' => 'NIT',
             'documento' => '20999888777',
             'razon_social' => 'Comercial Nueva S.A.C.',
             'direccion' => 'Av. Nueva 100',
@@ -616,7 +616,7 @@ class PuntoDeVentaTest extends TestCase
     {
         $this->actingAs($this->admin())->post('/clientes', [
             'tipo_persona' => 'NATURAL',
-            'tipo_documento' => 'DNI',
+            'tipo_documento' => 'CI',
             'documento' => '11223344',
         ])->assertSessionHasErrors(['nombres', 'apellidos']);
     }

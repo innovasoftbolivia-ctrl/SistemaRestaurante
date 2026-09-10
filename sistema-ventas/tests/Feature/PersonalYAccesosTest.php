@@ -193,7 +193,7 @@ class PersonalYAccesosTest extends TestCase
 
         $this->actingAs($this->admin())->post('/empleados', [
             'cargo_id' => $cargo->id,
-            'tipo_documento' => 'DNI',
+            'tipo_documento' => 'CI',
             'documento' => '99887766',
             'nombres' => 'Rocío',
             'apellidos' => 'Huamán Peña',
@@ -216,7 +216,7 @@ class PersonalYAccesosTest extends TestCase
 
         $this->actingAs($this->admin())->post('/empleados', [
             'cargo_id' => $cargo->id,
-            'tipo_documento' => 'DNI',
+            'tipo_documento' => 'CI',
             'documento' => '10000001', // ya es de Ana
             'nombres' => 'Otra',
             'apellidos' => 'Persona',

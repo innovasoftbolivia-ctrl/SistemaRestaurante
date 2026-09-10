@@ -200,7 +200,7 @@
                         </div>
 
                         <x-form.campo label="Documento" for="proveedor-documento" name="documento"
-                            help="RUC o identificación fiscal. Opcional, pero no se repite.">
+                            help="NIT o identificación fiscal. Opcional, pero no se repite.">
                             <x-form.input id="proveedor-documento" name="documento" x-model="documento"
                                 placeholder="20100000003" />
                         </x-form.campo>

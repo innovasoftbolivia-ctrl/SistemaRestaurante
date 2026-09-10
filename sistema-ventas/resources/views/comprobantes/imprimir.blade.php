@@ -137,7 +137,7 @@
         <div class="centro">
             <h1>{{ $negocio['nombre'] }}</h1>
             @if ($negocio['documento'])
-                <div class="tenue">RUC {{ $negocio['documento'] }}</div>
+                <div class="tenue">NIT {{ $negocio['documento'] }}</div>
             @endif
             @if ($negocio['direccion'])
                 <div class="tenue">{{ $negocio['direccion'] }}</div>

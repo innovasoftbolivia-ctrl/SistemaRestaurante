@@ -156,7 +156,7 @@
     <div class="datos-negocio">
         @php
             $datos = array_filter([
-                $doc['negocio']['documento'] ? 'NIT/RUC '.$doc['negocio']['documento'] : null,
+                $doc['negocio']['documento'] ? 'NIT '.$doc['negocio']['documento'] : null,
                 $doc['negocio']['direccion'],
                 $doc['negocio']['telefono'],
             ]);

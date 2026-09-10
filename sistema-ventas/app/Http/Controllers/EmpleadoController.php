@@ -63,7 +63,7 @@ class EmpleadoController extends Controller
         return view('empleados.form', [
             'title' => 'Nuevo empleado',
             'trail' => ['Personal' => route('empleados.index'), 'Empleados' => route('empleados.index')],
-            'empleado' => new Empleado(['estado' => 'ACTIVO', 'tipo_documento' => 'DNI', 'tipo_contrato' => 'INDEFINIDO']),
+            'empleado' => new Empleado(['estado' => 'ACTIVO', 'tipo_documento' => 'CI', 'tipo_contrato' => 'INDEFINIDO']),
             ...$this->opciones(),
         ]);
     }

@@ -345,7 +345,7 @@
                                 ¿El cliente no está registrado?
                                 <a href="{{ route('clientes.index') }}" class="text-brand-500 dark:text-brand-400 hover:text-brand-600">
                                     Regístralo primero
-                                </a>, con su RUC y dirección fiscal.
+                                </a>, con su NIT y dirección fiscal.
                             </p>
 
                             <x-form.campo label="Motivo" for="sustituir_motivo" name="motivo" required

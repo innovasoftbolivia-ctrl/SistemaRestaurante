@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Un solo maestro con discriminador `tipo_persona`:
- *   NATURAL  -> nombres + apellidos, DNI/CE/PAS. Recibe RECIBO.
- *   JURIDICA -> razón social + RUC + dirección fiscal. Recibe FACTURA.
+ *   NATURAL  -> nombres + apellidos, CI/CE/PAS. Recibe RECIBO.
+ *   JURIDICA -> razón social + NIT + dirección fiscal. Recibe FACTURA.
  *
  * Registrarlo es opcional: la venta al paso va sin cliente y el comprobante
  * sale a nombre genérico. Solo la factura exige identificarlo.
@@ -24,7 +24,7 @@ class Cliente extends Model
 
     public const TIPOS_PERSONA = ['NATURAL', 'JURIDICA'];
 
-    public const DOCUMENTOS_NATURAL = ['DNI', 'CE', 'PAS', 'SIN'];
+    public const DOCUMENTOS_NATURAL = ['CI', 'CE', 'PAS', 'SIN'];
 
     protected $fillable = [
         'tipo_persona', 'tipo_documento', 'documento',

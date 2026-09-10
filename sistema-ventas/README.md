@@ -289,9 +289,10 @@ mejor «CLP 1.200» que un símbolo equivocado.
 
 ### Lo tributario está en construcción
 
-La tasa de impuesto (hoy **18%**) y la identificación fiscal del negocio (rotulada **RUC**) siguen
-siendo las provisionales con las que se armó el esquema, y no corresponden a la normativa
-boliviana. Está **a propósito sin cerrar**, y el sistema lo dice en vez de aparentar lo contrario:
+Los documentos ya usan la nomenclatura boliviana —**CI** para personas y **NIT** para empresas—,
+pero el régimen tributario en sí sigue sin definir: la tasa de impuesto está en **0 %** y el
+sistema no se integra con Impuestos Nacionales. Está **a propósito sin cerrar**, y el sistema lo
+dice en vez de aparentar lo contrario:
 
 - cada documento sale impreso con un recuadro «EN CONSTRUCCIÓN — sin validez tributaria»;
 - el listado de comprobantes lleva el mismo aviso arriba;

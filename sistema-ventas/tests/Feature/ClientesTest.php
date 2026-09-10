@@ -8,7 +8,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 /**
- * `PuntoDeVentaTest` ya cubre las reglas de persona natural/jurídica (RUC,
+ * `PuntoDeVentaTest` ya cubre las reglas de persona natural/jurídica (NIT,
  * dirección) al registrar un cliente. Esto cubre lo que falta: permisos,
  * actualización, baja, unicidad de documento, y el alta rápida en JSON que
  * usa el mostrador para no perder el carrito en curso.
@@ -58,7 +58,7 @@ class ClientesTest extends TestCase
         $this->actingAs($this->almacenero())
             ->post('/clientes', [
                 'tipo_persona' => 'NATURAL',
-                'tipo_documento' => 'DNI',
+                'tipo_documento' => 'CI',
                 'documento' => '99999999',
                 'nombres' => 'Alguien',
                 'apellidos' => 'Nuevo',
@@ -103,7 +103,7 @@ class ClientesTest extends TestCase
     {
         $cliente = Cliente::create([
             'tipo_persona' => 'NATURAL',
-            'tipo_documento' => 'DNI',
+            'tipo_documento' => 'CI',
             'documento' => '99887766',
             'nombres' => 'Cliente',
             'apellidos' => 'Sin Compras',
@@ -136,7 +136,7 @@ class ClientesTest extends TestCase
         $respuesta = $this->actingAs($this->cajero())
             ->postJson('/clientes', [
                 'tipo_persona' => 'NATURAL',
-                'tipo_documento' => 'DNI',
+                'tipo_documento' => 'CI',
                 'documento' => '55667788',
                 'nombres' => 'Pedro',
                 'apellidos' => 'Quiroga',
@@ -145,7 +145,7 @@ class ClientesTest extends TestCase
         $respuesta->assertCreated();
         $respuesta->assertJson([
             'nombre' => 'Pedro Quiroga',
-            'etiqueta' => 'Pedro Quiroga · DNI 55667788',
+            'etiqueta' => 'Pedro Quiroga · CI 55667788',
             'juridica' => false,
         ]);
         $this->assertIsInt($respuesta->json('id'));
@@ -156,7 +156,7 @@ class ClientesTest extends TestCase
     {
         $respuesta = $this->actingAs($this->cajero())->postJson('/clientes', [
             'tipo_persona' => 'JURIDICA',
-            'tipo_documento' => 'RUC',
+            'tipo_documento' => 'NIT',
             'documento' => '20333444555',
             'razon_social' => 'Ferretería Central S.A.C.',
             'direccion' => 'Av. Ferretera 200',
@@ -172,7 +172,7 @@ class ClientesTest extends TestCase
     {
         $respuesta = $this->actingAs($this->cajero())->postJson('/clientes', [
             'tipo_persona' => 'NATURAL',
-            'tipo_documento' => 'DNI',
+            'tipo_documento' => 'CI',
             'documento' => '',
             'nombres' => 'Cliente',
             'apellidos' => 'Sin Documento',
@@ -186,9 +186,9 @@ class ClientesTest extends TestCase
     {
         $respuesta = $this->actingAs($this->cajero())->postJson('/clientes', [
             'tipo_persona' => 'JURIDICA',
-            'tipo_documento' => 'RUC',
+            'tipo_documento' => 'NIT',
             'documento' => '',
-            'razon_social' => 'Sin RUC S.A.C.',
+            'razon_social' => 'Sin NIT S.R.L.',
         ]);
 
         $respuesta->assertStatus(422);

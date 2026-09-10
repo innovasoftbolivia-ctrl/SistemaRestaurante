@@ -586,7 +586,7 @@
 
                     <div class="space-y-5">
                         <div class="grid grid-cols-2 gap-3">
-                            <button type="button" @click="nuevoCliente.persona = 'NATURAL'; nuevoCliente.tipo_documento = 'DNI'"
+                            <button type="button" @click="nuevoCliente.persona = 'NATURAL'; nuevoCliente.tipo_documento = 'CI'"
                                 :class="nuevoCliente.persona === 'NATURAL'
                                     ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
                                     : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
@@ -594,7 +594,7 @@
                                 <span class="block text-sm font-medium">Persona natural</span>
                                 <span class="block text-theme-xs opacity-75">Recibe recibo</span>
                             </button>
-                            <button type="button" @click="nuevoCliente.persona = 'JURIDICA'; nuevoCliente.tipo_documento = 'RUC'"
+                            <button type="button" @click="nuevoCliente.persona = 'JURIDICA'; nuevoCliente.tipo_documento = 'NIT'"
                                 :class="nuevoCliente.persona === 'JURIDICA'
                                     ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
                                     : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
@@ -620,7 +620,7 @@
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">Tipo de documento</label>
                                     <select x-model="nuevoCliente.tipo_documento"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                                        <option value="DNI">DNI</option>
+                                        <option value="CI">CI</option>
                                         <option value="CE">Carné de extranjería</option>
                                         <option value="PAS">Pasaporte</option>
                                         <option value="SIN">Sin documento</option>
@@ -643,11 +643,11 @@
                                 </div>
                                 <div class="sm:col-span-2">
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                                        RUC <span class="text-error-600 dark:text-error-400">*</span>
+                                        NIT <span class="text-error-600 dark:text-error-400">*</span>
                                     </label>
                                     <input x-model="nuevoCliente.documento" placeholder="20512345678"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
-                                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Sin RUC no se puede emitir factura.</p>
+                                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Sin NIT no se puede emitir factura.</p>
                                 </div>
                                 <div class="sm:col-span-2">
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
@@ -721,7 +721,7 @@
                         nuevoClienteGuardando: false,
                         nuevoClienteError: '',
                         nuevoCliente: {
-                            persona: 'NATURAL', tipo_documento: 'DNI', documento: '',
+                            persona: 'NATURAL', tipo_documento: 'CI', documento: '',
                             nombres: '', apellidos: '', razon_social: '', direccion: '',
                         },
 
@@ -745,7 +745,7 @@
 
                         abrirNuevoCliente() {
                             this.nuevoCliente = {
-                                persona: 'NATURAL', tipo_documento: 'DNI', documento: '',
+                                persona: 'NATURAL', tipo_documento: 'CI', documento: '',
                                 nombres: '', apellidos: '', razon_social: '', direccion: '',
                             };
                             this.nuevoClienteError = '';

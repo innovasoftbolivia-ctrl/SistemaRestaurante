@@ -61,10 +61,10 @@ SELECT 3, id FROM permisos
 -- pero no tiene cuenta en el sistema, algo que antes era imposible representar.
 INSERT INTO empleados (id, cargo_id, tipo_documento, documento, nombres, apellidos,
                        telefono, email, fecha_ingreso, tipo_contrato, estado) VALUES
-    (1, 1, 'DNI', '10000001', 'Ana',   'Quispe Torres',  '987000111', 'ana@tienda.com',   '2024-01-15', 'INDEFINIDO', 'ACTIVO'),
-    (2, 2, 'DNI', '10000002', 'Luis',  'Ramos Vega',     '987000222', 'luis@tienda.com',  '2025-03-01', 'INDEFINIDO', 'ACTIVO'),
-    (3, 3, 'DNI', '10000003', 'Marta', 'Flores Díaz',    '987000333', 'marta@tienda.com', '2025-06-10', 'PLAZO_FIJO', 'ACTIVO'),
-    (4, 4, 'DNI', '10000004', 'Jorge', 'Ccama Mamani',   '987000444', NULL,               '2026-02-01', 'PARCIAL',    'ACTIVO');
+    (1, 1, 'CI', '10000001', 'Ana',   'Quispe Torres',  '987000111', 'ana@tienda.com',   '2024-01-15', 'INDEFINIDO', 'ACTIVO'),
+    (2, 2, 'CI', '10000002', 'Luis',  'Ramos Vega',     '987000222', 'luis@tienda.com',  '2025-03-01', 'INDEFINIDO', 'ACTIVO'),
+    (3, 3, 'CI', '10000003', 'Marta', 'Flores Díaz',    '987000333', 'marta@tienda.com', '2025-06-10', 'PLAZO_FIJO', 'ACTIVO'),
+    (4, 4, 'CI', '10000004', 'Jorge', 'Ccama Mamani',   '987000444', NULL,               '2026-02-01', 'PARCIAL',    'ACTIVO');
 
 -- Ejemplo de empleado cesado (el trigger le desactiva la cuenta automáticamente):
 -- UPDATE empleados SET estado = 'CESADO', fecha_cese = CURDATE(),
@@ -94,7 +94,7 @@ INSERT INTO categorias (id, nombre, descripcion) VALUES
     (4, 'Higiene',      'Cuidado personal'),
     (5, 'Golosinas',    'Dulces y snacks');
 
--- Factura -> persona jurídica (exige cliente con RUC). Recibo -> persona natural.
+-- Factura -> persona jurídica (exige cliente con NIT). Recibo -> persona natural.
 INSERT INTO tipos_comprobante (id, codigo, nombre, aplica_persona, exige_cliente, exige_documento) VALUES
     (1, 'FAC', 'Factura',       'JURIDICA', 1, 1),
     (2, 'REC', 'Recibo',        'NATURAL',  0, 0),
@@ -125,18 +125,18 @@ INSERT INTO proveedores (id, razon_social, documento, telefono) VALUES
 -- ventas.cliente_id = NULL. Ver `configuracion.cliente_generico_nombre`.
 -- Registrar al cliente es OPCIONAL, salvo que pida factura.
 
--- Personas naturales: nombres + apellidos, documento DNI/CE/PAS (o SIN). Reciben RECIBO.
+-- Personas naturales: nombres + apellidos, documento CI/CE/PAS (o SIN). Reciben RECIBO.
 INSERT INTO clientes (id, tipo_persona, tipo_documento, documento, nombres, apellidos, direccion, telefono) VALUES
-    (1, 'NATURAL', 'DNI', '45678901', 'Carlos', 'Mendoza Ríos', 'Jr. Los Olivos 456',     '987111222'),
-    (2, 'NATURAL', 'DNI', '41236598', 'Rosa',   'Huamán Pérez', 'Av. Los Álamos 88',      '987111333'),
+    (1, 'NATURAL', 'CI', '45678901', 'Carlos', 'Mendoza Ríos', 'Jr. Los Olivos 456',     '987111222'),
+    (2, 'NATURAL', 'CI', '41236598', 'Rosa',   'Huamán Pérez', 'Av. Los Álamos 88',      '987111333'),
     (3, 'NATURAL', 'CE',  '001234567','Miguel', 'Duarte Silva', 'Calle Las Gardenias 12', '987111444');
 
--- Personas jurídicas: razón social + RUC + dirección fiscal. Reciben FACTURA.
+-- Personas jurídicas: razón social + NIT + dirección fiscal. Reciben FACTURA.
 INSERT INTO clientes (id, tipo_persona, tipo_documento, documento, razon_social, nombre_comercial, representante_legal, direccion, telefono, email) VALUES
-    (4, 'JURIDICA', 'RUC', '20512345678', 'Servicios Generales Perú S.A.C.', 'SerPerú',
-        'Julia Ortega Salas',  'Av. Industrial 1420, Lima', '014561230', 'compras@serperu.com'),
-    (5, 'JURIDICA', 'RUC', '20487654321', 'Restaurante El Fogón E.I.R.L.',   'El Fogón',
-        'Pedro Cárdenas Loza', 'Av. Grau 233, Lima',        '014561231', 'admin@elfogon.com');
+    (4, 'JURIDICA', 'NIT', '5123456', 'Servicios Generales del Oriente S.R.L.', 'SerOriente',
+        'Julia Ortega Salas',  'Av. Industrial 1420, Santa Cruz', '33561230', 'compras@seroriente.com'),
+    (5, 'JURIDICA', 'NIT', '4876543', 'Restaurante El Fogón S.R.L.',   'El Fogón',
+        'Pedro Cárdenas Loza', 'Av. Grigotá 233, Santa Cruz', '33561231', 'admin@elfogon.com');
 
 -- --------------------------------- Productos ---------------------------------
 -- Importante: precio_compra y precio_venta se registran SIN impuesto.
@@ -176,9 +176,9 @@ SELECT id, 1, 'ENTRADA', 'INICIAL', stock_actual, 0, stock_actual, 'Carga inicia
 -- ------------------------------- Configuración -------------------------------
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('negocio_nombre',      'Minimarket El Ahorro',  'Nombre comercial del negocio'),
-    ('negocio_documento',   '20123456789',           'RUC / identificación fiscal'),
-    ('negocio_direccion',   'Av. Principal 123',     'Dirección del local'),
-    ('negocio_telefono',    '01-4567890',            'Teléfono de contacto'),
+    ('negocio_documento',   '1023456789',            'NIT del negocio'),
+    ('negocio_direccion',   'Av. Grigotá 1420, Santa Cruz', 'Dirección del local'),
+    ('negocio_telefono',    '33561200',              'Teléfono de contacto'),
     ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
     ('tasa_impuesto',       '0.1800',                'Tasa del impuesto a las ventas (IGV)'),
@@ -241,7 +241,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- =============================================================================
 -- START TRANSACTION;
 --
--- -- cliente 4 = Servicios Generales Perú S.A.C. (RUC)
+-- -- cliente 4 = Servicios Generales del Oriente S.R.L. (NIT)
 -- INSERT INTO ventas (cliente_id, usuario_id, sesion_caja_id) VALUES (4, 2, @sesion);
 -- SET @venta2 = LAST_INSERT_ID();
 --
@@ -354,9 +354,9 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- --   "El tipo de comprobante no corresponde al tipo de persona del cliente"
 -- -- CALL sp_emitir_comprobante(@venta, 1, @x, @y);
 --
--- -- Cliente jurídico sin RUC ni dirección -> ERROR 3819 (ck_clientes_juridica):
+-- -- Cliente jurídico sin NIT ni dirección -> ERROR 3819 (ck_clientes_juridica):
 -- -- INSERT INTO clientes (tipo_persona, tipo_documento, razon_social)
--- -- VALUES ('JURIDICA', 'DNI', 'Empresa Sin RUC S.A.');
+-- -- VALUES ('JURIDICA', 'CI', 'Empresa Sin NIT S.R.L.');
 --
 -- -- Segundo comprobante para una venta que ya tiene uno vigente -> ERROR 1644:
 -- --   "La venta ya tiene un comprobante vigente. Use sp_sustituir_comprobante."

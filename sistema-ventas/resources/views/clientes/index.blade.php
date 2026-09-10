@@ -8,7 +8,7 @@
         id: @js(old('cliente_id')),
         persona: @js(old('tipo_persona', 'NATURAL')),
         f: {
-            tipo_documento: @js(old('tipo_documento', 'DNI')),
+            tipo_documento: @js(old('tipo_documento', 'CI')),
             documento: @js(old('documento', '')),
             nombres: @js(old('nombres', '')),
             apellidos: @js(old('apellidos', '')),
@@ -25,17 +25,17 @@
 
         get juridica() { return this.persona === 'JURIDICA'; },
 
-        /* La persona jurídica siempre va con RUC: es lo que exige la factura. */
+        /* La persona jurídica siempre va con NIT: es lo que exige la factura. */
         cambiarPersona(valor) {
             this.persona = valor;
-            this.f.tipo_documento = valor === 'JURIDICA' ? 'RUC' : 'DNI';
+            this.f.tipo_documento = valor === 'JURIDICA' ? 'NIT' : 'CI';
         },
 
         nuevo() {
             this.modo = 'crear';
             this.id = null;
             this.persona = 'NATURAL';
-            this.f = { tipo_documento: 'DNI', documento: '', nombres: '', apellidos: '',
+            this.f = { tipo_documento: 'CI', documento: '', nombres: '', apellidos: '',
                        razon_social: '', nombre_comercial: '', representante_legal: '',
                        direccion: '', telefono: '', email: '' };
             this.activo = true;
@@ -74,7 +74,7 @@
             <p class="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">
                 Registrar al cliente es <b>opcional</b>: la venta al paso se cobra sin pedir ningún dato y el recibo
                 sale a nombre genérico. Solo la <b>factura</b> obliga a identificarlo, y para eso tiene que ser
-                persona jurídica con RUC y dirección fiscal.
+                persona jurídica con NIT y dirección fiscal.
             </p>
 
             <form method="GET" action="{{ route('clientes.index') }}"
@@ -254,7 +254,7 @@
 
                             <x-form.campo label="Tipo de documento" for="cliente-tipodoc" name="tipo_documento" required>
                                 <x-form.select id="cliente-tipodoc" name="tipo_documento" x-model="f.tipo_documento"
-                                    :opciones="['DNI' => 'DNI', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
+                                    :opciones="['CI' => 'CI (cédula de identidad)', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
                             </x-form.campo>
 
                             <x-form.campo label="Documento" for="cliente-doc-nat" name="documento">
@@ -274,11 +274,11 @@
                                 </x-form.campo>
                             </div>
 
-                            <x-form.campo label="RUC" for="cliente-ruc" name="documento" required
-                                help="Sin RUC no se puede emitir factura.">
+                            <x-form.campo label="NIT" for="cliente-nit" name="documento" required
+                                help="Sin NIT no se puede emitir factura.">
                                 <x-form.input id="cliente-ruc" name="documento" x-model="f.documento"
                                     placeholder="20512345678" />
-                                <input type="hidden" name="tipo_documento" value="RUC" />
+                                <input type="hidden" name="tipo_documento" value="NIT" />
                             </x-form.campo>
 
                             <x-form.campo label="Nombre comercial" for="cliente-comercial" name="nombre_comercial">

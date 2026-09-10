@@ -14,7 +14,7 @@ use Illuminate\View\View;
 /**
  * Registrar al cliente es opcional: la venta al paso va sin él. Solo la
  * factura obliga a identificarlo, y para eso tiene que ser persona jurídica
- * con RUC y dirección fiscal.
+ * con NIT y dirección fiscal.
  */
 class ClienteController extends Controller
 {
@@ -149,7 +149,7 @@ class ClienteController extends Controller
             'tipo_persona' => ['required', Rule::in(Cliente::TIPOS_PERSONA)],
             'tipo_documento' => [
                 'required',
-                $juridica ? Rule::in(['RUC']) : Rule::in(Cliente::DOCUMENTOS_NATURAL),
+                $juridica ? Rule::in(['NIT']) : Rule::in(Cliente::DOCUMENTOS_NATURAL),
             ],
             'documento' => [
                 $juridica ? 'required' : 'nullable',
@@ -170,7 +170,7 @@ class ClienteController extends Controller
             'activo' => ['boolean'],
         ], [
             'documento.unique' => 'Ya hay un cliente registrado con ese documento.',
-            'documento.required' => 'La persona jurídica necesita RUC para poder emitirle factura.',
+            'documento.required' => 'La persona jurídica necesita NIT para poder emitirle factura.',
             'direccion.required' => 'La factura exige la dirección fiscal de la empresa.',
             'razon_social.required' => 'La persona jurídica se identifica por su razón social.',
             'nombres.required' => 'La persona natural se identifica por sus nombres y apellidos.',

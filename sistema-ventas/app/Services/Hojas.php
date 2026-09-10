@@ -253,7 +253,7 @@ class Hojas
         $hoja->getRowDimension(1)->setRowHeight(24);
 
         $datos = array_filter([
-            $negocio['documento'] ? 'NIT/RUC '.$negocio['documento'] : null,
+            $negocio['documento'] ? 'NIT '.$negocio['documento'] : null,
             $negocio['direccion'],
             $negocio['telefono'],
         ]);
