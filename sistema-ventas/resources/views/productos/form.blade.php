@@ -511,7 +511,7 @@
                     <x-form.campo label="Código de barras" for="codigo_barras" name="codigo_barras"
                         help="Pásale el lector estando en este campo. Solo dígitos.">
                         <x-form.input id="codigo_barras" name="codigo_barras" :value="$producto->codigo_barras"
-                            inputmode="numeric" placeholder="7790001000019" />
+                            inputmode="numeric" placeholder="7790001000019" autocomplete="off" />
                     </x-form.campo>
 
                     <x-form.campo label="Proveedor" for="proveedor_id" name="proveedor_id"
