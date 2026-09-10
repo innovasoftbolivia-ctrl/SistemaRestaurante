@@ -70,8 +70,13 @@ PNG (para donde no entra un SVG)
   innovasoftbo-horizontal-compacta-300.png   Tarjeta personal.
   innovasoftbo-negativo-1200.png        Sobre oscuro.
   innovasoftbo-una-tinta-1200.png       Original de fotocopia.
-  innovasoftbo-whatsapp-perfil.png      FOTO DE PERFIL: WhatsApp, Facebook,
-                                        Instagram. 1000x1000.
+  innovasoftbo-whatsapp-perfil-nombre.png
+                                        FOTO DE PERFIL, la que se usa: el
+                                        nombre en dos lineas, sin simbolo.
+                                        Se lee hasta a 48 px. 1000x1000.
+  innovasoftbo-whatsapp-perfil.png      La misma idea pero con el simbolo:
+                                        se ve mejor el dibujo y peor el
+                                        nombre. Guardada por si cambia.
   innovasoftbo-avatar-512.png           Teja cuadrada, para donde NO recorten
   innovasoftbo-avatar-256.png           en circulo. La misma, mas chica.
   innovasoftbo-favicon-64.png / -32.png Pestaña del navegador.
