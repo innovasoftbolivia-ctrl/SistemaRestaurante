@@ -29,7 +29,11 @@ import tipografia as T
 # ------------------------------------------------------------------ medidas
 PPP = 300
 MM = PPP / 25.4                      # píxeles por milímetro
-A4 = (int(210 * MM), int(297 * MM))  # 2480 × 3508
+A4 = (int(210 * MM), int(297 * MM))        # 2480 × 3508
+# Carta es la hoja de oficina que se usa en Bolivia: más ancha que la A4 y
+# 17,6 mm más baja. Esos 17,6 mm hay que sacarlos de algún lado, así que la
+# maqueta se parametrizó en vez de copiarla.
+CARTA = (int(215.9 * MM), int(279.4 * MM))  # 2550 × 3300
 
 MARGEN = 15 * MM
 ANCHO_UTIL = A4[0] - 2 * MARGEN
@@ -141,47 +145,60 @@ BENEFICIOS = [
 ]
 
 
-def armar():
-    img = Image.new('RGB', A4, BLANCO)
+def armar(pagina=A4, margen_mm=15, banda_mm=54, cap_mm=150, aire_pt=17,
+          cta_mm=34, pie_mm=15, tam_titular=27):
+    """
+    La hoja grande, en A4 o en Carta.
+
+    Todo lo que hay que apretar para pasar de una a otra entra por parámetro:
+    el alto de la banda, el ancho de la captura —que manda su alto— y el aire
+    entre los beneficios. El resto se calcula solo a partir del tamaño de
+    hoja, así que no hay dos maquetas que puedan separarse con el tiempo.
+    """
+    margen = margen_mm * MM
+    util = pagina[0] - 2 * margen
+    img = Image.new('RGB', pagina, BLANCO)
     d = ImageDraw.Draw(img)
 
     # ---------------------------------------------------- cabecera verde
-    alto_banda = int(54 * MM)
-    d.rectangle([0, 0, A4[0], alto_banda], fill=VERDE)
-    d.rectangle([0, alto_banda, A4[0], alto_banda + int(1.6 * MM)], fill=SALVIA)
+    alto_banda = int(banda_mm * MM)
+    d.rectangle([0, 0, pagina[0], alto_banda], fill=VERDE)
+    d.rectangle([0, alto_banda, pagina[0], alto_banda + int(1.6 * MM)], fill=SALVIA)
 
     marca = LP.horizontal(int(52 * MM), BLANCO, BLANCO, SALVIA_CLARA, '#B6C2C7')
-    img.paste(marca, (int(MARGEN), int(8 * MM)), marca)
+    img.paste(marca, (int(margen), int(8 * MM)), marca)
 
-    escribir(d, MARGEN, 35 * MM, 'Tu minimarket,', T.NEGRITA, pt(27), BLANCO, -pt(0.4))
-    escribir(d, MARGEN, 46.5 * MM, 'bajo control', T.NEGRITA, pt(27), SALVIA_CLARA, -pt(0.4))
+    escribir(d, margen, (banda_mm - 19) * MM, 'Tu minimarket,', T.NEGRITA,
+             pt(tam_titular), BLANCO, -pt(0.4))
+    escribir(d, margen, (banda_mm - 7.5) * MM, 'bajo control', T.NEGRITA,
+             pt(tam_titular), SALVIA_CLARA, -pt(0.4))
 
     # ---------------------------------------------------- bajada
     y = alto_banda + int(11 * MM)
-    y = parrafo(d, MARGEN, y,
+    y = parrafo(d, margen, y,
                 'Punto de venta, caja por turno, almacén y comprobantes. Funciona en la '
                 'computadora que ya tenés, desde el navegador: no hay que instalar nada en '
                 'cada máquina.',
-                T.REGULAR, pt(11.5), GRIS, ANCHO_UTIL, interlinea=1.5)
+                T.REGULAR, pt(11.5), GRIS, util, interlinea=1.5)
 
     # ---------------------------------------------------- la captura
     y += int(7 * MM)
-    ancho_cap = 150 * MM                      # más angosta que el margen: gana alto
-    x_cap = (A4[0] - ancho_cap) / 2
+    ancho_cap = cap_mm * MM                      # más angosta que el margen: gana alto
+    x_cap = (pagina[0] - ancho_cap) / 2
     alto_cap = pegar_captura(img, os.path.join(MARCA, 'captura-pos-recorte.png'),
                              x_cap, y, ancho_cap, 3.5 * MM)
     y += alto_cap + int(3.5 * MM)
     pie_cap = 'La pantalla de cobro, tal como la ve el cajero.'
-    escribir(d, (A4[0] - ancho(pie_cap, T.REGULAR, pt(8), pt(0.2))) / 2, y, pie_cap,
+    escribir(d, (pagina[0] - ancho(pie_cap, T.REGULAR, pt(8), pt(0.2))) / 2, y, pie_cap,
              T.REGULAR, pt(8), '#9AA8A3', pt(0.2))
 
     # ---------------------------------------------------- beneficios
     y += int(8 * MM)
-    col_ancho = (ANCHO_UTIL - 8 * MM) / 2
+    col_ancho = (util - 8 * MM) / 2
     y_col = [y, y]
     for i, (titulo, texto) in enumerate(BENEFICIOS):
         c = i % 2
-        x = MARGEN + c * (col_ancho + 8 * MM)
+        x = margen + c * (col_ancho + 8 * MM)
         yy = y_col[c]
 
         # el cuadradito de la marca, como viñeta
@@ -192,21 +209,21 @@ def armar():
                      col_ancho - pt(12), interlinea=1.34)
         yd = parrafo(d, x + pt(12), yt + pt(14), texto, T.REGULAR, pt(9.3), GRIS,
                      col_ancho - pt(12), interlinea=1.46)
-        y_col[c] = yd + pt(17)
+        y_col[c] = yd + pt(aire_pt)
 
     y = max(y_col)
 
     # ---------------------------------------------------- el QR, destacado
     y += int(3 * MM)
     alto_caja = int(25 * MM)
-    caja_redondeada(d, [MARGEN, y, MARGEN + ANCHO_UTIL, y + alto_caja], 3 * MM,
+    caja_redondeada(d, [margen, y, margen + util, y + alto_caja], 3 * MM,
                     relleno=CREMA)
 
     sim = LP.marca_cuadrada(int(13 * MM), VERDE, compacto=True)
-    img.paste(sim, (int(MARGEN + 6 * MM), int(y + 6 * MM)), sim)
+    img.paste(sim, (int(margen + 6 * MM), int(y + 6 * MM)), sim)
 
-    xt = MARGEN + 26 * MM
-    at = ANCHO_UTIL - 32 * MM
+    xt = margen + 26 * MM
+    at = util - 32 * MM
     escribir(d, xt, y + 9 * MM, 'COBRO POR QR CON EL MONTO YA PUESTO',
              T.NEGRITA, pt(10.5), VERDE, pt(0.7))
     parrafo(d, xt, y + 14.5 * MM,
@@ -218,14 +235,14 @@ def armar():
 
     # ---------------------------------------------------- qué hace falta
     y += int(6.5 * MM)
-    y = parrafo(d, MARGEN, y,
+    y = parrafo(d, margen, y,
                 'Necesitás una computadora con internet. Opcional: lector de código de barras '
                 'e impresora de tickets. Queda instalado y funcionando en dos días.',
-                T.REGULAR, pt(9.4), GRIS, ANCHO_UTIL, interlinea=1.45)
+                T.REGULAR, pt(9.4), GRIS, util, interlinea=1.45)
 
     # ---------------------------------------------------- llamado a la acción
-    alto_cta = int(34 * MM)
-    y_cta = A4[1] - int(15 * MM) - alto_cta
+    alto_cta = int(cta_mm * MM)
+    y_cta = pagina[1] - int(pie_mm * MM) - alto_cta
 
     # La primera versión se desbordaba: el contenido seguía bajando y el bloque
     # del WhatsApp, anclado abajo, lo tapaba. No se veía hasta mirar el PNG, así
@@ -235,17 +252,29 @@ def armar():
             'el contenido llega hasta %.0f mm y el llamado empieza en %.0f mm: '
             'se pisan. Acortá los textos o achicá la captura.'
             % (y / MM, y_cta / MM))
-    caja_redondeada(d, [MARGEN, y_cta, MARGEN + ANCHO_UTIL, y_cta + alto_cta],
+    caja_redondeada(d, [margen, y_cta, margen + util, y_cta + alto_cta],
                     3 * MM, relleno=VERDE)
 
-    escribir(d, MARGEN + 9 * MM, y_cta + 11.5 * MM, '¿Querés verlo funcionando?',
+    escribir(d, margen + 9 * MM, y_cta + 11.5 * MM, '¿Querés verlo funcionando?',
              T.NEGRITA, pt(13), BLANCO, -pt(0.2))
-    parrafo(d, MARGEN + 9 * MM, y_cta + 18 * MM,
+    parrafo(d, margen + 9 * MM, y_cta + 18 * MM,
             'Escribime al WhatsApp y coordinamos una demostración, sin compromiso.',
-            T.REGULAR, pt(9.8), '#C9DCD4', ANCHO_UTIL - 78 * MM, interlinea=1.4)
+            T.REGULAR, pt(9.8), '#C9DCD4', util - 78 * MM, interlinea=1.4)
 
     # el número, que es lo único que tiene que quedarse en la cabeza
-    bx = MARGEN + ANCHO_UTIL - 62 * MM
+    bx = margen + util - 62 * MM
+
+    # El control de arriba mira el ALTO. En A5 el fallo fue de ancho: el número,
+    # al tamaño que necesita para leerse de lejos, se salía de la caja y pisaba
+    # la frase. Eso no se ve hasta abrir el archivo, así que se comprueba acá.
+    ancho_numero = ancho('63490075', T.NEGRITA, pt(23), pt(0.4))
+    derecha_texto = margen + 9 * MM + (util - 78 * MM)
+    if bx + 11 * MM + ancho_numero > margen + util - 4 * MM:
+        raise SystemExit('el número se sale de la caja del llamado por %.1f mm'
+                         % ((bx + 11 * MM + ancho_numero - (margen + util - 4 * MM)) / MM))
+    if bx < derecha_texto + 4 * MM:
+        raise SystemExit('el número pisa la frase del llamado: faltan %.1f mm'
+                         % ((derecha_texto + 4 * MM - bx) / MM))
     burbuja(d, bx, y_cta + 12 * MM, 8 * MM, SALVIA_CLARA)
     escribir(d, bx + 11 * MM, y_cta + 20.5 * MM, '63490075', T.NEGRITA, pt(23), BLANCO,
              pt(0.4))
@@ -255,7 +284,7 @@ def armar():
     # ---------------------------------------------------- pie
     pie = 'innovasoftbo · Sistemas para tu negocio · Santa Cruz de la Sierra, Bolivia'
     w = ancho(pie, T.REGULAR, pt(8), pt(0.3))
-    escribir(d, (A4[0] - w) / 2, A4[1] - int(7 * MM), pie, T.REGULAR, pt(8),
+    escribir(d, (pagina[0] - w) / 2, pagina[1] - int(7 * MM), pie, T.REGULAR, pt(8),
              '#9AA8A3', pt(0.3))
 
     return img
@@ -349,6 +378,19 @@ if __name__ == '__main__':
     img.save(pdf, 'PDF', resolution=PPP)
     print('  %s  (%d x %d px, %d ppp)' % (os.path.basename(png), img.width, img.height, PPP))
     print('  %s' % os.path.basename(pdf))
+
+    # Carta: 17,6 mm más baja que la A4, así que la banda, la captura y el aire
+    # entre beneficios se aprietan. Los valores salieron de probar contra el
+    # propio control de desborde, no a ojo.
+    carta = armar(CARTA, banda_mm=48, cap_mm=148, aire_pt=13, cta_mm=32, pie_mm=12)
+    png_c = os.path.join(destino, 'Folleto-Sistema-de-Ventas-Carta.png')
+    pdf_c = os.path.join(destino, 'Folleto-Sistema-de-Ventas-Carta.pdf')
+    carta.save(png_c, dpi=(PPP, PPP))
+    carta.save(pdf_c, 'PDF', resolution=PPP)
+    print('  %-46s %d x %d px  (%.0f x %.0f mm)'
+          % (os.path.basename(png_c), carta.width, carta.height,
+             carta.width / PPP * 25.4, carta.height / PPP * 25.4))
+    print('  %s' % os.path.basename(pdf_c))
 
     ws = armar_whatsapp()
     ruta_ws = os.path.join(destino, 'Folleto-Sistema-de-Ventas-WhatsApp.png')
