@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Proveedor;
 use App\Services\Auditor;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -50,13 +51,24 @@ class ProveedorController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $datos = $this->validar($request);
 
         $proveedor = Proveedor::create($datos);
 
         Auditor::registrar('PROVEEDOR_CREADO', 'proveedores', $proveedor->id, $datos);
+
+        // Alta rápida desde la pantalla de compras, por el mismo motivo que en
+        // productos: el proveedor nuevo se descubre justo cuando se está
+        // cargando su primera factura, y salir de la pantalla costaría todo lo
+        // que ya se tecleó.
+        if ($request->wantsJson()) {
+            return response()->json([
+                'id' => $proveedor->id,
+                'razon_social' => $proveedor->razon_social,
+            ], 201);
+        }
 
         return redirect()->route('proveedores.index')
             ->with('exito', "Proveedor «{$proveedor->razon_social}» registrado.");

@@ -11,6 +11,7 @@ use App\Models\UnidadMedida;
 use App\Services\Auditor;
 use App\Services\Inventario;
 use App\Support\Palabras;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,7 @@ class ProductoController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $datos = $this->validar($request);
 
@@ -93,6 +94,9 @@ class ProductoController extends Controller
         if ($request->hasFile('imagen')) {
             $datos['imagen'] = $request->file('imagen')->store('productos', 'public');
         }
+
+        // Sin código escrito, el correlativo que ya se proponía en pantalla.
+        $datos['codigo'] = filled($datos['codigo'] ?? null) ? $datos['codigo'] : $this->siguienteCodigo();
 
         [$producto, $stockInicial, $detalle] = DB::transaction(function () use ($request, $datos) {
             $producto = Producto::create($datos);
@@ -121,6 +125,15 @@ class ProductoController extends Controller
             'stock_inicial' => $stockInicial,
             'detalle' => $detalle,
         ]);
+
+        // Alta rápida desde la pantalla de compras: quien está cargando una
+        // factura no puede irse a otra pantalla y volver, porque perdería las
+        // líneas que ya tecleó. Se responde el producto listo para usarse como
+        // línea. Si la validación falla, Laravel ya devuelve el 422 con los
+        // errores en JSON solo porque se pidió ese formato.
+        if ($request->wantsJson()) {
+            return response()->json($producto->comoLineaDeCompra(), 201);
+        }
 
         return redirect()->route('productos.show', $producto)
             ->with('exito', "Producto «{$producto->nombre}» registrado.");
@@ -438,8 +451,11 @@ class ProductoController extends Controller
             'viene_en_empaque' => ['boolean'],
             'nombre_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'string', 'min:2', 'max:20'],
             'contenido_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'numeric', 'gt:1', 'max:999999'],
+            // Opcional: si no viene, lo pone el sistema. Ya lo proponía en el
+            // formulario, y exigirlo obligaba a inventar uno en el alta rápida
+            // desde la pantalla de compras, donde nadie lo tiene en la cabeza.
             'codigo' => [
-                'required', 'string', 'max:30', 'regex:/^[A-Za-z0-9._-]+$/',
+                'nullable', 'string', 'max:30', 'regex:/^[A-Za-z0-9._-]+$/',
                 Rule::unique('productos', 'codigo')->ignore($producto?->id),
             ],
             'codigo_barras' => [

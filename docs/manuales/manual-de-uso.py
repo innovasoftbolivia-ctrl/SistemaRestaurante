@@ -468,6 +468,11 @@ rico([('Entra como ', False), ('almacen / almacen123', True),
       (' y ve a Almacén → Compras → Registrar compra.', False)])
 numerada('Arriba, pon el proveedor y el número de la factura.')
 numerada('En el buscador, escribe el nombre o pasa el lector y pulsa Enter: el producto se agrega como una línea.')
+p('¿Y si el producto no existe todavía, o es la primera vez que le compras a ese proveedor? No '
+  'tienes que salir de aquí. Junto al buscador hay «Darlo de alta aquí», y junto al proveedor, '
+  '«Registrar proveedor». Los dos abren una ventanita, guardan, y lo dejan listo en esta misma '
+  'compra sin perder las líneas que ya cargaste. El producto entra al catálogo con stock cero: las '
+  'unidades se las pone esta compra.', cursiva=True)
 numerada('En cada línea pon lo que trae el papel. Si el producto viene en cajas, cuentas cajas y sueltas, igual que al ingresar de a uno.')
 numerada('Repite con todos los productos de la factura.')
 numerada('Abajo, en «Cuadrar con la factura», escribe el total que dice el papel.')

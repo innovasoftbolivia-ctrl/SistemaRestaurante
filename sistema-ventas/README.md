@@ -467,8 +467,18 @@ movimiento sabe de qué documento vino, y desde una línea del kardex se llega a
 Todo va en una transacción: o entra la factura entera, o no entra nada. Una compra a medias —diez
 líneas cargadas y veinte no— sería peor que no haberla cargado, porque nadie sabría dónde se cortó.
 
-No hay permiso propio: registrar una compra **es** ingresar mercadería, solo que de muchas líneas a
-la vez, así que usa `inventario.ingresar`. Y «Ingresar mercadería» se queda donde estaba: cuando
+**El producto y el proveedor se pueden dar de alta ahí mismo.** Que un producto llegue hoy por
+primera vez, o que sea la primera factura de un proveedor nuevo, es el caso normal de una compra y
+no la excepción; mandar a la persona a otra pantalla le costaría todas las líneas que ya tecleó.
+Los dos atajos van por `fetch` contra `productos.store` y `proveedores.store` —el mismo recurso y la
+misma validación de siempre, solo que la respuesta vuelve en JSON— y por eso siguen exigiendo
+`productos.gestionar`: quien no lo tiene ni siquiera ve el atajo. El producto nace con **stock
+cero**, porque las unidades las pone la línea de esa misma compra; cargarlas también en el alta las
+contaría dos veces. Y el código interno ya no es obligatorio: si no se escribe, el sistema asigna el
+correlativo que de todos modos venía proponiendo.
+
+No hay permiso propio para la compra: registrarla **es** ingresar mercadería, solo que de muchas
+líneas a la vez, así que usa `inventario.ingresar`. Y «Ingresar mercadería» se queda donde estaba: cuando
 llega una caja suelta no hay factura que archivar. El esquema previó las dos vías desde el
 principio, y por eso `movimientos_inventario` guarda `proveedor_id` y `documento_externo` sueltos
 además de `compra_id`.

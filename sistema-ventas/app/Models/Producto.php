@@ -218,6 +218,36 @@ class Producto extends Model
         return $this->desglosar($this->stock_actual);
     }
 
+    /**
+     * Lo que necesita una línea de compra para armarse sola.
+     *
+     * Vive en el modelo y no en un controlador porque lo devuelven dos sitios
+     * —el buscador de la pantalla de compras y el alta rápida desde esa misma
+     * pantalla— y la línea tiene que quedar igual haya venido de donde haya
+     * venido. Separados, un producto recién creado aparecería sin empaque y
+     * habría que recargar para que el contador de cajas apareciera.
+     *
+     * @return array<string, mixed>
+     */
+    public function comoLineaDeCompra(): array
+    {
+        $this->loadMissing('unidadMedida');
+
+        return [
+            'id' => $this->id,
+            'codigo' => $this->codigo,
+            'nombre' => $this->nombre,
+            'unidad' => $this->unidadMedida?->codigo,
+            'unidadNombre' => mb_strtolower($this->unidadMedida?->nombre ?? 'unidad'),
+            'paso' => $this->unidadMedida?->permite_decimal ? 0.001 : 1,
+            'costo' => (float) $this->precio_compra,
+            'stock' => (float) $this->stock_actual,
+            'contenido' => (float) $this->contenido_empaque,
+            'empaque' => mb_strtolower($this->nombre_empaque ?? ''),
+            'empaquePlural' => $this->empaque_plural ?? '',
+        ];
+    }
+
     // ------------------------------------------------------------- derivados
 
     /** Precio que ve el cliente: base + impuesto, si el producto está afecto. */

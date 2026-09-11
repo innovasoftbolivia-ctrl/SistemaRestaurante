@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Categoria;
 use App\Models\Compra;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use App\Services\Compras;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -333,6 +335,111 @@ class ComprasTest extends TestCase
         $this->assertEquals(24, $respuesta[0]['contenido']);
         $this->assertSame('caja', $respuesta[0]['empaque']);
         $this->assertSame('cajas', $respuesta[0]['empaquePlural']);
+    }
+
+    // ------------------------------------------------------------ alta rápida
+
+    /**
+     * El producto que llega hoy por primera vez es el caso normal de una
+     * compra, no la excepción. Mandar a la persona al catálogo y de vuelta le
+     * costaría todas las líneas que ya tecleó, así que el alta va por JSON
+     * desde la misma pantalla — con la misma validación de siempre.
+     */
+    public function test_se_puede_dar_de_alta_un_producto_sin_salir_de_la_compra(): void
+    {
+        $respuesta = $this->actingAs($this->almacenero())
+            ->postJson(route('productos.store'), [
+                'nombre' => 'Fideo de prueba 400 g',
+                'categoria_id' => Categoria::first()->id,
+                'unidad_medida_id' => UnidadMedida::where('codigo', 'UND')->firstOrFail()->id,
+                'viene_en_empaque' => 1,
+                'nombre_empaque' => 'Caja',
+                'contenido_empaque' => 20,
+                'precio_compra' => '3.50',
+                'precio_venta' => '5.00',
+                'stock_minimo' => 10,
+                'stock_inicial' => 0,
+            ])
+            ->assertCreated()
+            ->json();
+
+        // Vuelve listo para usarse como línea, con su empaque ya resuelto.
+        $this->assertSame('Fideo de prueba 400 g', $respuesta['nombre']);
+        $this->assertEquals(20, $respuesta['contenido']);
+        $this->assertSame('caja', $respuesta['empaque']);
+        $this->assertEquals(0, $respuesta['stock']);
+    }
+
+    /**
+     * Nace con stock cero a propósito: las unidades las pone la línea de la
+     * compra que se está cargando. Cargarlas también en el alta las contaría
+     * dos veces.
+     */
+    public function test_el_producto_creado_desde_la_compra_nace_sin_stock(): void
+    {
+        $this->actingAs($this->almacenero())
+            ->postJson(route('productos.store'), [
+                'nombre' => 'Fideo de prueba 400 g',
+                'categoria_id' => Categoria::first()->id,
+                'unidad_medida_id' => UnidadMedida::where('codigo', 'UND')->firstOrFail()->id,
+                'precio_compra' => '3.50',
+                'precio_venta' => '5.00',
+                'stock_minimo' => 0,
+                'stock_inicial' => 0,
+            ])
+            ->assertCreated();
+
+        $producto = Producto::where('nombre', 'Fideo de prueba 400 g')->firstOrFail();
+
+        $this->assertSame('0.000', $producto->stock_actual);
+        $this->assertSame(0, $producto->movimientos()->count());
+    }
+
+    /** Sin código escrito, el correlativo lo pone el sistema. */
+    public function test_un_producto_sin_codigo_recibe_el_siguiente_correlativo(): void
+    {
+        $respuesta = $this->actingAs($this->almacenero())
+            ->postJson(route('productos.store'), [
+                'nombre' => 'Fideo de prueba 400 g',
+                'categoria_id' => Categoria::first()->id,
+                'unidad_medida_id' => UnidadMedida::where('codigo', 'UND')->firstOrFail()->id,
+                'precio_compra' => '1.00',
+                'precio_venta' => '2.00',
+                'stock_minimo' => 0,
+            ])
+            ->assertCreated()
+            ->json();
+
+        $this->assertMatchesRegularExpression('/^P-\d{4}$/', $respuesta['codigo']);
+    }
+
+    public function test_se_puede_dar_de_alta_un_proveedor_sin_salir_de_la_compra(): void
+    {
+        $respuesta = $this->actingAs($this->almacenero())
+            ->postJson(route('proveedores.store'), [
+                'razon_social' => 'Distribuidora de prueba SRL',
+                'documento' => '9988776655',
+            ])
+            ->assertCreated()
+            ->json();
+
+        $this->assertSame('Distribuidora de prueba SRL', $respuesta['razon_social']);
+        $this->assertDatabaseHas('proveedores', ['documento' => '9988776655']);
+    }
+
+    /**
+     * Responder en JSON no abre ninguna puerta: el permiso es el mismo de
+     * siempre, y por eso los atajos solo se pintan a quien puede usarlos.
+     */
+    public function test_el_cajero_no_da_de_alta_productos_ni_por_json(): void
+    {
+        $this->actingAs($this->cajero())
+            ->postJson(route('productos.store'), ['nombre' => 'Colado'])
+            ->assertForbidden();
+
+        $this->actingAs($this->cajero())
+            ->postJson(route('proveedores.store'), ['razon_social' => 'Colado'])
+            ->assertForbidden();
     }
 
     /** La vía de una línea sigue existiendo y no cuelga de ninguna compra. */

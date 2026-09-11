@@ -24,7 +24,21 @@
             <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
                 <x-form.campo label="Proveedor" for="proveedor_id" name="proveedor_id" required>
                     <x-form.select id="proveedor_id" name="proveedor_id" :value="old('proveedor_id')"
-                        placeholder="Elige el proveedor" :opciones="$proveedores" required />
+                        placeholder="Elige el proveedor" :opciones="$proveedores" x-model="proveedorId" required>
+                        {{-- Los dados de alta sin salir de aquí se agregan al
+                             final de la lista y quedan elegidos. --}}
+                        <template x-for="p in proveedoresNuevos" :key="p.id">
+                            <option :value="p.id" x-text="p.razon_social"></option>
+                        </template>
+                    </x-form.select>
+
+                    @puede('productos.gestionar')
+                        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            ¿Es la primera vez que le compras?
+                            <button type="button" @click="abrirNuevoProveedor()"
+                                class="text-brand-500 hover:text-brand-600 dark:text-brand-400">Registrar proveedor</button>
+                        </p>
+                    @endpuede
                 </x-form.campo>
 
                 <x-form.campo label="Guía o factura" for="documento_externo" name="documento_externo"
@@ -53,6 +67,17 @@
                         @keydown.enter.prevent="agregarPrimero()" @keydown.escape="resultados = []"
                         placeholder="Arroz, P-0001 o 7750001000011" autocomplete="off" autofocus />
                 </x-form.campo>
+
+                @puede('productos.gestionar')
+                    {{-- El producto que llega hoy por primera vez es el caso normal
+                         de una compra, no la excepción: mandar a la persona a otra
+                         pantalla le costaría todas las líneas que ya tecleó. --}}
+                    <p class="-mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
+                        ¿No está en el catálogo?
+                        <button type="button" @click="abrirNuevoProducto()"
+                            class="text-brand-500 hover:text-brand-600 dark:text-brand-400">Darlo de alta aquí</button>
+                    </p>
+                @endpuede
 
                 <div x-show="resultados.length" x-cloak @click.outside="resultados = []"
                     class="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-700 dark:bg-gray-900">
@@ -250,6 +275,167 @@
                 </p>
             </x-common.component-card>
         </div>
+
+        @puede('productos.gestionar')
+            {{-- ----------------------------------------- proveedor nuevo --}}
+            {{-- Los modales viven DENTRO del formulario de la compra pero sus
+                 campos no llevan `name`: se envían por fetch. Si llevaran
+                 nombre, viajarían también al registrar la compra y el
+                 validador los rechazaría. --}}
+            <div x-show="nuevoProveedorAbierto" x-cloak role="dialog" aria-modal="true"
+                aria-labelledby="titulo-nuevo-proveedor" @keydown.escape.window="nuevoProveedorAbierto = false"
+                class="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto overscroll-contain p-5">
+                <div @click="nuevoProveedorAbierto = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"></div>
+
+                <div x-trap.inert.noscroll="nuevoProveedorAbierto"
+                    class="relative max-h-[90vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 dark:bg-gray-900 sm:p-8">
+                    <h2 id="titulo-nuevo-proveedor" class="mb-1 text-xl font-semibold text-gray-800 dark:text-white/90">
+                        Registrar proveedor
+                    </h2>
+                    <p class="mb-6 text-theme-xs text-gray-500 dark:text-gray-400">
+                        Se guarda y queda elegido para esta compra, sin perder las líneas que ya cargaste.
+                    </p>
+
+                    <div class="space-y-5">
+                        <p x-show="nuevoProveedorError" x-cloak
+                            class="rounded-xl border border-error-300 px-4 py-3 text-theme-sm text-error-600 dark:border-error-700 dark:text-error-400"
+                            x-text="nuevoProveedorError"></p>
+
+                        <div>
+                            <label for="np_razon" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                Razón social<span class="text-error-600 dark:text-error-400">*</span>
+                            </label>
+                            <x-form.input id="np_razon" x-model="nuevoProveedor.razon_social"
+                                placeholder="Distribuidora del Norte S.A.C." maxlength="120" />
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <div>
+                                <label for="np_nit" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">NIT</label>
+                                <x-form.input id="np_nit" x-model="nuevoProveedor.documento"
+                                    placeholder="1023456789" maxlength="20" />
+                            </div>
+                            <div>
+                                <label for="np_tel" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">Teléfono</label>
+                                <x-form.input id="np_tel" x-model="nuevoProveedor.telefono" maxlength="20" />
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3">
+                            <x-ui.button type="button" variant="outline" size="sm"
+                                @click="nuevoProveedorAbierto = false">Cancelar</x-ui.button>
+                            <x-ui.button type="button" size="sm" @click="guardarProveedor()"
+                                x-bind:disabled="guardandoProveedor">Guardar proveedor</x-ui.button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- ------------------------------------------ producto nuevo --}}
+            <div x-show="nuevoProductoAbierto" x-cloak role="dialog" aria-modal="true"
+                aria-labelledby="titulo-nuevo-producto" @keydown.escape.window="nuevoProductoAbierto = false"
+                class="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto overscroll-contain p-5">
+                <div @click="nuevoProductoAbierto = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"></div>
+
+                <div x-trap.inert.noscroll="nuevoProductoAbierto"
+                    class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 dark:bg-gray-900 sm:p-8">
+                    <h2 id="titulo-nuevo-producto" class="mb-1 text-xl font-semibold text-gray-800 dark:text-white/90">
+                        Dar de alta un producto
+                    </h2>
+                    <p class="mb-6 text-theme-xs text-gray-500 dark:text-gray-400">
+                        Lo imprescindible para poder comprarlo y venderlo. Entra al catálogo con stock cero: las
+                        unidades las pone esta misma compra. El código interno lo asigna el sistema, y la foto, el
+                        código de barras y el resto se completan después desde el catálogo.
+                    </p>
+
+                    <div class="space-y-5">
+                        <p x-show="nuevoProductoError" x-cloak
+                            class="rounded-xl border border-error-300 px-4 py-3 text-theme-sm text-error-600 dark:border-error-700 dark:text-error-400"
+                            x-text="nuevoProductoError"></p>
+
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <div>
+                                <label for="nprod_nombre" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    Nombre<span class="text-error-600 dark:text-error-400">*</span>
+                                </label>
+                                <x-form.input id="nprod_nombre" x-model="nuevoProducto.nombre"
+                                    placeholder="Arroz extra 1 kg" maxlength="120" />
+                            </div>
+
+                            <div>
+                                <label for="nprod_categoria" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    Categoría<span class="text-error-600 dark:text-error-400">*</span>
+                                </label>
+                                <x-form.select id="nprod_categoria" x-model="nuevoProducto.categoria_id"
+                                    placeholder="Elige una categoría" :opciones="$categorias" />
+                            </div>
+                        </div>
+
+                        {{-- Las dos preguntas de siempre, en el mismo orden que en
+                             el alta completa: cómo llega y cómo sale. --}}
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <div>
+                                <label for="nprod_empaque" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    ¿Cómo te lo entrega el proveedor?
+                                </label>
+                                <x-form.select id="nprod_empaque" x-model="nuevoProducto.empaque"
+                                    :opciones="array_merge(['__suelto' => 'Suelto — igual que lo vendo'], array_combine(array_keys($empaques), array_keys($empaques)))" />
+                            </div>
+
+                            <div>
+                                <label for="nprod_unidad" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    ¿Cómo lo vendes?<span class="text-error-600 dark:text-error-400">*</span>
+                                </label>
+                                <x-form.select id="nprod_unidad" x-model="nuevoProducto.unidad_medida_id"
+                                    placeholder="Elige una unidad" :opciones="$unidades" />
+                            </div>
+
+                            <div x-show="nuevoProducto.empaque !== '__suelto'" x-cloak>
+                                <label for="nprod_contenido" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    ¿Cuánto trae cada uno?
+                                </label>
+                                <x-form.input id="nprod_contenido" type="number" step="0.001" min="0"
+                                    x-model.number="nuevoProducto.contenido" placeholder="24" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                            <div>
+                                <label for="nprod_compra" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    Precio de compra<span class="text-error-600 dark:text-error-400">*</span>
+                                </label>
+                                <x-form.input id="nprod_compra" type="number" step="0.01" min="0"
+                                    x-model.number="nuevoProducto.precio_compra" />
+                                <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">por unidad de venta</p>
+                            </div>
+
+                            <div>
+                                <label for="nprod_venta" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    Precio de venta<span class="text-error-600 dark:text-error-400">*</span>
+                                </label>
+                                <x-form.input id="nprod_venta" type="number" step="0.01" min="0"
+                                    x-model.number="nuevoProducto.precio_venta" />
+                            </div>
+
+                            <div>
+                                <label for="nprod_minimo" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                    Stock mínimo
+                                </label>
+                                <x-form.input id="nprod_minimo" type="number" step="0.001" min="0"
+                                    x-model.number="nuevoProducto.stock_minimo" />
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3">
+                            <x-ui.button type="button" variant="outline" size="sm"
+                                @click="nuevoProductoAbierto = false">Cancelar</x-ui.button>
+                            <x-ui.button type="button" size="sm" @click="guardarProducto()"
+                                x-bind:disabled="guardandoProducto">Guardar y agregar a la compra</x-ui.button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endpuede
     </form>
 @endsection
 
@@ -262,6 +448,18 @@
                 lineas: [],
                 totalFactura: '',
                 avisoSinLineas: false,
+
+                proveedorId: '{{ old('proveedor_id') }}',
+                proveedoresNuevos: [],
+                nuevoProveedorAbierto: false,
+                nuevoProveedorError: '',
+                guardandoProveedor: false,
+                nuevoProveedor: { razon_social: '', documento: '', telefono: '' },
+
+                nuevoProductoAbierto: false,
+                nuevoProductoError: '',
+                guardandoProducto: false,
+                nuevoProducto: {},
 
                 async buscar() {
                     const q = this.busqueda.trim();
@@ -339,6 +537,106 @@
 
                 get diferencia() {
                     return Math.round(((Number(this.totalFactura) || 0) - this.total) * 100) / 100;
+                },
+
+                /* ---------------------------------------------- alta rápida
+                   Las dos altas van por fetch y no por navegación: quien está
+                   cargando una factura de treinta líneas no puede permitirse
+                   salir de la pantalla y volver. Es el mismo recurso y la misma
+                   validación del módulo correspondiente — solo cambia que la
+                   respuesta vuelve en JSON. */
+                async enviar(url, datos) {
+                    const respuesta = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        },
+                        body: JSON.stringify(datos),
+                    });
+
+                    const cuerpo = await respuesta.json();
+
+                    if (!respuesta.ok) {
+                        const primero = cuerpo.errors ? Object.values(cuerpo.errors)[0]?.[0] : null;
+                        throw new Error(primero ?? cuerpo.message ?? 'No se pudo guardar.');
+                    }
+
+                    return cuerpo;
+                },
+
+                abrirNuevoProveedor() {
+                    this.nuevoProveedor = { razon_social: '', documento: '', telefono: '' };
+                    this.nuevoProveedorError = '';
+                    this.nuevoProveedorAbierto = true;
+                },
+
+                async guardarProveedor() {
+                    this.nuevoProveedorError = '';
+                    this.guardandoProveedor = true;
+
+                    try {
+                        const p = await this.enviar('{{ route('proveedores.store') }}', this.nuevoProveedor);
+
+                        this.proveedoresNuevos.push(p);
+                        this.proveedorId = String(p.id);
+                        this.nuevoProveedorAbierto = false;
+                    } catch (e) {
+                        this.nuevoProveedorError = e.message;
+                    } finally {
+                        this.guardandoProveedor = false;
+                    }
+                },
+
+                abrirNuevoProducto() {
+                    this.nuevoProducto = {
+                        /* El nombre arranca con lo que ya se había tecleado en el
+                           buscador: se llega aquí justo después de no encontrarlo. */
+                        nombre: this.busqueda.trim(),
+                        categoria_id: '',
+                        unidad_medida_id: '',
+                        empaque: '__suelto',
+                        contenido: null,
+                        precio_compra: null,
+                        precio_venta: null,
+                        stock_minimo: 0,
+                    };
+                    this.nuevoProductoError = '';
+                    this.nuevoProductoAbierto = true;
+                },
+
+                async guardarProducto() {
+                    this.nuevoProductoError = '';
+                    this.guardandoProducto = true;
+
+                    const n = this.nuevoProducto;
+                    const enEmpaque = n.empaque !== '__suelto';
+
+                    try {
+                        /* Sin `stock_inicial`: las unidades las pone la línea de
+                           esta misma compra. Cargarlo aquí las contaría dos veces. */
+                        const p = await this.enviar('{{ route('productos.store') }}', {
+                            nombre: n.nombre,
+                            categoria_id: n.categoria_id,
+                            unidad_medida_id: n.unidad_medida_id,
+                            viene_en_empaque: enEmpaque ? 1 : 0,
+                            nombre_empaque: enEmpaque ? n.empaque : null,
+                            contenido_empaque: enEmpaque ? n.contenido : null,
+                            precio_compra: n.precio_compra,
+                            precio_venta: n.precio_venta,
+                            stock_minimo: n.stock_minimo ?? 0,
+                            stock_inicial: 0,
+                            activo: 1,
+                        });
+
+                        this.agregar(p);
+                        this.nuevoProductoAbierto = false;
+                    } catch (e) {
+                        this.nuevoProductoError = e.message;
+                    } finally {
+                        this.guardandoProducto = false;
+                    }
                 },
             };
         }

@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\IngresaPorEmpaque;
 use App\Http\Controllers\Concerns\OrdenaTablas;
+use App\Models\Categoria;
 use App\Models\Compra;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\UnidadMedida;
 use App\Services\Compras;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -93,6 +95,15 @@ class CompraController extends Controller
             'title' => 'Registrar compra',
             'trail' => ['Almacén' => route('inventario.index'), 'Compras' => route('compras.index')],
             'proveedores' => Proveedor::activos()->orderBy('razon_social')->pluck('razon_social', 'id'),
+            // Para el alta rápida sin salir de la pantalla: el producto que
+            // llega hoy por primera vez y el proveedor nuevo son el caso
+            // normal de una compra, no la excepción.
+            'categorias' => Categoria::activas()->orderBy('nombre')->pluck('nombre', 'id'),
+            'unidades' => UnidadMedida::orderBy('codigo')->get()
+                ->mapWithKeys(fn (UnidadMedida $u) => [$u->id => $u->etiqueta]),
+            // La misma lista que el alta de producto, no una copia: si mañana
+            // se agrega «Jaba» tiene que aparecer en los dos sitios.
+            'empaques' => ProductoController::empaquesUsuales(),
         ]);
     }
 
@@ -114,21 +125,7 @@ class CompraController extends Controller
             ->limit(15)
             ->get();
 
-        return response()->json(
-            $productos->map(fn (Producto $p) => [
-                'id' => $p->id,
-                'codigo' => $p->codigo,
-                'nombre' => $p->nombre,
-                'unidad' => $p->unidadMedida?->codigo,
-                'unidadNombre' => mb_strtolower($p->unidadMedida?->nombre ?? 'unidad'),
-                'paso' => $p->unidadMedida?->permite_decimal ? 0.001 : 1,
-                'costo' => (float) $p->precio_compra,
-                'stock' => (float) $p->stock_actual,
-                'contenido' => (float) $p->contenido_empaque,
-                'empaque' => mb_strtolower($p->nombre_empaque ?? ''),
-                'empaquePlural' => $p->empaque_plural ?? '',
-            ])
-        );
+        return response()->json($productos->map->comoLineaDeCompra());
     }
 
     public function store(Request $request): RedirectResponse
@@ -173,10 +170,12 @@ class CompraController extends Controller
             throw ValidationException::withMessages(['lineas' => $e->getMessage()]);
         }
 
+        $lineas = $compra->detalle->count();
+
         return redirect()->route('compras.show', $compra)->with(
             'exito',
-            'Compra registrada: '.$compra->detalle->count().' productos por '
-            .Compras::total($compra).'. El stock ya está actualizado.'
+            "Compra registrada: {$lineas} ".($lineas === 1 ? 'producto' : 'productos')
+            .' por '.Compras::total($compra).'. El stock ya está actualizado.'
         );
     }
 
