@@ -461,6 +461,30 @@ p('Lo mismo vale al recibir mercadería: si la caja te sube de precio, lo escrib
 p('Un producto a granel —el arroz por kilo— no marca esa casilla, y su pantalla de ingreso sigue '
   'siendo la de siempre: una sola cantidad.', cursiva=True)
 
+doc.add_heading('Ejercicio 9 quater — Cargar una factura entera', level=2)
+p('Cargar producto por producto está bien cuando llegan tres cosas. Cuando el distribuidor te deja '
+  'una factura de treinta líneas, se hace de otra manera.')
+rico([('Entra como ', False), ('almacen / almacen123', True),
+      (' y ve a Almacén → Compras → Registrar compra.', False)])
+numerada('Arriba, pon el proveedor y el número de la factura.')
+numerada('En el buscador, escribe el nombre o pasa el lector y pulsa Enter: el producto se agrega como una línea.')
+numerada('En cada línea pon lo que trae el papel. Si el producto viene en cajas, cuentas cajas y sueltas, igual que al ingresar de a uno.')
+numerada('Repite con todos los productos de la factura.')
+numerada('Abajo, en «Cuadrar con la factura», escribe el total que dice el papel.')
+rico([('Qué comprobar: ', True),
+      ('si el sistema y la factura no suman lo mismo, te lo dice ahí y te falta lo que falta. Es el '
+       'momento de encontrar un cero de más, no el mes que viene.', False)])
+numerada('Pulsa «Registrar compra».')
+rico([('Qué comprobar: ', True),
+      ('el stock de TODOS los productos sube de una vez, y la compra queda como un documento que '
+       'puedes volver a abrir con sus líneas y su total. En Almacén → Movimientos, el número de la '
+       'factura es un enlace: desde cualquier línea del kardex llegas a la factura completa.', False)])
+p('Una compra registrada no se edita ni se borra: ya movió el stock. Si una línea quedó mal, se '
+  'corrige con un ajuste de inventario sobre ese producto, que deja la diferencia explicada y con '
+  'responsable.', cursiva=True)
+p('«Ingresar mercadería» no desaparece: sigue siendo el camino corto cuando llega una caja suelta '
+  'y no hay factura que archivar.', cursiva=True)
+
 doc.add_heading('Ejercicio 10 — Los reportes', level=2)
 rico([('Con ', False), ('admin', True), (' o ', False), ('almacen', True), (', ve a Reportes.', False)])
 p('En «Ventas», pon el rango del 01/06/2026 al 09/09/2026 y aplica. Verás los cuatro meses de '
@@ -530,6 +554,7 @@ tabla(['Módulo', 'Para qué sirve'],
 doc.add_heading('4.4 Almacén', level=2)
 tabla(['Módulo', 'Para qué sirve'],
       [['Inventario', 'La pantalla del depósito: qué hay, qué falta y qué se agotó. Desde cada fila se ingresa mercadería o se ajusta el stock por conteo, sin tener que entrar al producto.'],
+       ['Compras', 'La factura del proveedor, entera: todas sus líneas de una vez, con el total para cuadrar contra el papel antes de guardar. Queda como documento y cada línea deja su kardex.'],
        ['Movimientos', 'El historial completo del almacén: cada entrada, salida y ajuste, con su responsable. Filtra por producto, tipo, responsable y fechas.']],
       anchos=[3.6, 11.9])
 

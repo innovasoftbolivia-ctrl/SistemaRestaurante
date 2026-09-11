@@ -346,7 +346,8 @@ responsable y el motivo. De ahí salen tres operaciones:
 | Operación | Origen en el kardex | Permiso |
 |-----------|---------------------|---------|
 | Stock inicial al crear el producto | `INICIAL` | `productos.gestionar` |
-| Ingreso de mercadería (con guía o factura del proveedor) | `COMPRA` | `inventario.ingresar` |
+| Ingreso de mercadería, una línea | `COMPRA` | `inventario.ingresar` |
+| Registro de una compra completa (varias líneas, con su documento) | `COMPRA` + `compra_id` | `inventario.ingresar` |
 | Ajuste por conteo físico (motivo obligatorio) | `AJUSTE` | `inventario.ajustar` |
 
 El ajuste se registra indicando **cuántas unidades hay realmente**; el sistema calcula la
@@ -444,6 +445,36 @@ Las dos operaciones tienen **dos puertas**, y las dos terminan en el mismo servi
 - el módulo de inventario (`/inventario`), que parte del stock —qué falta, qué se agotó— y deja
   ingresar y ajustar desde cada fila. Es el camino del almacenero, que llega con la mercadería
   en la mano y todavía tiene que encontrarla.
+
+### Compras: la factura del proveedor, entera
+
+Las dos operaciones de arriba cargan **un** producto. El caso habitual es el otro: el distribuidor
+deja una factura con treinta líneas. `/compras/nueva` la registra de una vez —proveedor, número de
+documento y las líneas, cada una con sus cajas y sus sueltas— y muestra el total en vivo para
+**cuadrarlo contra el papel antes de guardar**, que es el control que antes no existía.
+
+Lo importante de cómo está hecho: **no es una segunda puerta al stock**. Cada línea pasa por
+`Inventario::ingreso()`, el mismo servicio de siempre, con el `compra_id` de la cabecera. El kardex
+sigue siendo la única verdad sobre las existencias; lo único que cambia es que ahora cada
+movimiento sabe de qué documento vino, y desde una línea del kardex se llega a la factura completa.
+
+| Tabla | Qué guarda |
+|-------|------------|
+| `compras` | La cabecera: proveedor, documento, fecha, quién la registró |
+| `compra_detalle` | Lo que decía el papel: producto, cantidad, costo unitario, importe (columna generada) |
+| `movimientos_inventario.compra_id` | El efecto en el estante, colgado de su documento |
+
+Todo va en una transacción: o entra la factura entera, o no entra nada. Una compra a medias —diez
+líneas cargadas y veinte no— sería peor que no haberla cargado, porque nadie sabría dónde se cortó.
+
+No hay permiso propio: registrar una compra **es** ingresar mercadería, solo que de muchas líneas a
+la vez, así que usa `inventario.ingresar`. Y «Ingresar mercadería» se queda donde estaba: cuando
+llega una caja suelta no hay factura que archivar. El esquema previó las dos vías desde el
+principio, y por eso `movimientos_inventario` guarda `proveedor_id` y `documento_externo` sueltos
+además de `compra_id`.
+
+Una compra registrada no se edita ni se borra —ya movió el stock—. Si una línea se cargó mal, se
+corrige con un ajuste de inventario, que deja la diferencia explicada y con responsable.
 
 `/inventario/movimientos` es el kardex de todo el almacén, con filtros por producto, tipo de
 movimiento, responsable y rango de fechas. Responde lo que la ficha de un producto no puede:

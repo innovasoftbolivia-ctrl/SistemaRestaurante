@@ -126,7 +126,15 @@
                                 </td>
 
                                 <td class="hidden px-5 py-4 text-theme-sm text-gray-500 lg:table-cell dark:text-gray-400">
-                                    @if ($movimiento->documento_externo)
+                                    {{-- Si el movimiento vino de una compra, el documento
+                                         es un enlace: desde una línea del kardex se llega
+                                         a la factura entera y a lo que traía. --}}
+                                    @if ($movimiento->compra_id)
+                                        <a href="{{ route('compras.show', $movimiento->compra_id) }}"
+                                            class="font-mono text-theme-xs text-brand-500 hover:text-brand-600 dark:text-brand-400">
+                                            {{ $movimiento->documento_externo ?: 'Compra #'.$movimiento->compra_id }}
+                                        </a>
+                                    @elseif ($movimiento->documento_externo)
                                         <span class="font-mono text-theme-xs">{{ $movimiento->documento_externo }}</span>
                                     @endif
                                     @if ($movimiento->proveedor)

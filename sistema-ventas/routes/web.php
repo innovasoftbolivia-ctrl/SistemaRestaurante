@@ -7,6 +7,7 @@ use App\Http\Controllers\CargoController;
 use App\Http\Controllers\CategoriaController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\CobroQrController;
+use App\Http\Controllers\CompraController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionController;
@@ -246,6 +247,28 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
         ->middleware('permiso:inventario.ajustar')
         ->name('inventario.ajuste');
+
+    // ---- Compras: la factura del proveedor, entera ----
+    // Sin permiso propio: registrar la compra ES ingresar mercadería, solo que
+    // de muchas líneas a la vez. El listado lo abre además quien ve reportes,
+    // igual que el inventario.
+    Route::middleware('permiso:inventario.ingresar,reportes.ver')->group(function () {
+        Route::get('compras', [CompraController::class, 'index'])->name('compras.index');
+    });
+
+    Route::middleware('permiso:inventario.ingresar')->group(function () {
+        Route::get('compras/nueva', [CompraController::class, 'create'])->name('compras.create');
+        Route::get('compras/productos', [CompraController::class, 'buscar'])
+            ->middleware('throttle:60,1')
+            ->name('compras.productos');
+        Route::post('compras', [CompraController::class, 'store'])->name('compras.store');
+    });
+
+    // Va al final del bloque a propósito: `compras/{compra}` es un comodín y,
+    // declarado antes, se tragaría `compras/nueva` y `compras/productos`.
+    Route::get('compras/{compra}', [CompraController::class, 'show'])
+        ->middleware('permiso:inventario.ingresar,reportes.ver')
+        ->name('compras.show');
 
     // ---- Usuarios y roles ----
     Route::middleware('permiso:usuarios.gestionar')->group(function () {

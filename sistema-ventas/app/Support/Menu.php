@@ -60,6 +60,10 @@ class Menu
                 'title' => 'Almacén',
                 'items' => [
                     ['icon' => 'inventario', 'name' => 'Inventario', 'path' => '/inventario'],
+                    // Las compras van dentro del almacén y no en un grupo
+                    // propio: es la misma persona, en el mismo momento y con la
+                    // mercadería en la mano.
+                    ['icon' => 'proveedores', 'name' => 'Compras', 'path' => '/compras'],
                     ['icon' => 'kardex', 'name' => 'Movimientos', 'path' => '/inventario/movimientos'],
                 ],
             ];

@@ -138,10 +138,15 @@
                                                     {{ $movimiento->motivo }}
                                                 </span>
                                             @endif
-                                            @if ($movimiento->proveedor || $movimiento->documento_externo)
+                                            @if ($movimiento->proveedor || $movimiento->documento_externo || $movimiento->compra_id)
                                                 <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
                                                     {{ $movimiento->proveedor?->razon_social }}
-                                                    @if ($movimiento->documento_externo)
+                                                    {{-- Con compra detrás, el documento lleva a
+                                                         la factura completa. --}}
+                                                    @if ($movimiento->compra_id)
+                                                        · <a href="{{ route('compras.show', $movimiento->compra_id) }}"
+                                                            class="text-brand-500 hover:text-brand-600 dark:text-brand-400">{{ $movimiento->documento_externo ?: 'Compra #'.$movimiento->compra_id }}</a>
+                                                    @elseif ($movimiento->documento_externo)
                                                         · {{ $movimiento->documento_externo }}
                                                     @endif
                                                 </span>

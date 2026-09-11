@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\Producto;
-use App\Services\Auditor;
+use App\Services\Costos;
 use App\Support\Config;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -62,38 +62,66 @@ trait IngresaPorEmpaque
         string $campo = 'cantidad',
         bool $obligatoria = true,
     ): array {
+        return $this->unidadesDeclaradas(
+            producto: $producto,
+            cantidad: $request->input($campo),
+            empaques: $request->filled('empaques') ? (int) $request->input('empaques') : null,
+            sueltas: $request->filled('sueltas') ? (float) $request->input('sueltas') : null,
+            campo: $campo,
+            obligatoria: $obligatoria,
+        );
+    }
+
+    /**
+     * La misma cuenta, sobre valores sueltos en vez de sobre la petición.
+     *
+     * Existe porque la compra trae muchas líneas y cada una tiene sus propios
+     * `empaques` y `sueltas` dentro de un arreglo: leerlos con nombres fijos de
+     * la petición no serviría. El cálculo, las reglas y el texto del kardex son
+     * exactamente los mismos — que es todo el sentido de que esto esté aquí y
+     * no copiado en cada pantalla.
+     *
+     * @return array{cantidad: float, detalle: ?string}
+     */
+    protected function unidadesDeclaradas(
+        Producto $producto,
+        mixed $cantidad = null,
+        ?int $empaques = null,
+        ?float $sueltas = null,
+        string $campo = 'cantidad',
+        bool $obligatoria = true,
+    ): array {
         $producto->loadMissing('unidadMedida');
 
-        $porEmpaques = $producto->tieneEmpaque()
-            && ($request->filled('empaques') || $request->filled('sueltas'));
+        $porEmpaques = $producto->tieneEmpaque() && ($empaques !== null || $sueltas !== null);
 
         if (! $porEmpaques) {
-            $cantidad = (float) $request->input($campo, 0);
+            $total = (float) ($cantidad ?? 0);
 
-            $this->exigirCantidadEntera($producto, $cantidad, $campo);
+            $this->exigirCantidadEntera($producto, $total, $campo);
 
             if ($obligatoria) {
-                $this->exigirPositivo($cantidad, $campo);
+                $this->exigirPositivo($total, $campo);
             }
 
-            return ['cantidad' => max($cantidad, 0), 'detalle' => null];
+            return ['cantidad' => max($total, 0), 'detalle' => null];
         }
 
-        $empaques = (int) $request->input('empaques', 0);
-        $sueltas = (float) $request->input('sueltas', 0);
+        $empaques ??= 0;
+        $sueltas ??= 0;
 
         // Las sueltas se cuentan en unidades de venta, así que les toca la
         // misma regla de decimales que a una cantidad escrita a mano.
         $this->exigirCantidadEntera($producto, $sueltas, 'sueltas');
 
-        $cantidad = $producto->unidadesDe($empaques, $sueltas);
+        $total = $producto->unidadesDe($empaques, $sueltas);
 
         if ($obligatoria) {
-            $this->exigirPositivo($cantidad, 'empaques');
+            $this->exigirPositivo($total, 'empaques');
         }
 
         return [
-            'cantidad' => $cantidad,
+            'cantidad' => $total,
             'detalle' => $this->describirEntrada($producto, $empaques, $sueltas),
         ];
     }
@@ -153,43 +181,24 @@ trait IngresaPorEmpaque
     /**
      * Deja el costo del producto igual al de esta compra, si se pidió.
      *
-     * Hasta aquí, `costo_unitario` se guardaba solo en el movimiento y el
-     * `precio_compra` del producto se quedaba con lo que se escribió el día del
-     * alta. El resultado era silencioso y feo: el proveedor sube la caja de 96
-     * a 108, el almacenero lo carga bien, y el sistema sigue diciendo que se
-     * gana Bs 2.00 por unidad cuando se ganan 1.50. El valor del inventario
-     * también quedaba corto.
+     * Hasta que existió esto, `costo_unitario` se guardaba solo en el
+     * movimiento y el `precio_compra` del producto se quedaba con lo que se
+     * escribió el día del alta. El resultado era silencioso y feo: el proveedor
+     * sube la caja de 96 a 108, el almacenero lo carga bien, y el sistema sigue
+     * diciendo que se gana Bs 2.00 por unidad cuando se ganan 1.50.
      *
-     * No se hace solo: lo decide una casilla del formulario, porque una compra
-     * puntual más cara —una urgencia, un flete— no siempre debe convertirse en
-     * el costo de referencia del producto. Y cuando se hace, se audita: cambiar
-     * el costo mueve el margen de todos los reportes.
+     * Lo decide una casilla y no el sistema, porque una compra puntual más cara
+     * —una urgencia, un flete— no siempre debe volverse el costo de referencia.
      *
      * @return array{anterior: float, nuevo: float}|null  null si no cambió nada
      */
     protected function actualizarCosto(Request $request, Producto $producto, ?float $costo): ?array
     {
-        if ($costo === null || ! $request->boolean('actualizar_costo')) {
+        if (! $request->boolean('actualizar_costo')) {
             return null;
         }
 
-        $anterior = round((float) $producto->precio_compra, 2);
-        $nuevo = round($costo, 2);
-
-        if ($anterior === $nuevo) {
-            return null;
-        }
-
-        $producto->forceFill(['precio_compra' => $nuevo])->save();
-
-        Auditor::registrar('CAMBIO_COSTO', 'productos', $producto->id, [
-            'codigo' => $producto->codigo,
-            'anterior' => $anterior,
-            'nuevo' => $nuevo,
-            'origen' => 'ingreso de mercadería',
-        ]);
-
-        return ['anterior' => $anterior, 'nuevo' => $nuevo];
+        return Costos::aplicar($producto, $costo, 'ingreso de mercadería');
     }
 
     /**

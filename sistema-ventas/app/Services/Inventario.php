@@ -40,7 +40,16 @@ class Inventario
         ]);
     }
 
-    /** Mercadería que llega del proveedor. */
+    /**
+     * Mercadería que llega del proveedor.
+     *
+     * `$compraId` engancha el movimiento a la cabecera de una compra cuando la
+     * entrada vino de una factura con varias líneas. Es opcional porque el
+     * almacén también carga de a una —llegó una caja suelta, no hay documento
+     * que abrir— y esa vía tenía que seguir funcionando igual: el esquema
+     * guarda `proveedor_id` y `documento_externo` en el propio movimiento
+     * justo para eso.
+     */
     public static function ingreso(
         Producto $producto,
         float $cantidad,
@@ -48,10 +57,12 @@ class Inventario
         ?string $documentoExterno = null,
         ?float $costoUnitario = null,
         ?string $motivo = null,
+        ?int $compraId = null,
     ): MovimientoInventario {
         return self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
             'proveedor_id' => $proveedorId,
             'documento_externo' => $documentoExterno,
+            'compra_id' => $compraId,
             'costo_unitario' => $costoUnitario,
             'motivo' => $motivo,
         ]);

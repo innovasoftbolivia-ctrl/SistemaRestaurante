@@ -98,6 +98,7 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | Comprobantes | `tipos_comprobante`, `series_comprobante`, **`comprobantes`**, `metodos_pago` |
 | Ventas | `ventas`, `venta_detalle`, `venta_pagos` |
 | Devoluciones | `devoluciones`, `devolucion_detalle` |
+| Compras | `compras`, `compra_detalle` |
 | Inventario | `movimientos_inventario` |
 | Sistema | `configuracion`, `auditoria` |
 
