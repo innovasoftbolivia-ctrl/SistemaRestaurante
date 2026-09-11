@@ -54,7 +54,7 @@
                             :class="categoria === ''
                                 ? 'bg-brand-500 text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-400 dark:hover:bg-white/10'"
-                            class="flex-none rounded-full px-3.5 py-1.5 text-theme-xs font-medium transition">
+                            class="flex-none min-h-11 rounded-full px-4 py-3 text-theme-xs font-medium transition">
                             Todas
                         </button>
 
@@ -63,7 +63,7 @@
                                 :class="categoria === '{{ $categoria->id }}'
                                     ? 'bg-brand-500 text-white'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-400 dark:hover:bg-white/10'"
-                                class="flex-none rounded-full px-3.5 py-1.5 text-theme-xs font-medium transition">
+                                class="flex-none min-h-11 rounded-full px-4 py-3 text-theme-xs font-medium transition">
                                 {{ $categoria->nombre }}
                                 <span class="opacity-60">{{ $categoria->productos_count }}</span>
                             </button>
@@ -138,7 +138,7 @@
                                 </span>
 
                                 <span class="flex items-baseline justify-between gap-2">
-                                    <span class="text-base font-bold text-brand-600 dark:text-brand-400"
+                                    <span class="whitespace-nowrap text-base font-bold text-brand-600 dark:text-brand-400"
                                         x-text="'{{ $moneda }} ' + p.precio_estante.toFixed(2)"></span>
                                     <span class="text-theme-xs whitespace-nowrap"
                                         :class="p.stock > 0 && p.stock <= 5 ? 'text-warning-700 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'"
@@ -192,7 +192,7 @@
                                     class="rounded-full bg-brand-50 px-3 py-1 text-theme-xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-400"
                                     x-text="cantidadTexto(articulos) + (articulos == 1 ? ' artículo' : ' artículos')"></span>
                                 <button type="button" x-show="carrito.length" @click="carrito = []"
-                                    class="text-theme-xs text-error-600 dark:text-error-400 hover:text-error-600">Vaciar</button>
+                                    class="-my-2 flex min-h-11 items-center rounded-lg px-2 text-theme-xs font-medium text-error-600 transition hover:bg-error-50 dark:text-error-400 dark:hover:bg-error-500/10">Vaciar</button>
                             </div>
                         </div>
                         <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">
@@ -226,7 +226,7 @@
                                             x-text="'{{ $moneda }} ' + l.precio_estante.toFixed(2) + ' × ' + cantidadTexto(l.cantidad) + ' ' + l.unidad"></p>
                                     </div>
                                     <button type="button" @click="quitar(i)" :aria-label="`Quitar ${l.nombre} del carrito`"
-                                        class="rounded-lg p-1 text-gray-400 transition hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10">
+                                        class="-mr-2 -mt-2 flex h-11 w-11 flex-none items-center justify-center rounded-lg text-gray-400 transition hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10">
                                         <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none">
                                             <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"
                                                 stroke-linecap="round" />
@@ -239,13 +239,13 @@
                                 <div class="mt-2 flex items-center justify-between gap-2">
                                     <div class="flex items-center gap-1">
                                         <button type="button" @click="sumar(i, -1)" :aria-label="`Quitar una unidad de ${l.nombre}`"
-                                            class="h-8 w-8 rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">−</button>
+                                            class="h-11 w-11 text-base rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">−</button>
                                         <input type="number" inputmode="decimal" :step="l.decimal ? '0.001' : '1'" min="0"
                                             x-model.number="l.cantidad" @change="normalizar(i)"
                                             :aria-label="`Cantidad de ${l.nombre}`"
-                                            class="dark:bg-dark-900 h-8 w-20 rounded-lg border border-gray-300 bg-transparent px-2 text-center text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                            class="dark:bg-dark-900 h-11 w-20 rounded-lg border border-gray-300 bg-transparent px-2 text-center text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                                         <button type="button" @click="sumar(i, 1)" :aria-label="`Agregar una unidad de ${l.nombre}`"
-                                            class="h-8 w-8 rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">+</button>
+                                            class="h-11 w-11 text-base rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">+</button>
                                     </div>
                                     <span class="text-theme-sm font-semibold text-gray-800 dark:text-white/90"
                                         x-text="'{{ $moneda }} ' + (l.precio_estante * l.cantidad).toFixed(2)"></span>
@@ -296,7 +296,7 @@
                         <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
                             Persona jurídica recibe <b>factura</b>; el resto, <b>recibo</b>.
                             <button type="button" @click="abrirNuevoCliente()"
-                                class="text-brand-500 dark:text-brand-400 hover:text-brand-600">Registrar cliente</button>
+                                class="-my-2 px-1 py-2 font-medium text-brand-500 dark:text-brand-400 hover:text-brand-600">Registrar cliente</button>
                         </p>
                     </div>
 
@@ -314,7 +314,7 @@
                         <div class="flex items-center justify-between gap-3">
                             <label for="descuento" class="text-theme-sm text-gray-500 dark:text-gray-400">Descuento</label>
                             <input id="descuento" type="number" inputmode="decimal" step="0.01" min="0" x-model.number="descuento"
-                                class="dark:bg-dark-900 h-9 w-28 rounded-lg border border-gray-300 bg-transparent px-2 text-right text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                class="dark:bg-dark-900 h-11 w-28 rounded-lg border border-gray-300 bg-transparent px-2 text-right text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                         </div>
 
                         <p x-show="excedeDescuento" class="text-theme-xs text-warning-700 dark:text-orange-400">
@@ -367,7 +367,7 @@
                                             :class="pago.metodoId === m.id
                                                 ? 'bg-brand-500 text-white'
                                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10'"
-                                            class="rounded-lg px-3 py-2 text-theme-xs font-medium transition"
+                                            class="min-h-11 rounded-lg px-4 py-3 text-theme-xs font-medium transition"
                                             x-text="m.nombre"></button>
                                     </template>
                                 </div>
@@ -399,7 +399,7 @@
                                     <div class="mt-2 flex flex-wrap gap-1.5">
                                         <template x-for="s in sugerenciasDe(pago)" :key="s">
                                             <button type="button" @click="pago.recibido = s"
-                                                class="rounded-lg bg-gray-100 px-2.5 py-1 text-theme-xs text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10"
+                                                class="min-h-11 rounded-lg bg-gray-100 px-3 py-3 text-theme-xs text-gray-600 transition hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10"
                                                 x-text="'{{ $moneda }} ' + s.toFixed(2)"></button>
                                         </template>
                                     </div>
@@ -495,7 +495,7 @@
 
                         <button type="button" @click="agregarPago()"
                             x-show="pagos.length < metodos.length && total > 0"
-                            class="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-theme-xs font-medium text-gray-500 transition hover:border-brand-400 hover:text-brand-500 dark:border-gray-700 dark:text-gray-400">
+                            class="min-h-11 w-full rounded-lg border border-dashed border-gray-300 px-3 py-3 text-theme-xs font-medium text-gray-500 transition hover:border-brand-400 hover:text-brand-500 dark:border-gray-700 dark:text-gray-400">
                             + Dividir el pago en otra forma
                         </button>
 

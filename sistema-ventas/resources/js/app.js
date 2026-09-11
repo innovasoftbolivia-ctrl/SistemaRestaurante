@@ -27,6 +27,36 @@ Alpine.plugin(focus);
 
 Alpine.start();
 
+/**
+ * La rueda del ratón no cambia cantidades.
+ *
+ * Los navegadores suben y bajan el valor de un `<input type="number">` cuando
+ * se gira la rueda estando el campo enfocado. En una pantalla de cobro eso es
+ * una trampa: se escribe una cantidad, se rueda para seguir leyendo la página,
+ * y el número cambia sin que nadie lo note. No hay aviso, no hay deshacer, y
+ * el error viaja hasta el kardex.
+ *
+ * Se quita el foco en vez de cancelar el evento. Cancelarlo evitaría el cambio
+ * pero también dejaría la página sin desplazarse, que es justo lo que la
+ * persona quería hacer. Sin foco, el navegador ya no toca el valor y la página
+ * rueda como en cualquier otro sitio.
+ *
+ * Va en `document` y no campo por campo porque hay campos numéricos en el
+ * mostrador, en las compras, en los ajustes y en cada formulario del catálogo
+ * —y los hay que Alpine crea después de cargar la página.
+ */
+document.addEventListener(
+    'wheel',
+    () => {
+        const activo = document.activeElement;
+
+        if (activo instanceof HTMLInputElement && activo.type === 'number') {
+            activo.blur();
+        }
+    },
+    { passive: true },
+);
+
 function iniciarPantalla() {
     iniciarGraficos();
 
