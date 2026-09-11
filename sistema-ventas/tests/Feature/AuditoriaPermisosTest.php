@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
+use App\Models\Lote;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Proveedor;
@@ -68,6 +69,14 @@ class AuditoriaPermisosTest extends TestCase
 
         $cobro = CobrosQr::generar($sesion->fresh(), $cajero, 10.0);
 
+        // Y una tanda, por lo mismo: de ella cuelga la baja por vencimiento.
+        $lote = Lote::create([
+            'producto_id' => $producto->id,
+            'fecha_vencimiento' => now()->subDay()->toDateString(),
+            'cantidad_inicial' => 1,
+            'cantidad_actual' => 1,
+        ]);
+
         // La compra también se crea aquí: de ella cuelga la devolución al
         // proveedor, y sin una factura real esa ruta contestaría 404 antes de
         // que el portero llegara a opinar.
@@ -84,6 +93,7 @@ class AuditoriaPermisosTest extends TestCase
             'devolucion' => $devolucion->id,
             'cobro' => $cobro->id,
             'compra' => $compra->id,
+            'lote' => $lote->id,
             'producto' => DB::table('productos')->max('id'),
             'categoria' => DB::table('categorias')->max('id'),
             'unidad' => DB::table('unidades_medida')->max('id'),

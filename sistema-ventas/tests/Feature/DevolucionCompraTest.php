@@ -547,16 +547,16 @@ class DevolucionCompraTest extends TestCase
     }
 
     /**
-     * Lo que no vino de una factura se saca con un ajuste, no devolviéndolo.
+     * Lo que no vino de una factura se da de baja, no se devuelve.
      *
      * Es el stock que ya estaba cuando se encendió el control: no hay papel
      * contra el que reclamarle a nadie, y ofrecer «devolver» sería mentir.
      */
-    public function test_lo_vencido_sin_compra_detras_manda_al_ajuste(): void
+    public function test_lo_vencido_sin_compra_detras_no_ofrece_devolver(): void
     {
         $producto = $this->perecedero();
 
-        Lote::create([
+        $lote = Lote::create([
             'producto_id' => $producto->id,
             'fecha_vencimiento' => now()->subDays(5)->toDateString(),
             'cantidad_inicial' => 6,
@@ -565,10 +565,14 @@ class DevolucionCompraTest extends TestCase
 
         $producto->forceFill(['stock_actual' => 6])->save();
 
-        $this->actingAs($this->almacenero())
+        $respuesta = $this->actingAs($this->almacenero())
             ->get(route('vencimientos.index'))
-            ->assertOk()
-            ->assertSee(route('inventario.index', ['buscar' => $producto->codigo]), escape: false);
+            ->assertOk();
+
+        // La fila está, y la única salida que ofrece es darla de baja.
+        $respuesta->assertSee($producto->nombre);
+        $respuesta->assertSee($this->enElPayload('id', $lote->id), escape: false);
+        $respuesta->assertDontSee('compras/'.$lote->id.'/devolucion', escape: false);
     }
 
     /** El atajo llega con la tanda, su cantidad y el motivo ya puestos. */

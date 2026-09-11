@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Lote;
 use App\Models\Producto;
+use App\Services\Inventario;
 use App\Services\Lotes;
+use App\Support\Config;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -73,6 +76,71 @@ class VencimientoController extends Controller
             'sin_fecha' => (float) $base()->whereNull('l.fecha_vencimiento')->sum('l.cantidad_actual'),
             'controlados' => Producto::activos()->where('controla_vencimiento', 1)->count(),
         ];
+    }
+
+    /**
+     * Sacar del inventario una tanda vencida, de una sola vez.
+     *
+     * Lo vencido sigue contando como stock hasta que alguien lo dice: el
+     * mostrador lo dejaría vender y el reporte lo sigue valorando. Esto es lo
+     * que lo saca, y es un AJUSTE como cualquier otro —con su movimiento en el
+     * kardex, su responsable y su motivo—, no un borrado.
+     *
+     * El motivo lo arma el servidor y no se teclea. Es la diferencia entre un
+     * kardex donde dice «Baja por vencimiento — lote L06227, venció el
+     * 11/09/2026» y uno donde cada quien escribió lo que le pareció.
+     */
+    public function baja(Request $request, Lote $lote): RedirectResponse
+    {
+        $datos = $request->validate([
+            'observacion' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $lote->load('producto.unidadMedida');
+
+        if ((float) $lote->cantidad_actual <= 0) {
+            return back()->with('error', 'Esa tanda ya no tiene unidades.');
+        }
+
+        // Solo lo que ya venció. Lo que caduca la semana que viene todavía se
+        // puede vender o devolver, y darlo de baja sería tirar mercadería buena.
+        if (! $lote->vencido) {
+            return back()->with('error', 'Esa tanda todavía no venció: se puede vender o devolver al proveedor.');
+        }
+
+        $cantidad = Config::cantidad($lote->cantidad_actual);
+        $unidad = $lote->producto?->unidadMedida?->codigo;
+
+        $movimiento = Inventario::bajaDeLote($lote, $this->motivoDeLaBaja($lote, $datos['observacion'] ?? null));
+
+        if (! $movimiento) {
+            return back()->with('error', 'Esa tanda ya no tiene unidades.');
+        }
+
+        return back()->with(
+            'exito',
+            "Dadas de baja {$cantidad} {$unidad} de «{$lote->producto?->nombre}». "
+            .'Quedan '.Config::cantidad($movimiento->stock_resultante)." {$unidad} en stock, "
+            .'y el movimiento está en el kardex.'
+        );
+    }
+
+    /** Lo que va a leer quien revise el kardex dentro de seis meses. */
+    private function motivoDeLaBaja(Lote $lote, ?string $observacion): string
+    {
+        $partes = ['Baja por vencimiento'];
+
+        if ($lote->codigo) {
+            $partes[] = "lote {$lote->codigo}";
+        }
+
+        if ($lote->fecha_vencimiento) {
+            $partes[] = 'venció el '.$lote->fecha_vencimiento->format('d/m/Y');
+        }
+
+        $motivo = implode(', ', $partes);
+
+        return $observacion ? $motivo.' — '.$observacion : $motivo;
     }
 
     /** El detalle de un producto: sus tandas, con lo que queda de cada una. */

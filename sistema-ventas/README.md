@@ -437,8 +437,27 @@ para saltar de la tanda caducada a la factura por la que entró, con la cantidad
 puestos: ver el problema y resolverlo sin tener que acordarse del papel.
 
 La tanda que no vino de ninguna compra —el stock que ya estaba cuando se encendió el control— no
-ofrece devolver sino **ajustar**, que es lo honesto: no hay factura contra la que reclamarle a
+ofrece devolver sino **dar de baja**, que es lo honesto: no hay factura contra la que reclamarle a
 nadie.
+
+### Dar de baja lo vencido
+
+Lo vencido **sigue contando como stock** hasta que alguien lo dice: el mostrador lo dejaría vender
+y el reporte lo sigue valorando. «Dar de baja» lo saca, y es un `AJUSTE` como cualquier otro —con
+su movimiento en el kardex, su responsable y su motivo—, no un borrado.
+
+Lo que cambia frente al ajuste normal es quién hace la resta. El ajuste pide el stock contado y
+obliga a calcular a mano «24 en total menos 4 vencidas = 20», que es justo donde alguien escribe
+`0` y se lleva por delante las 20 buenas. Aquí la cantidad sale de la propia tanda, y se descuenta
+de **esa** tanda y no de la que tocaría por orden de salida: se está tirando un lote concreto
+porque venció, no descontando a ciegas.
+
+El motivo lo arma el servidor —«Baja por vencimiento, lote L06452, venció el 22/07/2026»— y solo se
+puede añadir una observación. Es la diferencia entre un kardex que se puede leer dentro de seis
+meses y uno donde cada quien escribió lo que le pareció.
+
+Solo se ofrece para lo **ya vencido**. Lo que caduca la semana que viene todavía se vende o se
+devuelve, y ofrecer tirarlo sería invitar a tirar mercadería buena.
 
 ### Comprar por caja y vender por unidad
 

@@ -259,6 +259,12 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
             ->name('vencimientos.producto');
     });
 
+    // Dar de baja una tanda vencida es un ajuste de inventario, así que pide el
+    // permiso de ajustar y no el de mirar.
+    Route::post('vencimientos/{lote}/baja', [VencimientoController::class, 'baja'])
+        ->middleware('permiso:inventario.ajustar')
+        ->name('vencimientos.baja');
+
     // ---- Compras: la factura del proveedor, entera ----
     // Sin permiso propio: registrar la compra ES ingresar mercadería, solo que
     // de muchas líneas a la vez. El listado lo abre además quien ve reportes,

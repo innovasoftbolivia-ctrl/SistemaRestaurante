@@ -150,6 +150,51 @@ class Inventario
     }
 
     /**
+     * Da de baja una tanda entera: lo vencido deja de contar como stock.
+     *
+     * Es un AJUSTE, igual que un conteo físico, y por el mismo motivo: la
+     * mercadería no se vendió ni volvió al proveedor, simplemente dejó de
+     * existir. Lo que cambia es quién hace la resta. El ajuste normal pide el
+     * stock contado y obliga a calcular a mano «24 en total menos 4 vencidas =
+     * 20», que es justo donde alguien escribe 0 y se lleva por delante las 20
+     * buenas. Aquí la cantidad sale de la propia tanda.
+     *
+     * Y sale de ESA tanda, no de la que tocaría por orden de salida: se está
+     * dando de baja un lote concreto porque venció, no descontando a ciegas.
+     */
+    public static function bajaDeLote(Lote $lote, string $motivo): ?MovimientoInventario
+    {
+        $producto = $lote->producto;
+
+        return DB::transaction(function () use ($lote, $producto, $motivo) {
+            $actual = (float) Producto::whereKey($producto->id)->lockForUpdate()->value('stock_actual');
+
+            // Se relee dentro del bloqueo: entre que se pintó la pantalla y se
+            // confirmó, el mostrador pudo haber vendido parte de esa tanda.
+            $lote->refresh();
+            $cantidad = min((float) $lote->cantidad_actual, $actual);
+
+            if ($cantidad <= 0) {
+                return null;
+            }
+
+            $movimiento = self::registrar(
+                producto: $producto,
+                cantidad: $cantidad,
+                tipo: 'AJUSTE',
+                origen: 'AJUSTE',
+                stockAnterior: $actual,
+                stockResultante: round($actual - $cantidad, 3),
+                extra: ['motivo' => mb_substr($motivo, 0, 255)],
+            );
+
+            Lotes::consumirDe($producto, $cantidad, $lote);
+
+            return $movimiento;
+        }, self::REINTENTOS);
+    }
+
+    /**
      * Ajuste por conteo físico: se indica el stock real y el sistema calcula
      * la diferencia. El motivo es obligatorio; un descuadre sin explicación no
      * sirve de nada.

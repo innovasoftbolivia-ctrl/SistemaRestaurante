@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Caja;
 use App\Models\Lote;
 use App\Models\MetodoPago;
+use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\SesionCaja;
@@ -63,6 +64,135 @@ class VencimientoTest extends TestCase
         $producto->forceFill(['stock_actual' => 0])->save();
 
         return $producto->fresh();
+    }
+
+    /** Quien ajusta inventario: es el permiso que pide dar de baja una tanda. */
+    private function queAjusta(): Usuario
+    {
+        return Usuario::whereHas('rol.permisos', fn ($q) => $q->where('codigo', 'inventario.ajustar'))
+            ->firstOrFail();
+    }
+
+    // ------------------------------------------------- dar de baja lo vencido
+
+    /**
+     * Lo vencido sigue contando como stock hasta que alguien lo saca.
+     *
+     * Mientras no se haga, el mostrador lo deja vender y el reporte lo valora.
+     * Esta es la salida, y es un ajuste: la mercadería no se vendió ni volvió
+     * al proveedor, dejó de existir.
+     */
+    public function test_dar_de_baja_una_tanda_vencida_la_saca_del_stock(): void
+    {
+        $producto = $this->perecedero();
+
+        $this->cargar($producto, 10, now()->subDays(4)->toDateString());
+        $this->cargar($producto, 15, now()->addMonths(6)->toDateString());
+
+        $vencida = Lote::where('producto_id', $producto->id)
+            ->orderBy('fecha_vencimiento')
+            ->firstOrFail();
+
+        $this->actingAs($this->queAjusta())
+            ->post(route('vencimientos.baja', $vencida))
+            ->assertRedirect();
+
+        $this->assertSame(0.0, (float) $vencida->fresh()->cantidad_actual);
+        $this->assertSame(15.0, (float) $producto->fresh()->stock_actual);
+
+        // La regla de siempre: los lotes son el stock repartido.
+        $this->assertSame(
+            15.0,
+            (float) Lote::where('producto_id', $producto->id)->sum('cantidad_actual'),
+        );
+    }
+
+    /**
+     * Sale ESA tanda y no la que tocaría por orden.
+     *
+     * Es lo que distingue la baja del ajuste normal: no se está descontando a
+     * ciegas, se está tirando un lote concreto porque venció.
+     */
+    public function test_la_baja_descuenta_la_tanda_elegida(): void
+    {
+        $producto = $this->perecedero();
+
+        $this->cargar($producto, 8, now()->subDays(10)->toDateString());
+        $this->cargar($producto, 12, now()->subDays(2)->toDateString());
+
+        $laSegunda = Lote::where('producto_id', $producto->id)
+            ->orderByDesc('fecha_vencimiento')
+            ->firstOrFail();
+
+        $this->actingAs($this->queAjusta())
+            ->post(route('vencimientos.baja', $laSegunda))
+            ->assertRedirect();
+
+        $this->assertSame(0.0, (float) $laSegunda->fresh()->cantidad_actual);
+        $this->assertSame(
+            8.0,
+            (float) Lote::where('producto_id', $producto->id)
+                ->orderBy('fecha_vencimiento')
+                ->firstOrFail()
+                ->cantidad_actual,
+        );
+    }
+
+    /** El motivo lo escribe el sistema: un kardex con explicaciones sueltas no sirve. */
+    public function test_la_baja_deja_su_ajuste_explicado_en_el_kardex(): void
+    {
+        $producto = $this->perecedero();
+        $this->cargar($producto, 6, now()->subDays(3)->toDateString());
+
+        $lote = Lote::where('producto_id', $producto->id)->sole();
+        $lote->forceFill(['codigo' => 'L04821'])->save();
+
+        $this->actingAs($this->queAjusta())
+            ->post(route('vencimientos.baja', $lote), ['observacion' => 'Se botó'])
+            ->assertRedirect();
+
+        $movimiento = MovimientoInventario::where('producto_id', $producto->id)
+            ->where('origen', 'AJUSTE')
+            ->latest('id')
+            ->sole();
+
+        $this->assertSame('AJUSTE', $movimiento->tipo);
+        $this->assertSame(6.0, (float) $movimiento->cantidad);
+        $this->assertSame(0.0, (float) $movimiento->stock_resultante);
+        $this->assertStringContainsString('Baja por vencimiento', $movimiento->motivo);
+        $this->assertStringContainsString('L04821', $movimiento->motivo);
+        $this->assertStringContainsString('Se botó', $movimiento->motivo);
+    }
+
+    /** Lo que todavía no vence se vende o se devuelve; tirarlo sería perderlo. */
+    public function test_no_se_da_de_baja_lo_que_todavia_no_vencio(): void
+    {
+        $producto = $this->perecedero();
+        $this->cargar($producto, 9, now()->addDays(20)->toDateString());
+
+        $lote = Lote::where('producto_id', $producto->id)->sole();
+
+        $this->actingAs($this->queAjusta())
+            ->post(route('vencimientos.baja', $lote))
+            ->assertRedirect();
+
+        $this->assertSame(9.0, (float) $lote->fresh()->cantidad_actual);
+        $this->assertSame(9.0, (float) $producto->fresh()->stock_actual);
+    }
+
+    /** El cajero no ajusta inventario, y esto es un ajuste. */
+    public function test_el_cajero_no_da_de_baja_tandas(): void
+    {
+        $producto = $this->perecedero();
+        $this->cargar($producto, 5, now()->subDays(1)->toDateString());
+
+        $lote = Lote::where('producto_id', $producto->id)->sole();
+
+        $this->actingAs($this->cajero())
+            ->post(route('vencimientos.baja', $lote))
+            ->assertForbidden();
+
+        $this->assertSame(5.0, (float) $lote->fresh()->cantidad_actual);
     }
 
     private function efectivo(): MetodoPago
