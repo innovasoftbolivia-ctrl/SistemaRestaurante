@@ -165,7 +165,10 @@ CREATE TABLE productos (
     -- `stock_actual` se cuenta SIEMPRE en la unidad de venta: esto no es una
     -- segunda unidad de stock, es cuántas unidades trae una caja para poder
     -- ingresar «3 cajas y 5 sueltas» sin sacar la calculadora.
-    contenido_empaque   SMALLINT UNSIGNED NULL,           -- 24 = la caja trae 24 unidades
+    -- Decimal y no entero: sirve tanto para «la caja trae 24 gaseosas» como
+    -- para «el galón trae 3.785 litros». Con un entero, quien compra por galón
+    -- tendría que redondear, y el redondeo se le iría derecho al stock.
+    contenido_empaque   DECIMAL(10,3) UNSIGNED NULL,      -- 24 = la caja trae 24 unidades
     nombre_empaque      VARCHAR(20)  NULL,                -- Caja, Paquete, Plancha…
     proveedor_id        INT UNSIGNED NULL,
     codigo              VARCHAR(30)  NOT NULL,          -- código interno / SKU
@@ -194,11 +197,11 @@ CREATE TABLE productos (
     CONSTRAINT ck_productos_precios   CHECK (precio_venta >= 0 AND precio_compra >= 0),
     CONSTRAINT ck_productos_stock     CHECK (stock_actual >= 0 AND stock_minimo >= 0),
     -- O el producto no viene en empaque (las dos columnas en NULL), o viene en
-    -- uno con nombre y con al menos 2 unidades dentro. Un empaque de 1 no
-    -- ahorra ninguna cuenta: solo ensucia la pantalla de ingreso.
+    -- uno con nombre y con más de una unidad dentro. Un empaque de 1 no ahorra
+    -- ninguna cuenta: solo ensucia la pantalla de ingreso.
     CONSTRAINT ck_productos_empaque   CHECK (
         (contenido_empaque IS NULL AND nombre_empaque IS NULL)
-        OR (contenido_empaque >= 2 AND nombre_empaque IS NOT NULL)
+        OR (contenido_empaque > 1 AND nombre_empaque IS NOT NULL)
     )
 ) ENGINE=InnoDB;
 

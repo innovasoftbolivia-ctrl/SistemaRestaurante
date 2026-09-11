@@ -426,7 +426,11 @@ p('Es lo más común del rubro: el proveedor te trae cajas de 24 y tú despachas
 numerada('Ve a Productos → Nuevo producto.')
 numerada('Pon el nombre y la categoría. El código lo propone el sistema: está abajo, en «Más datos», y no hace falta que lo toques.')
 numerada('En «Cómo se vende y cómo se compra», elige la unidad con la que VENDES: Unidad.')
-numerada('Marca «Lo compro en caja, paquete o plancha» y escribe: Caja, 24.')
+numerada('Marca «Lo compro por caja, saco, bidón o similar» y elige el empaque de la lista: Caja. Si el tuyo no está, elige «Otro…» y escríbelo.')
+numerada('En «¿Cuánto trae?» pon 24.')
+p('Esto no es solo para lo que se cuenta. Si vendes arroz por kilo y te llega en sacos de 46 kg, '
+  'eliges Saco y pones 46; si vendes aceite por litro y te llega en bidones de 20 L, eliges Bidón '
+  'y pones 20. Y admite decimales, para los que compran por galón: 3.785.', cursiva=True)
 rico([('Qué comprobar: ', True),
       ('debajo aparece la frase completa —compras de a caja de 24 UND y vendes de a unidad— para '
        'que no quede ninguna duda de qué eligió cada cosa.', False)])

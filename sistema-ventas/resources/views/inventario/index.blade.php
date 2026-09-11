@@ -142,7 +142,7 @@
                                     'paso' => $unidad?->permite_decimal ? 0.001 : 1,
                                     'proveedor' => $producto->proveedor_id,
                                     'compra' => (float) $producto->precio_compra,
-                                    'contenido' => (int) $producto->contenido_empaque,
+                                    'contenido' => (float) $producto->contenido_empaque,
                                     'empaque' => mb_strtolower($producto->nombre_empaque ?? ''),
                                     'desglose' => $producto->stock_desglosado,
                                 ];

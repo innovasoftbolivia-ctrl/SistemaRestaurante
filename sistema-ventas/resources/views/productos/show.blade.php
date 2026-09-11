@@ -31,7 +31,7 @@
                             {{-- Solo se baja el nombre del empaque: el código de la
                                  unidad es una sigla y en minúsculas se lee mal. --}}
                             <x-ui.estado estado="PRACTICAS"
-                                :texto="'Llega en '.mb_strtolower($producto->nombre_empaque).' de '.$producto->contenido_empaque.' '.$unidad?->codigo" />
+                                :texto="'Llega en '.mb_strtolower($producto->nombre_empaque).' de '.Config::cantidad($producto->contenido_empaque).' '.$unidad?->codigo" />
                         @endif
                         <x-ui.estado :estado="$producto->activo ? 'ACTIVO' : 'CESADO'"
                             :texto="$producto->activo ? 'En catálogo' : 'Descatalogado'" />
@@ -193,7 +193,7 @@
                     // de la caja se muestra calculado, y solo para poder
                     // contrastarlo con la factura del proveedor de un vistazo.
                     if ($producto->tieneEmpaque()) {
-                        $filasDePrecio['Costo por '.mb_strtolower($producto->nombre_empaque).' de '.$producto->contenido_empaque] =
+                        $filasDePrecio['Costo por '.mb_strtolower($producto->nombre_empaque).' de '.Config::cantidad($producto->contenido_empaque)] =
                             Config::importe((float) $producto->precio_compra * $producto->contenido_empaque);
                     }
                 @endphp
@@ -277,7 +277,7 @@
                             costo: @js((float) $producto->precio_compra),
                             costoPor: 'UNIDAD',
                             actualizarCosto: true,
-                            contenido: {{ (int) $producto->contenido_empaque }},
+                            contenido: {{ (float) $producto->contenido_empaque }},
                             actual: {{ (float) $producto->precio_compra }},
                             get costoEscrito() {
                                 return this.costo !== '' && this.costo !== null && Number(this.costo) >= 0;
@@ -293,7 +293,7 @@
 
                         <x-form.cantidad-empaque :help="$unidad?->permite_decimal ? 'Admite decimales.' : 'Solo números enteros.'"
                             :hay-empaque="$producto->tieneEmpaque() ? 'true' : 'false'"
-                            :contenido="(int) $producto->contenido_empaque"
+                            :contenido="(float) $producto->contenido_empaque"
                             :empaque="json_encode(mb_strtolower($producto->nombre_empaque ?? ''))"
                             :unidad="json_encode($unidad?->codigo ?? '')" :paso="$paso" />
 

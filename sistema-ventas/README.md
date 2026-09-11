@@ -366,6 +366,25 @@ con la que se escribe la entrada. Lo definen dos columnas de `productos`, que va
 | `contenido_empaque` | `24` | Cuántas unidades de venta trae un empaque. NULL = el producto no viene en empaque |
 | `nombre_empaque` | `Caja` | Cómo se llama: caja, paquete, plancha, fardo |
 
+El empaque **no depende de la unidad de venta**, y sirve igual para lo que se cuenta, lo que se
+pesa y lo que se mide:
+
+| Se vende en | Llega en | `contenido_empaque` |
+|---|---|---|
+| Unidad | caja de 24 gaseosas | `24` |
+| Kilogramo | saco de 46 kg de arroz | `46` |
+| Litro | bidón de 20 L de aceite | `20` |
+| Litro | galón de 3.785 L | `3.785` |
+
+Por eso `contenido_empaque` es `DECIMAL(10,3)` y no un entero: con un entero, quien compra por
+galón tendría que redondear a 4, y ese redondeo se le iría derecho al stock —10 galones cargados
+como 40 litros contra los 37.85 que entraron de verdad—.
+
+El nombre del empaque se elige de una lista (caja, paquete, bolsa, saco, fardo, plancha, docena,
+bidón, turril, balde, blíster) con un «Otro…» para lo que no esté. No tiene valor por defecto a
+propósito: cuando lo tenía —«Caja»— se guardaba tal cual en productos que llegaban en sacos, y
+después la pantalla de ingreso hablaba de cajas donde no había ninguna.
+
 Con eso, la pantalla de ingreso deja de pedir un total y pide lo que se cuenta en el depósito:
 cuántas cajas enteras llegaron y cuántas unidades vinieron sueltas. La multiplicación la hace el
 sistema y la muestra antes de guardar. El caso que motivó todo esto es el de la caja incompleta:

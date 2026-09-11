@@ -59,6 +59,21 @@ class EmpaqueDelProductoTest extends TestCase
         return $producto->fresh();
     }
 
+    /** Arroz: se vende por kilo y llega en sacos. */
+    private function productoEnSacos(float $contenido = 46): Producto
+    {
+        $producto = Producto::activos()
+            ->whereHas('unidadMedida', fn ($q) => $q->where('permite_decimal', 1))
+            ->firstOrFail();
+
+        $producto->forceFill([
+            'contenido_empaque' => $contenido,
+            'nombre_empaque' => 'Saco',
+        ])->save();
+
+        return $producto->fresh();
+    }
+
     private function productoAGranel(): Producto
     {
         $producto = Producto::activos()
@@ -103,7 +118,7 @@ class EmpaqueDelProductoTest extends TestCase
 
         $producto = Producto::where('codigo', 'P-9101')->firstOrFail();
 
-        $this->assertSame(24, $producto->contenido_empaque);
+        $this->assertSame(24.0, $producto->contenido_empaque);
         $this->assertSame('Caja', $producto->nombre_empaque);
         $this->assertTrue($producto->tieneEmpaque());
     }
@@ -507,6 +522,83 @@ class EmpaqueDelProductoTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame('4.75', $producto->fresh()->precio_compra);
+    }
+
+    // -------------------------------------------------- lo que se pesa y mide
+
+    /**
+     * El empaque no es solo para lo que se cuenta. Un saco de 46 kg es el mismo
+     * caso que una caja de 24 gaseosas, y la mitad de un saco es lo que en una
+     * caja serían las sueltas.
+     */
+    public function test_se_ingresa_por_sacos_un_producto_que_se_vende_por_kilo(): void
+    {
+        $producto = $this->productoEnSacos(46);
+        $antes = (float) $producto->stock_actual;
+
+        $this->actingAs($this->almacenero())
+            ->post(route('inventario.ingreso'), [
+                'producto_id' => $producto->id,
+                'empaques' => 3,
+                'sueltas' => 2.5,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($antes + 140.5, (float) $producto->fresh()->stock_actual);
+
+        $movimiento = MovimientoInventario::where('producto_id', $producto->id)
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        $this->assertSame('3 sacos de 46 + 2.5 sueltas', $movimiento->motivo);
+    }
+
+    /**
+     * Un galón son 3.785 litros. Con el contenido en entero había que redondear
+     * a 4, y ese redondeo se iba derecho al stock: 10 galones cargados como 40
+     * litros contra los 37.85 que entraron de verdad.
+     */
+    public function test_el_contenido_del_empaque_admite_fracciones(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'unidad_medida_id' => UnidadMedida::where('codigo', 'LT')->firstOrFail()->id,
+                'viene_en_empaque' => '1',
+                'nombre_empaque' => 'Galón',
+                'contenido_empaque' => '3.785',
+                'empaques' => '10',
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $producto = Producto::where('codigo', 'P-9101')->firstOrFail();
+
+        $this->assertSame(3.785, $producto->contenido_empaque);
+        $this->assertSame('37.850', $producto->stock_actual);
+    }
+
+    /** Sigue sin admitirse un empaque que no ahorra ninguna cuenta. */
+    public function test_un_empaque_de_una_unidad_o_menos_se_rechaza(): void
+    {
+        foreach (['1', '0.5'] as $contenido) {
+            $this->actingAs($this->admin())
+                ->post('/productos', $this->datosProducto([
+                    'viene_en_empaque' => '1',
+                    'nombre_empaque' => 'Caja',
+                    'contenido_empaque' => $contenido,
+                ]))
+                ->assertSessionHasErrors('contenido_empaque');
+        }
+    }
+
+    /** El desglose cuenta sacos enteros y deja el resto en kilos. */
+    public function test_el_stock_en_kilos_se_lee_en_sacos(): void
+    {
+        $producto = $this->productoEnSacos(46);
+
+        $this->assertSame('3 sacos y 2.5 sueltas', $producto->desglosar(140.5));
+        $this->assertSame('2 sacos', $producto->desglosar(92));
+        $this->assertSame('12.75 sueltas', $producto->desglosar(12.75));
     }
 
     // ---------------------------------------------------------- cómo se lee

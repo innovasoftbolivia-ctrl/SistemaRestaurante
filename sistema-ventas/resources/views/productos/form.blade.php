@@ -14,6 +14,20 @@
     // Si alguno vuelve con error, la sección se abre sola: un error escondido
     // detrás de un botón plegado es un formulario que no se puede terminar.
     $opcionales = ['codigo', 'codigo_barras', 'proveedor_id', 'descripcion', 'imagen'];
+
+    // Los empaques con los que llega la mercadería en una tienda. La lista
+    // mezcla a propósito lo que se cuenta (caja, plancha, docena), lo que se
+    // pesa (saco, fardo, balde) y lo que se mide (bidón, turril): el empaque no
+    // depende de la unidad en la que se vende, y separarlos en listas obligaría
+    // a adivinar a qué familia pertenece cada unidad.
+    $empaquesUsuales = ['Caja', 'Paquete', 'Bolsa', 'Saco', 'Fardo', 'Plancha',
+        'Docena', 'Bidón', 'Turril', 'Balde', 'Blíster'];
+
+    // Un empaque escrito a mano —«Jaba», «Ristra»— sigue siendo válido: se
+    // reconoce porque no está en la lista, y la casilla «Otro» se abre sola
+    // con ese texto dentro en vez de perderlo.
+    $empaqueActual = old('nombre_empaque', $producto->nombre_empaque);
+    $empaqueEnLista = filled($empaqueActual) && in_array($empaqueActual, $empaquesUsuales, true);
 @endphp
 
 @section('content')
@@ -29,7 +43,16 @@
             unidad: Number(@js(old('unidad_medida_id', $producto->unidad_medida_id ?? ''))) || null,
 
             vieneEnEmpaque: @js((bool) old('viene_en_empaque', $producto->tieneEmpaque())),
-            nombreEmpaque: @js(old('nombre_empaque', $producto->nombre_empaque ?? 'Caja')),
+            /* El empaque se elige de una lista y ya no viene con «Caja» puesto:
+               un valor por defecto que nadie eligió terminaba guardado tal cual,
+               y después la pantalla de ingreso hablaba de cajas donde había
+               sacos. Vacío obliga a decirlo, y lo que se diga es lo que sale en
+               todas las etiquetas. */
+            empaqueElegido: @js($empaqueEnLista ? $empaqueActual : (filled($empaqueActual) ? '__otro' : '')),
+            empaqueLibre: @js($empaqueEnLista ? '' : ($empaqueActual ?? '')),
+            get nombreEmpaque() {
+                return (this.empaqueElegido === '__otro' ? this.empaqueLibre : this.empaqueElegido) || '';
+            },
             /* Vacío y no 0: con un 0 puesto hay que borrarlo antes de poder
                escribir 24, y esa es justo la fricción que se vino a quitar. */
             contenidoEmpaque: @js((string) old('contenido_empaque', $producto->contenido_empaque ?? '')),
@@ -134,24 +157,34 @@
 
                 <div class="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
                     <x-form.check name="viene_en_empaque" model="vieneEnEmpaque"
-                        label="Lo compro en caja, paquete o plancha" />
+                        label="Lo compro por caja, saco, bidón o similar" />
 
                     <div x-show="vieneEnEmpaque" x-cloak class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                        <x-form.campo label="¿Cómo se llama el empaque?" for="nombre_empaque" name="nombre_empaque">
-                            <x-form.input id="nombre_empaque" name="nombre_empaque" list="empaques-usuales"
-                                :value="$producto->nombre_empaque ?? 'Caja'" x-model="nombreEmpaque"
-                                placeholder="Caja" maxlength="20" />
-                            <datalist id="empaques-usuales">
-                                @foreach (['Caja', 'Paquete', 'Plancha', 'Bolsa', 'Fardo', 'Saco', 'Docena', 'Blíster'] as $usual)
-                                    <option value="{{ $usual }}"></option>
-                                @endforeach
-                            </datalist>
+                        <x-form.campo label="¿Cómo te lo entregan?" for="empaque_elegido" name="nombre_empaque"
+                            help="Caja, saco, bidón… lo que recibes del proveedor.">
+                            {{-- Lo que se envía es el hidden: el desplegable y la
+                                 casilla de «Otro» son dos formas de llenarlo. --}}
+                            <input type="hidden" name="nombre_empaque" :value="nombreEmpaque" />
+
+                            <x-form.select id="empaque_elegido" name="empaque_elegido" x-model="empaqueElegido"
+                                placeholder="Elige el empaque" :opciones="array_combine($empaquesUsuales, $empaquesUsuales)">
+                                <option value="__otro">Otro…</option>
+                            </x-form.select>
+
+                            <x-form.input x-show="empaqueElegido === '__otro'" x-cloak x-model="empaqueLibre"
+                                class="mt-2" placeholder="Jaba, ristra, atado…" maxlength="20" />
                         </x-form.campo>
 
-                        <x-form.campo label="¿Cuántas unidades trae?" for="contenido_empaque" name="contenido_empaque">
-                            <x-form.input id="contenido_empaque" name="contenido_empaque" type="number" step="1"
-                                min="2" :value="$producto->contenido_empaque" x-model.number="contenidoEmpaque"
-                                placeholder="24" />
+                        <x-form.campo label="¿Cuánto trae?" for="contenido_empaque" name="contenido_empaque">
+                            {{-- El paso lo manda la unidad de venta: 24 gaseosas son
+                                 enteras, pero un galón son 3.785 litros y redondear
+                                 ahí se le iría derecho al stock. --}}
+                            <x-form.input id="contenido_empaque" name="contenido_empaque" type="number"
+                                x-bind:step="pasoUnidad" min="0" :value="$producto->contenido_empaque"
+                                x-model.number="contenidoEmpaque" x-bind:placeholder="pasoUnidad === 1 ? '24' : '46'" />
+                            <p x-show="unidad" x-cloak class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                                En <span x-text="unidadNombre"></span>, que es como lo vendes
+                            </p>
                         </x-form.campo>
 
                         {{-- La frase completa, para que la regla no haya que
@@ -177,8 +210,9 @@
                     </div>
 
                     <p x-show="!vieneEnEmpaque" x-cloak class="text-theme-xs text-gray-500 dark:text-gray-400">
-                        Déjalo sin marcar si el producto se compra y se vende en la misma unidad: el arroz por kilo,
-                        el aceite suelto.
+                        Sirve igual para lo que se cuenta y para lo que se pesa o se mide: una caja de 24 gaseosas,
+                        un saco de 46 kg de arroz, un bidón de 20 L de aceite. Déjalo sin marcar solo si compras
+                        exactamente en la misma unidad en la que vendes.
                     </p>
                 </div>
             </x-common.component-card>

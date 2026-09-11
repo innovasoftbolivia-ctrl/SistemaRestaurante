@@ -413,7 +413,7 @@ class ProductoController extends Controller
             // Excluidos, la casilla manda y esos restos ni se miran.
             'viene_en_empaque' => ['boolean'],
             'nombre_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'string', 'min:2', 'max:20'],
-            'contenido_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'integer', 'min:2', 'max:65535'],
+            'contenido_empaque' => ['exclude_unless:viene_en_empaque,1', 'required', 'numeric', 'gt:1', 'max:999999'],
             'codigo' => [
                 'required', 'string', 'max:30', 'regex:/^[A-Za-z0-9._-]+$/',
                 Rule::unique('productos', 'codigo')->ignore($producto?->id),
@@ -447,7 +447,7 @@ class ProductoController extends Controller
             'codigo_barras.regex' => 'El código de barras solo admite dígitos.',
             'nombre_empaque.required' => 'Ponle nombre al empaque: caja, paquete, plancha…',
             'contenido_empaque.required' => 'Falta decir cuántas unidades trae el empaque.',
-            'contenido_empaque.min' => 'Un empaque de una sola unidad no ahorra ninguna cuenta. Si el producto no viene en caja, desmarca la casilla.',
+            'contenido_empaque.gt' => 'Un empaque de una sola unidad no ahorra ninguna cuenta. Si el producto no viene en caja, desmarca la casilla.',
             'imagen.image' => 'La foto debe ser una imagen.',
             'imagen.mimes' => 'La foto tiene que ser JPG, PNG o WEBP.',
             'imagen.max' => 'La foto no puede pesar más de 2 MB.',
@@ -477,7 +477,7 @@ class ProductoController extends Controller
         // llegan hasta aquí, porque las excluyó la validación.
         $enEmpaque = $request->boolean('viene_en_empaque') && isset($datos['contenido_empaque']);
 
-        $datos['contenido_empaque'] = $enEmpaque ? (int) $datos['contenido_empaque'] : null;
+        $datos['contenido_empaque'] = $enEmpaque ? (float) $datos['contenido_empaque'] : null;
         $datos['nombre_empaque'] = $enEmpaque ? trim((string) $datos['nombre_empaque']) : null;
 
         unset($datos['viene_en_empaque']);

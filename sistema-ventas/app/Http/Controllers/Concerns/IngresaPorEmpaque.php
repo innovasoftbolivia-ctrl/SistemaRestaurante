@@ -116,7 +116,7 @@ trait IngresaPorEmpaque
                 ? mb_strtolower($producto->nombre_empaque)
                 : $producto->empaque_plural;
 
-            $partes[] = "{$empaques} {$nombre} de {$producto->contenido_empaque}";
+            $partes[] = "{$empaques} {$nombre} de ".Config::cantidad($producto->contenido_empaque);
         }
 
         if ($sueltas > 0) {

@@ -96,6 +96,10 @@
             <p class="text-lg font-semibold text-gray-800 dark:text-white/90">
                 <span x-text="total"></span> <span x-text="{{ $unidad }}"></span>
             </p>
+            {{-- El total sale de una multiplicación que puede traer decimales
+                 —un galón son 3.785 litros—, y se redondea a 3 como
+                 `stock_actual`: lo que se promete aquí tiene que ser
+                 exactamente lo que se guarda. --}}
             <p class="mt-0.5 text-theme-xs text-gray-500 dark:text-gray-400"
                 x-text="(Number(empaques) || 0) + ' × ' + ({{ $contenido }}) + ' + ' + (Number(sueltas) || 0) + ' sueltas'">
             </p>

@@ -302,7 +302,7 @@ referencias polimórficas ni claves foráneas implícitas.
 | `id` | INT UNSIGNED PK | No | Identificador |
 | `categoria_id` | SMALLINT FK | No | Categoría a la que pertenece |
 | `unidad_medida_id` | TINYINT FK | No | Unidad de venta (UND, KG, LT…) |
-| `contenido_empaque` | SMALLINT | Sí | Unidades de venta que trae un empaque (24). NULL = no viene en empaque |
+| `contenido_empaque` | DECIMAL(10,3) | Sí | Unidades de venta que trae un empaque (24 gaseosas, 46 kg, 3.785 L). NULL = no viene en empaque |
 | `nombre_empaque` | VARCHAR(20) | Sí | Cómo se llama ese empaque: Caja, Paquete, Plancha |
 | `proveedor_id` | INT FK | Sí | Proveedor habitual |
 | `codigo` | VARCHAR(30) UQ | No | Código interno / SKU |

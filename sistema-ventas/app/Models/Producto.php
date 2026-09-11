@@ -53,7 +53,11 @@ class Producto extends Model
             'precio_venta' => 'decimal:2',
             'stock_actual' => 'decimal:3',
             'stock_minimo' => 'decimal:3',
-            'contenido_empaque' => 'integer',
+            // Float y no `decimal:3`: este número se muestra por todos lados
+            // y `decimal:3` lo devolvería como «24.000». Con float,
+            // `Config::cantidad()` lo imprime como «24» o como «3.785», que es
+            // lo que se escribió.
+            'contenido_empaque' => 'float',
             'afecto_impuesto' => 'boolean',
             'activo' => 'boolean',
         ];
@@ -134,7 +138,9 @@ class Producto extends Model
     /** ¿Llega del proveedor dentro de un empaque con varias unidades? */
     public function tieneEmpaque(): bool
     {
-        return $this->contenido_empaque !== null && $this->contenido_empaque > 1 && filled($this->nombre_empaque);
+        return $this->contenido_empaque !== null
+            && (float) $this->contenido_empaque > 1
+            && filled($this->nombre_empaque);
     }
 
     /** «Caja de 24 UND», para decir de una vez de qué empaque se habla. */
@@ -144,7 +150,8 @@ class Producto extends Model
             return null;
         }
 
-        return "{$this->nombre_empaque} de {$this->contenido_empaque} ".($this->unidadMedida?->codigo ?? '');
+        return "{$this->nombre_empaque} de ".Config::cantidad($this->contenido_empaque)
+            .' '.($this->unidadMedida?->codigo ?? '');
     }
 
     /** El nombre del empaque en plural: «cajas», «planchas», «cartones». */
@@ -162,7 +169,7 @@ class Producto extends Model
      */
     public function unidadesDe(float $empaques, float $sueltas = 0): float
     {
-        return round($empaques * (int) $this->contenido_empaque + $sueltas, 3);
+        return round($empaques * (float) $this->contenido_empaque + $sueltas, 3);
     }
 
     /**

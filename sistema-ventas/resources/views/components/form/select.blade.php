@@ -7,7 +7,12 @@
 
 @php
     $tieneError = $name && $errors->has($name);
-    $actual = old($name, $value);
+
+    // Un select sin `name` es de apoyo —no se envía— y por tanto no tiene valor
+    // anterior que recuperar. Hace falta cortar aquí: `old(null)` devuelve TODO
+    // el input anterior como array, y la comparación de más abajo revienta con
+    // «Array to string conversion». Mismo criterio que en `form/input`.
+    $actual = $name ? old($name, $value) : $value;
 
     $borde = $tieneError
         ? 'border-error-300 focus:border-error-300 focus:ring-error-500/10 dark:border-error-700'
