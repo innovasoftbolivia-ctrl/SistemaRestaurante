@@ -41,7 +41,7 @@ class Producto extends Model
 
     protected $fillable = [
         'categoria_id', 'unidad_medida_id', 'proveedor_id',
-        'contenido_empaque', 'nombre_empaque',
+        'contenido_empaque', 'nombre_empaque', 'controla_vencimiento',
         'codigo', 'codigo_barras', 'nombre', 'descripcion',
         'precio_compra', 'precio_venta', 'afecto_impuesto',
         'stock_minimo', 'imagen', 'activo',
@@ -60,6 +60,7 @@ class Producto extends Model
             // lo que se escribió.
             'contenido_empaque' => 'float',
             'afecto_impuesto' => 'boolean',
+            'controla_vencimiento' => 'boolean',
             'activo' => 'boolean',
         ];
     }
@@ -82,6 +83,18 @@ class Producto extends Model
     public function movimientos(): HasMany
     {
         return $this->hasMany(MovimientoInventario::class, 'producto_id');
+    }
+
+    /**
+     * El stock partido por fecha de vencimiento.
+     *
+     * Solo tienen lotes los productos con `controla_vencimiento`. Para el
+     * resto, `stock_actual` sigue siendo toda la verdad y esta relación está
+     * vacía a propósito.
+     */
+    public function lotes(): HasMany
+    {
+        return $this->hasMany(Lote::class, 'producto_id');
     }
 
     // ------------------------------------------------------------- consultas
@@ -245,6 +258,8 @@ class Producto extends Model
             'contenido' => (float) $this->contenido_empaque,
             'empaque' => mb_strtolower($this->nombre_empaque ?? ''),
             'empaquePlural' => $this->empaque_plural ?? '',
+            // Decide si la línea pide fecha de vencimiento.
+            'controlaVencimiento' => (bool) $this->controla_vencimiento,
         ];
     }
 

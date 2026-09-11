@@ -10,6 +10,7 @@ use App\Models\Proveedor;
 use App\Models\UnidadMedida;
 use App\Services\Auditor;
 use App\Services\Inventario;
+use App\Services\Lotes;
 use App\Support\Palabras;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -89,7 +90,8 @@ class ProductoController extends Controller
         $request->validate([
             ...$this->reglasDeCantidad(),
             'stock_inicial' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-        ], [], ['stock_inicial' => 'stock inicial', 'empaques' => 'stock inicial']);
+            'vence' => ['nullable', 'date'],
+        ], [], ['stock_inicial' => 'stock inicial', 'empaques' => 'stock inicial', 'vence' => 'vencimiento']);
 
         if ($request->hasFile('imagen')) {
             $datos['imagen'] = $request->file('imagen')->store('productos', 'public');
@@ -113,7 +115,7 @@ class ProductoController extends Controller
             );
 
             // El stock nunca se escribe directo: entra por el kardex.
-            Inventario::cargaInicial($producto, $cantidad, $detalle);
+            Inventario::cargaInicial($producto, $cantidad, $detalle, $request->input('vence'));
 
             return [$producto, $cantidad, $detalle];
         });
@@ -174,7 +176,18 @@ class ProductoController extends Controller
         $datos = $this->resolverImagen($request, $producto, $datos);
 
         $precioAnterior = (float) $producto->precio_venta;
+        $controlabaVencimiento = $producto->controla_vencimiento;
+
         $producto->update($datos);
+
+        // Al encender el control, el stock que ya tenía existe y hay que
+        // contarlo, pero su fecha no la sabe nadie: se abre un lote sin fecha
+        // por esa diferencia. Inventar una fecha sería peor que admitir que no
+        // se conoce, y la pantalla lo muestra aparte para que se vea que el
+        // control todavía no está completo.
+        if (! $controlabaVencimiento && $producto->controla_vencimiento) {
+            Lotes::cuadrarConElStock($producto->fresh());
+        }
 
         // El cambio de precio se audita aparte: es la operación sensible
         // del catálogo (C3: precios no centralizados).
@@ -470,6 +483,11 @@ class ProductoController extends Controller
             'precio_compra_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'precio_venta' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'afecto_impuesto' => ['boolean'],
+            // Encender el control es lo que hace que el stock de este producto
+            // se lleve por lotes con fecha. Se decide producto por producto:
+            // el detergente no vence y pedirle una fecha cada vez que llega es
+            // la forma más rápida de que alguien escriba cualquier cosa.
+            'controla_vencimiento' => ['boolean'],
             'stock_minimo' => ['required', 'numeric', 'min:0', 'max:999999'],
             'activo' => ['boolean'],
             // La foto es opcional. 2 MB alcanza de sobra para una miniatura de

@@ -145,6 +145,9 @@ class CompraController extends Controller
             'lineas.*.sueltas' => ['nullable', 'numeric', 'min:0', 'max:999999'],
             'lineas.*.costo_unitario' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'lineas.*.actualizar_costo' => ['nullable', 'boolean'],
+            // Solo la piden las líneas de productos con control de vencimiento.
+            'lineas.*.vence' => ['nullable', 'date'],
+            'lineas.*.lote' => ['nullable', 'string', 'max:30'],
         ], [
             'lineas.required' => 'Agrega al menos un producto a la compra.',
             'lineas.min' => 'Agrega al menos un producto a la compra.',
@@ -208,6 +211,8 @@ class CompraController extends Controller
                 'costo_unitario' => (float) $linea['costo_unitario'],
                 'detalle' => $detalle,
                 'actualizar_costo' => (bool) ($linea['actualizar_costo'] ?? false),
+                'vence' => $linea['vence'] ?? null,
+                'lote' => $linea['lote'] ?? null,
             ];
         })->all();
     }

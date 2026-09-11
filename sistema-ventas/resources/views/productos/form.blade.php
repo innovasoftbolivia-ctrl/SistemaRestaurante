@@ -73,6 +73,8 @@
                escribir 24, y esa es justo la fricción que se vino a quitar. */
             contenidoEmpaque: @js((string) old('contenido_empaque', $producto->contenido_empaque ?? '')),
 
+            controlaVencimiento: @js((bool) old('controla_vencimiento', $producto->controla_vencimiento ?? false)),
+
             masDatos: @js($errors->hasAny($opcionales)),
 
             get unidadCodigo() {
@@ -241,6 +243,26 @@
                             message="Tal como está, compras envases llenos de ese mismo envase. Si lo que despachas
                                 en el mostrador es el envase entero, ponlo como «Suelto»; si lo despachas por
                                 unidad, cambia la unidad de venta." />
+                    </div>
+
+                    {{-- El vencimiento se enciende producto por producto: el
+                         detergente no vence, y pedirle una fecha cada vez que
+                         llega es la forma más rápida de que alguien escriba
+                         cualquier cosa con tal de seguir. --}}
+                    <div class="rounded-xl border border-gray-200 p-4 sm:col-span-2 dark:border-gray-800">
+                        <x-form.check name="controla_vencimiento" model="controlaVencimiento"
+                            label="Este producto vence" />
+                        <p class="mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
+                            Con esto encendido, cada entrada de mercadería anota su fecha y el sistema avisa cuando
+                            algo está por vencerse. El mostrador despacha siempre lo que vence antes.
+                            @if ($esEdicion && ! $producto->controla_vencimiento && (float) $producto->stock_actual > 0)
+                                <span class="block mt-1">
+                                    Las {{ Config::cantidad($producto->stock_actual) }} unidades que ya tienes
+                                    quedarán como «sin fecha registrada»: nadie sabe de cuándo son, y el sistema no
+                                    va a inventarlo.
+                                </span>
+                            @endif
+                        </p>
                     </div>
 
                     {{-- La frase completa, para que la regla no haya que
@@ -429,6 +451,13 @@
                          Las expresiones apuntan a los campos de arriba, así que
                          la casilla de cajas aparece en cuanto se dice que el
                          producto viene en caja. --}}
+                    <div x-show="controlaVencimiento" x-cloak>
+                        <x-form.campo label="¿Cuándo vence lo que tienes?" for="vence" name="vence"
+                            help="La fecha de lo que estás cargando ahora. Se puede dejar vacía si no la sabes.">
+                            <x-form.input id="vence" name="vence" type="date" :value="old('vence')" />
+                        </x-form.campo>
+                    </div>
+
                     <x-form.cantidad-empaque campo="stock_inicial" prefijo="ini_" label="Stock inicial"
                         help="Las unidades contadas físicamente. Queda registrado como carga inicial en el kardex."
                         valor="0" :requerido="false" hay-empaque="hayEmpaque" contenido="contenido"

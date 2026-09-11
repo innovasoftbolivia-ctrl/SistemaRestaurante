@@ -129,6 +129,8 @@
                                     <input type="hidden" :name="`lineas[${i}][sueltas]`" :value="l.contenido > 0 ? (l.sueltas || 0) : ''" />
                                     <input type="hidden" :name="`lineas[${i}][costo_unitario]`" :value="costoUnidad(l)" />
                                     <input type="hidden" :name="`lineas[${i}][actualizar_costo]`" :value="l.actualizarCosto ? 1 : 0" />
+                                    <input type="hidden" :name="`lineas[${i}][vence]`" :value="l.vence || ''" />
+                                    <input type="hidden" :name="`lineas[${i}][lote]`" :value="l.lote || ''" />
 
                                     <span class="block text-theme-sm font-medium text-gray-800 dark:text-white/90" x-text="l.nombre"></span>
                                     <span class="font-mono text-theme-xs text-gray-500 dark:text-gray-400" x-text="l.codigo"></span>
@@ -160,6 +162,21 @@
 
                                     <span class="mt-1.5 block text-theme-xs text-gray-500 dark:text-gray-400"
                                         x-text="cantidad(l) + ' ' + l.unidad"></span>
+
+                                    {{-- Solo la piden los productos que vencen. Para el
+                                         resto la columna ni aparece: una fecha que nadie
+                                         va a mirar es una fecha que se llena de cualquier
+                                         manera. --}}
+                                    <div x-show="l.controlaVencimiento" x-cloak class="mt-2 flex items-start gap-2">
+                                        <label class="w-36">
+                                            <span class="mb-1 block text-theme-xs text-gray-500 dark:text-gray-400">Vence el</span>
+                                            <x-form.input type="date" x-model="l.vence" />
+                                        </label>
+                                        <label class="w-28">
+                                            <span class="mb-1 block text-theme-xs text-gray-500 dark:text-gray-400">Lote</span>
+                                            <x-form.input x-model="l.lote" placeholder="opcional" maxlength="30" />
+                                        </label>
+                                    </div>
                                 </td>
 
                                 <td class="px-3 py-4 align-top">
@@ -496,6 +513,8 @@
                             costoAnterior: p.costo,
                             costoPor: 'UNIDAD',
                             actualizarCosto: true,
+                            vence: '',
+                            lote: '',
                         });
                     }
 

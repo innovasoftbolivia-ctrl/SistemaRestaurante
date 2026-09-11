@@ -184,6 +184,13 @@ class Ventas
             } else {
                 VentaDetalle::create($datos);
             }
+
+            // Los lotes se descuentan aquí, fuera del `if`, y no dentro del
+            // trigger ni de su gemelo de PHP: así hay UNA implementación de
+            // FEFO para las dos vías en vez de dos que hay que mantener
+            // iguales a mano. El stock ya bajó arriba; esto solo reparte esa
+            // baja entre las tandas, empezando por la que vence antes.
+            Lotes::consumir($producto, $cantidad);
         }
     }
 
@@ -318,9 +325,21 @@ class Ventas
         // serializan: la segunda espera, y al retomar ya ve el nuevo estado.
         //
         // sp_anular_venta ya escribe su propia entrada en `auditoria`.
-        DB::transaction(fn () => ReglasEnPhp::activa()
-            ? ReglasEnPhp::anularVenta($venta->id, $usuario->id, $motivo)
-            : DB::statement('CALL sp_anular_venta(?, ?, ?)', [$venta->id, $usuario->id, $motivo]));
+        DB::transaction(function () use ($venta, $usuario, $motivo) {
+            ReglasEnPhp::activa()
+                ? ReglasEnPhp::anularVenta($venta->id, $usuario->id, $motivo)
+                : DB::statement('CALL sp_anular_venta(?, ?, ?)', [$venta->id, $usuario->id, $motivo]);
+
+            // La anulación devuelve al estante TODO lo que salió, así que los
+            // lotes tienen que recibirlo de vuelta. Se lee el detalle después
+            // de anular porque el reparto sigue al stock, y el stock lo acaba
+            // de reponer el procedimiento.
+            foreach ($venta->detalle()->with('producto')->get() as $linea) {
+                if ($linea->producto) {
+                    Lotes::reponer($linea->producto, (float) $linea->cantidad);
+                }
+            }
+        });
 
         return $venta->fresh();
     }

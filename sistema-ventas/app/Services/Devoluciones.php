@@ -174,6 +174,15 @@ class Devoluciones
         } else {
             DevolucionDetalle::create($datos);
         }
+
+        // Lo devuelto vuelve al estante —si vuelve: lo roto no reingresa— pero
+        // salió hace días y nadie anotó de qué tanda era. Se repone en el lote
+        // abierto que vence antes, que es por el que habría salido. Va fuera
+        // del `if` por lo mismo que en la venta: una sola implementación de
+        // lotes para las dos vías.
+        if ($datos['reingresa_stock']) {
+            Lotes::reponer($original->producto, $cantidad);
+        }
     }
 
     /**

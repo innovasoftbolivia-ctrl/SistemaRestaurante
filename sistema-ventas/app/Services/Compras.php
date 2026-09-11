@@ -43,7 +43,9 @@ class Compras
      *     cantidad: float,
      *     costo_unitario: float,
      *     detalle?: ?string,
-     *     actualizar_costo?: bool
+     *     actualizar_costo?: bool,
+     *     vence?: ?string,
+     *     lote?: ?string
      * }>  $lineas
      */
     public static function registrar(
@@ -118,7 +120,7 @@ class Compras
             throw new RuntimeException("El costo de «{$producto->nombre}» no puede ser negativo.");
         }
 
-        CompraDetalle::create([
+        $detalle = CompraDetalle::create([
             'compra_id' => $compra->id,
             'producto_id' => $producto->id,
             'cantidad' => $cantidad,
@@ -133,6 +135,11 @@ class Compras
             costoUnitario: $costo,
             motivo: self::motivo($linea['detalle'] ?? null),
             compraId: $compra->id,
+            // La fecha que trae la caja abre la tanda. Se pasa siempre: si el
+            // producto no lleva control de vencimiento, `Lotes` la ignora.
+            vence: $linea['vence'] ?? null,
+            lote: $linea['lote'] ?? null,
+            compraDetalleId: $detalle->id,
         );
 
         if ($linea['actualizar_costo'] ?? false) {

@@ -21,6 +21,7 @@ use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
+use App\Http\Controllers\VencimientoController;
 use App\Http\Controllers\VentaController;
 use App\Support\Menu;
 use Illuminate\Support\Facades\Route;
@@ -247,6 +248,15 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
         ->middleware('permiso:inventario.ajustar')
         ->name('inventario.ajuste');
+
+    // ---- Vencimientos: qué caduca y cuándo ----
+    // Se mira con los mismos permisos que el inventario: es la misma pregunta
+    // sobre el mismo stock, solo que partido por fecha.
+    Route::middleware('permiso:inventario.ingresar,inventario.ajustar,reportes.ver')->group(function () {
+        Route::get('vencimientos', [VencimientoController::class, 'index'])->name('vencimientos.index');
+        Route::get('vencimientos/{producto}', [VencimientoController::class, 'producto'])
+            ->name('vencimientos.producto');
+    });
 
     // ---- Compras: la factura del proveedor, entera ----
     // Sin permiso propio: registrar la compra ES ingresar mercadería, solo que

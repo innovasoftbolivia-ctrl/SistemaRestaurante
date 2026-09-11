@@ -170,6 +170,11 @@ CREATE TABLE productos (
     -- tendría que redondear, y el redondeo se le iría derecho al stock.
     contenido_empaque   DECIMAL(10,3) UNSIGNED NULL,      -- 24 = la caja trae 24 unidades
     nombre_empaque      VARCHAR(20)  NULL,                -- Caja, Paquete, Plancha…
+    -- 1 = el stock de este producto se lleva por lotes con fecha (ver `lotes`).
+    -- Se decide producto por producto: el detergente no vence, y pedirle una
+    -- fecha cada vez que llega es la forma más rápida de que alguien escriba
+    -- cualquier cosa con tal de seguir.
+    controla_vencimiento TINYINT(1)  NOT NULL DEFAULT 0,
     proveedor_id        INT UNSIGNED NULL,
     codigo              VARCHAR(30)  NOT NULL,          -- código interno / SKU
     codigo_barras       VARCHAR(50)  NULL,
@@ -707,6 +712,34 @@ CREATE TABLE compra_detalle (
     CONSTRAINT fk_compradet_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
     CONSTRAINT ck_compradet_cantidad CHECK (cantidad > 0),
     CONSTRAINT ck_compradet_costo    CHECK (costo_unitario >= 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE lotes (
+    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    producto_id         INT UNSIGNED  NOT NULL,
+    codigo              VARCHAR(30)   NULL,          -- el lote impreso por el fabricante
+    -- NULL = stock cuya fecha no se conoce: el que ya estaba cuando se encendió
+    -- el control, y el que devuelve un cliente días después de llevárselo.
+    -- Decir «sin fecha registrada» es más honesto que inventar una.
+    fecha_vencimiento   DATE          NULL,
+    cantidad_inicial    DECIMAL(12,3) NOT NULL,      -- lo que entró; no se toca nunca
+    cantidad_actual     DECIMAL(12,3) NOT NULL,      -- lo que queda
+    compra_detalle_id   BIGINT UNSIGNED NULL,
+    creado_en           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    -- El índice del despacho: se sale por el que vence antes (FEFO).
+    KEY ix_lotes_fefo        (producto_id, fecha_vencimiento),
+    KEY ix_lotes_vencimiento (fecha_vencimiento),
+    KEY ix_lotes_compra      (compra_detalle_id),
+    CONSTRAINT fk_lotes_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
+    -- SET NULL y no CASCADE: si se borrara la compra, el stock que entró por
+    -- ella sigue en el estante y su lote no puede irse con el papel.
+    CONSTRAINT fk_lotes_compra   FOREIGN KEY (compra_detalle_id) REFERENCES compra_detalle (id) ON DELETE SET NULL,
+    CONSTRAINT ck_lotes_cantidades CHECK (
+        cantidad_inicial > 0
+        AND cantidad_actual >= 0
+        AND cantidad_actual <= cantidad_inicial
+    )
 ) ENGINE=InnoDB;
 
 -- El documento que originó el movimiento se referencia con una FOREIGN KEY por origen,

@@ -99,6 +99,7 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | Ventas | `ventas`, `venta_detalle`, `venta_pagos` |
 | Devoluciones | `devoluciones`, `devolucion_detalle` |
 | Compras | `compras`, `compra_detalle` |
+| Vencimiento | `lotes` |
 | Inventario | `movimientos_inventario` |
 | Sistema | `configuracion`, `auditoria` |
 
@@ -305,6 +306,7 @@ referencias polimórficas ni claves foráneas implícitas.
 | `unidad_medida_id` | TINYINT FK | No | Unidad de venta (UND, KG, LT…) |
 | `contenido_empaque` | DECIMAL(10,3) | Sí | Unidades de venta que trae un empaque (24 gaseosas, 46 kg, 3.785 L). NULL = no viene en empaque |
 | `nombre_empaque` | VARCHAR(20) | Sí | Cómo se llama ese empaque: Caja, Paquete, Plancha |
+| `controla_vencimiento` | TINYINT(1) | No | 1 = el stock se lleva por lotes con fecha (tabla `lotes`) |
 | `proveedor_id` | INT FK | Sí | Proveedor habitual |
 | `codigo` | VARCHAR(30) UQ | No | Código interno / SKU |
 | `codigo_barras` | VARCHAR(50) UQ | Sí | Código de barras para el lector |

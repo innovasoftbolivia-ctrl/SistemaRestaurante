@@ -28,16 +28,24 @@ class Inventario
      * cajas de 24»—. Se guarda junto al motivo porque el número solo no
      * permite después contrastar el alta con lo que había físicamente.
      */
-    public static function cargaInicial(Producto $producto, float $cantidad, ?string $detalle = null): ?MovimientoInventario
-    {
+    public static function cargaInicial(
+        Producto $producto,
+        float $cantidad,
+        ?string $detalle = null,
+        ?string $vence = null,
+    ): ?MovimientoInventario {
         if ($cantidad <= 0) {
             return null;
         }
 
-        return self::mover($producto, $cantidad, 'ENTRADA', 'INICIAL', [
+        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'INICIAL', [
             'motivo' => 'Carga inicial de inventario'.($detalle ? " ({$detalle})" : ''),
             'costo_unitario' => (float) $producto->precio_compra,
         ]);
+
+        Lotes::ingresar($producto, $cantidad, $vence);
+
+        return $movimiento;
     }
 
     /**
@@ -58,14 +66,23 @@ class Inventario
         ?float $costoUnitario = null,
         ?string $motivo = null,
         ?int $compraId = null,
+        ?string $vence = null,
+        ?string $lote = null,
+        ?int $compraDetalleId = null,
     ): MovimientoInventario {
-        return self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
+        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
             'proveedor_id' => $proveedorId,
             'documento_externo' => $documentoExterno,
             'compra_id' => $compraId,
             'costo_unitario' => $costoUnitario,
             'motivo' => $motivo,
         ]);
+
+        // La mercadería que entra abre su tanda con la fecha que trae la caja.
+        // Si el producto no lleva control de vencimiento, esto no hace nada.
+        Lotes::ingresar($producto, $cantidad, $vence, $lote, $compraDetalleId);
+
+        return $movimiento;
     }
 
     /**
@@ -83,7 +100,7 @@ class Inventario
                 return null;
             }
 
-            return self::registrar(
+            $movimiento = self::registrar(
                 producto: $producto,
                 cantidad: abs($diferencia),
                 tipo: 'AJUSTE',
@@ -92,6 +109,16 @@ class Inventario
                 stockResultante: $stockContado,
                 extra: ['motivo' => $motivo],
             );
+
+            // Un conteo que corrige hacia abajo se descuenta de lo que vence
+            // antes —la merma y la rotura suelen salir justo de ahí—, y uno
+            // que corrige hacia arriba repone donde estaba. Los lotes siguen
+            // al stock, nunca al revés.
+            $diferencia < 0
+                ? Lotes::consumir($producto, abs($diferencia))
+                : Lotes::reponer($producto, $diferencia);
+
+            return $movimiento;
         }, self::REINTENTOS);
     }
 

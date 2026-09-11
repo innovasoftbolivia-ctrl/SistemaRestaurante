@@ -356,6 +356,38 @@ diferencia. Si el conteo coincide con el sistema, no se escribe ningún movimien
 La unidad de medida manda sobre la cantidad: si `permite_decimal` es falso, el sistema rechaza
 un ingreso de 2.5 unidades. Y ningún movimiento puede dejar el stock en negativo.
 
+### Vencimiento: el stock partido por fecha
+
+`productos.stock_actual` es un solo número, y con un solo número no hay forma de saber qué caduca:
+los 245 chocolates pueden ser 120 que vencen el 15/10 y 125 que vencen el 30/11. La tabla `lotes`
+parte ese saldo por fecha, y `productos.controla_vencimiento` decide qué productos lo llevan — el
+detergente no vence, y pedirle una fecha cada vez que llega es la forma más rápida de que alguien
+escriba cualquier cosa con tal de seguir.
+
+**Los lotes no son una segunda contabilidad.** `stock_actual` sigue mandando: es el saldo que
+valida la venta y el que sale en los reportes, y la suma de `lotes.cantidad_actual` tiene que dar
+exactamente esa cifra. Si un día no diera, la de `productos` sería la buena.
+
+**Se despacha lo que vence antes (FEFO).** Es lo que hace que la alerta sirva: si el mostrador
+descontara de cualquier lote, «quedan 40 por vencer» no querría decir nada. Los lotes sin fecha van
+al final, porque algo que no se sabe cuándo vence no puede pasar delante de algo que sí.
+
+Dónde se engancha: en los cuatro sitios de PHP por los que se mueve stock —la venta, la devolución,
+la anulación y el inventario—. **No en los triggers**, a propósito: el sistema tiene dos vías para
+descontar stock (el trigger en un servidor propio, `ReglasEnPhp` en un hosting sin triggers) y las
+dos pasan por ese mismo código PHP. Escribirlo ahí es una sola implementación de FEFO en vez de dos
+que habría que mantener iguales a mano.
+
+`fecha_vencimiento` admite NULL a propósito: el stock que ya existía cuando se encendió el control
+y lo que devuelve un cliente días después no tienen fecha conocida, y decir «sin fecha registrada»
+—que la pantalla muestra aparte— es más honesto que inventarla. Si al encender el control quedaron
+200 unidades sin fechar, «no tengo nada por vencer» no significa que todo esté bien, significa que
+el control todavía no está completo.
+
+`/vencimientos` lista lo vencido y lo que caduca dentro de 7, 15, 30, 60 o 90 días, con el valor
+inmovilizado; desde cada fila se llega a las tandas de ese producto y, desde cada tanda, a la
+factura por la que entró.
+
 ### Comprar por caja y vender por unidad
 
 El negocio compra cajas de 24 y despacha gaseosas de a una. Eso no son dos unidades de stock:

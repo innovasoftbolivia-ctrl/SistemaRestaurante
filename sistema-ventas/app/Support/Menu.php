@@ -64,6 +64,7 @@ class Menu
                     // propio: es la misma persona, en el mismo momento y con la
                     // mercadería en la mano.
                     ['icon' => 'proveedores', 'name' => 'Compras', 'path' => '/compras'],
+                    ['icon' => 'categorias', 'name' => 'Vencimientos', 'path' => '/vencimientos'],
                     ['icon' => 'kardex', 'name' => 'Movimientos', 'path' => '/inventario/movimientos'],
                 ],
             ];
