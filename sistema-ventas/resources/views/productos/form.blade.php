@@ -79,6 +79,14 @@
             get empaque() {
                 return (this.nombreEmpaque || 'empaque').trim().toLowerCase();
             },
+            /* «Compras cajas de 12 CAJA»: el empaque y la unidad de venta son
+               la misma palabra. Casi siempre significa que se quiso decir una
+               de las dos cosas, no las dos. No se bloquea —vender la caja y
+               comprarla en fardos de cajas es legítimo— pero se avisa, porque
+               tal como queda el mostrador vendería cajas de doce cajas. */
+            get empaqueRepiteLaUnidad() {
+                return this.hayEmpaque && this.empaque === this.unidadNombre;
+            },
 
             /* El costo se puede escribir por caja, pero todo lo que se calcula
                —margen, ganancia, comparación con el precio de venta— trabaja
@@ -186,6 +194,13 @@
                                 En <span x-text="unidadNombre"></span>, que es como lo vendes
                             </p>
                         </x-form.campo>
+
+                        <div x-show="empaqueRepiteLaUnidad" x-cloak class="sm:col-span-2">
+                            <x-ui.alert variant="warning" title="El empaque se llama igual que la unidad de venta"
+                                message="Tal como está, compras envases llenos de ese mismo envase. Si lo que despachas
+                                    en el mostrador es el envase entero, desmarca la casilla; si lo despachas por
+                                    unidad, cambia la unidad de venta." />
+                        </div>
 
                         {{-- La frase completa, para que la regla no haya que
                              deducirla del formulario. --}}

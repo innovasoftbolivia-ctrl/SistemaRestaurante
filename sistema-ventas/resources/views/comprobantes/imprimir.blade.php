@@ -3,6 +3,17 @@
 
     $venta = $comprobante->venta;
     $ticket = $formato === 'ticket';
+
+    // Marcar una línea como exonerada solo dice algo si el documento llevaba
+    // impuesto: si el total no desglosa ninguno, «exonerado» aparece en casi
+    // todas las líneas sin distinguir nada de nada. Se mira el impuesto del
+    // COMPROBANTE y no la tasa de hoy, por lo mismo que el resto del papel: lo
+    // ya emitido no cambia porque el negocio cambie de régimen después.
+    //
+    // En el rollo no sale nunca, ni siquiera con impuesto: es un papel de
+    // 80 mm que el cliente mira para comprobar lo que pagó, y el desglose
+    // fiscal es asunto del A4.
+    $llevaImpuesto = (float) $comprobante->impuesto > 0;
     // El símbolo sale del código congelado en el documento, no de la
     // configuración de hoy: si el negocio cambió de moneda, lo ya emitido no.
     $moneda = Config::simbolo($comprobante->moneda);
@@ -238,11 +249,8 @@
                                 <span class="detalle-linea">
                                     {{ $linea->cantidad_con_unidad }} ×
                                     {{ number_format((float) $linea->precio_unitario, 2) }}
-                                    @unless ($linea->afecto_impuesto)
-                                        · exonerado
-                                    @endunless
                                 </span>
-                            @elseif (! $linea->afecto_impuesto)
+                            @elseif ($llevaImpuesto && ! $linea->afecto_impuesto)
                                 <span class="tenue">(exonerado)</span>
                             @endif
                         </td>
