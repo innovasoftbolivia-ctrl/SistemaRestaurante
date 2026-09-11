@@ -381,9 +381,17 @@ galón tendría que redondear a 4, y ese redondeo se le iría derecho al stock �
 como 40 litros contra los 37.85 que entraron de verdad—.
 
 El nombre del empaque se elige de una lista (caja, paquete, bolsa, saco, fardo, plancha, docena,
-bidón, turril, balde, blíster) con un «Otro…» para lo que no esté. No tiene valor por defecto a
-propósito: cuando lo tenía —«Caja»— se guardaba tal cual en productos que llegaban en sacos, y
-después la pantalla de ingreso hablaba de cajas donde no había ninguna.
+bidón, turril, balde, blíster) con un «Suelto — igual que lo vendo» al principio y un «Otro…» al
+final. La lista **no** tiene una casilla delante que haya que marcar: la tuvo, y quien se la
+saltaba terminaba buscando la caja en el desplegable de unidades de venta, que es la pregunta
+equivocada —esa decide lo que se despacha en el mostrador—. Las dos preguntas van juntas y en el
+orden en que se piensan:
+
+    ¿Cómo te lo entrega el proveedor?      ¿Cómo lo vendes en el mostrador?
+    [ Caja        ▾ ]                      [ Unidad      ▾ ]
+    ¿Cuánto trae cada uno?  [ 24 ] UND por caja
+
+    → Compras de a caja de 24 UND y vendes de a unidad.
 
 Con eso, la pantalla de ingreso deja de pedir un total y pide lo que se cuenta en el depósito:
 cuántas cajas enteras llegaron y cuántas unidades vinieron sueltas. La multiplicación la hace el

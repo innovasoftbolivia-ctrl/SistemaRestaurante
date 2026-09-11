@@ -15,19 +15,21 @@
     // detrás de un botón plegado es un formulario que no se puede terminar.
     $opcionales = ['codigo', 'codigo_barras', 'proveedor_id', 'descripcion', 'imagen'];
 
-    // Los empaques con los que llega la mercadería en una tienda. La lista
-    // mezcla a propósito lo que se cuenta (caja, plancha, docena), lo que se
-    // pesa (saco, fardo, balde) y lo que se mide (bidón, turril): el empaque no
-    // depende de la unidad en la que se vende, y separarlos en listas obligaría
-    // a adivinar a qué familia pertenece cada unidad.
-    $empaquesUsuales = ['Caja', 'Paquete', 'Bolsa', 'Saco', 'Fardo', 'Plancha',
-        'Docena', 'Bidón', 'Turril', 'Balde', 'Blíster'];
+    // Nombre => plural, calculado en el servidor (ver ProductoController).
+    $pluralesEmpaque = App\Http\Controllers\ProductoController::empaquesUsuales();
+    $empaquesUsuales = array_keys($pluralesEmpaque);
 
     // Un empaque escrito a mano —«Jaba», «Ristra»— sigue siendo válido: se
     // reconoce porque no está en la lista, y la casilla «Otro» se abre sola
     // con ese texto dentro en vez de perderlo.
     $empaqueActual = old('nombre_empaque', $producto->nombre_empaque);
     $empaqueEnLista = filled($empaqueActual) && in_array($empaqueActual, $empaquesUsuales, true);
+
+    // «Suelto» va primero porque es el valor por defecto y porque es la
+    // respuesta de la mitad del catálogo. «Otro…» se agrega en el slot, después
+    // de la lista, que es donde se espera encontrar un cajón de sastre.
+    $opcionesEmpaque = ['__suelto' => 'Suelto — igual que lo vendo']
+        + array_combine($empaquesUsuales, $empaquesUsuales);
 @endphp
 
 @section('content')
@@ -42,15 +44,29 @@
             unidades: @js($unidadesInfo),
             unidad: Number(@js(old('unidad_medida_id', $producto->unidad_medida_id ?? ''))) || null,
 
-            vieneEnEmpaque: @js((bool) old('viene_en_empaque', $producto->tieneEmpaque())),
             /* El empaque se elige de una lista y ya no viene con «Caja» puesto:
                un valor por defecto que nadie eligió terminaba guardado tal cual,
                y después la pantalla de ingreso hablaba de cajas donde había
-               sacos. Vacío obliga a decirlo, y lo que se diga es lo que sale en
-               todas las etiquetas. */
-            empaqueElegido: @js($empaqueEnLista ? $empaqueActual : (filled($empaqueActual) ? '__otro' : '')),
+               sacos. Lo que se elija es lo que sale en todas las etiquetas.
+
+               `__suelto` es una opción más de la misma lista y no una casilla
+               aparte: la casilla hacía parecer opcional la mitad más importante
+               del formulario, y quien se la saltaba terminaba eligiendo «Caja»
+               como unidad de VENTA para no perder la cuenta de las cajas. Las
+               dos preguntas —cómo lo compro, cómo lo vendo— tienen que estar a
+               la vista al mismo tiempo, porque es un solo pensamiento. */
+            empaqueElegido: @js($empaqueEnLista ? $empaqueActual : (filled($empaqueActual) ? '__otro' : '__suelto')),
             empaqueLibre: @js($empaqueEnLista ? '' : ($empaqueActual ?? '')),
+            /* El plural llega resuelto del servidor. Para un empaque escrito a
+               mano no hay entrada en el mapa y se cae a la «s», que es lo que
+               acierta en casi todo y lo escribió la propia persona. */
+            plurales: @js(array_change_key_case($pluralesEmpaque, CASE_LOWER)),
+            get vieneEnEmpaque() {
+                return this.empaqueElegido !== '__suelto';
+            },
             get nombreEmpaque() {
+                if (!this.vieneEnEmpaque) return '';
+
                 return (this.empaqueElegido === '__otro' ? this.empaqueLibre : this.empaqueElegido) || '';
             },
             /* Vacío y no 0: con un 0 puesto hay que borrarlo antes de poder
@@ -78,6 +94,9 @@
             },
             get empaque() {
                 return (this.nombreEmpaque || 'empaque').trim().toLowerCase();
+            },
+            get empaquePlural() {
+                return this.plurales[this.empaque] ?? this.empaque + 's';
             },
             /* «Compras cajas de 12 CAJA»: el empaque y la unidad de venta son
                la misma palabra. Casi siempre significa que se quiso decir una
@@ -153,90 +172,106 @@
             </x-common.component-card>
 
             {{-- El corazón del formulario, y lo que antes no existía: comprar y
-                 vender no tienen por qué usar la misma unidad. --}}
-            <x-common.component-card title="Cómo se vende y cómo se compra"
-                desc="El stock siempre se cuenta en la unidad de venta. El empaque solo sirve para cargar mercadería sin sacar la calculadora.">
-                {{-- La ayuda nombra el caso exacto en el que se tropieza.
-                     «Caja» y «Paquete» están en esta lista porque hay negocios
-                     que despachan la caja entera, pero quien viene pensando en
-                     la caja que acaba de comprarle al proveedor las elige aquí
-                     por reflejo — y entonces el mostrador vende cajas. La cuenta
-                     de «cuántas unidades trae la caja» no se hace aquí: se hace
-                     abajo, con el empaque. --}}
-                <x-form.campo label="¿En qué unidad lo vendes?" for="unidad_medida_id" name="unidad_medida_id"
-                    required
-                    help="Cómo lo despachas en el mostrador. Si compras cajas pero vendes de a uno, aquí va «Unidad»: la caja se declara abajo. Elige «Caja» o «Paquete» solo si el cliente se lleva el envase entero.">
-                    <x-form.select id="unidad_medida_id" name="unidad_medida_id"
-                        :value="$producto->unidad_medida_id" placeholder="Selecciona una unidad"
-                        :opciones="$unidades" x-model.number="unidad" required />
-                </x-form.campo>
+                 vender no tienen por qué usar la misma unidad.
 
-                <div class="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-                    <x-form.check name="viene_en_empaque" model="vieneEnEmpaque"
-                        label="Lo compro por caja, saco, bidón o similar" />
+                 Las dos preguntas van juntas y en ese orden —primero cómo llega,
+                 después cómo sale— porque así es como lo cuenta el comerciante:
+                 «compro cajas de 24 y vendo de a uno». Presentarlas por separado,
+                 con la compra escondida detrás de una casilla, llevaba a buscar
+                 la caja en la lista de unidades de venta, que es la pregunta
+                 equivocada: esa lista decide lo que se despacha en el mostrador. --}}
+            <x-common.component-card title="Cómo lo compras y cómo lo vendes"
+                desc="No tienen por qué ser lo mismo: se compra por caja y se vende de a uno. El stock se cuenta siempre en la unidad de venta.">
+                {{-- `viene_en_empaque` ya no es una casilla que se marca, sino
+                     lo que se deduce de haber elegido un envase. El servidor
+                     sigue recibiendo el mismo campo. --}}
+                <input type="hidden" name="viene_en_empaque" :value="vieneEnEmpaque ? '1' : '0'" />
+                <input type="hidden" name="nombre_empaque" :value="nombreEmpaque" />
 
-                    <div x-show="vieneEnEmpaque" x-cloak class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                        <x-form.campo label="¿Cómo te lo entregan?" for="empaque_elegido" name="nombre_empaque"
-                            help="Caja, saco, bidón… lo que recibes del proveedor.">
-                            {{-- Lo que se envía es el hidden: el desplegable y la
-                                 casilla de «Otro» son dos formas de llenarlo. --}}
-                            <input type="hidden" name="nombre_empaque" :value="nombreEmpaque" />
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <x-form.campo label="¿Cómo te lo entrega el proveedor?" for="empaque_elegido" name="nombre_empaque"
+                        help="Lo que recibes: una caja, un saco, un bidón. Sirve igual para lo que se cuenta, lo que se pesa y lo que se mide.">
+                        <x-form.select id="empaque_elegido" name="empaque_elegido" x-model="empaqueElegido"
+                            :opciones="$opcionesEmpaque">
+                            <option value="__otro">Otro…</option>
+                        </x-form.select>
 
-                            <x-form.select id="empaque_elegido" name="empaque_elegido" x-model="empaqueElegido"
-                                placeholder="Elige el empaque" :opciones="array_combine($empaquesUsuales, $empaquesUsuales)">
-                                <option value="__otro">Otro…</option>
-                            </x-form.select>
+                        <x-form.input x-show="empaqueElegido === '__otro'" x-cloak x-model="empaqueLibre"
+                            class="mt-2" placeholder="Jaba, ristra, atado…" maxlength="20" />
+                    </x-form.campo>
 
-                            <x-form.input x-show="empaqueElegido === '__otro'" x-cloak x-model="empaqueLibre"
-                                class="mt-2" placeholder="Jaba, ristra, atado…" maxlength="20" />
-                        </x-form.campo>
+                    {{-- La unidad de venta es la pregunta de al lado, no una que
+                         viene después: verlas juntas es lo que impide confundir
+                         «lo que compro» con «lo que despacho». --}}
+                    <x-form.campo label="¿Cómo lo vendes en el mostrador?" for="unidad_medida_id"
+                        name="unidad_medida_id" required
+                        help="En esta unidad se cuenta el stock y se cobra. Si abres la caja para vender lo de adentro, aquí va lo de adentro.">
+                        <x-form.select id="unidad_medida_id" name="unidad_medida_id"
+                            :value="$producto->unidad_medida_id" placeholder="Selecciona una unidad"
+                            :opciones="$unidades" x-model.number="unidad" required />
+                    </x-form.campo>
 
-                        <x-form.campo label="¿Cuánto trae?" for="contenido_empaque" name="contenido_empaque">
+                    <div x-show="vieneEnEmpaque" x-cloak class="sm:col-span-2">
+                        <x-form.campo label="¿Cuánto trae cada uno?" for="contenido_empaque"
+                            name="contenido_empaque">
                             {{-- El paso lo manda la unidad de venta: 24 gaseosas son
                                  enteras, pero un galón son 3.785 litros y redondear
                                  ahí se le iría derecho al stock. --}}
-                            <x-form.input id="contenido_empaque" name="contenido_empaque" type="number"
-                                x-bind:step="pasoUnidad" min="0" :value="$producto->contenido_empaque"
-                                x-model.number="contenidoEmpaque" x-bind:placeholder="pasoUnidad === 1 ? '24' : '46'" />
-                            <p x-show="unidad" x-cloak class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-                                En <span x-text="unidadNombre"></span>, que es como lo vendes
-                            </p>
+                            <div class="flex items-center gap-3">
+                                <div class="w-40 shrink-0">
+                                    <x-form.input id="contenido_empaque" name="contenido_empaque" type="number"
+                                        x-bind:step="pasoUnidad" min="0" :value="$producto->contenido_empaque"
+                                        x-model.number="contenidoEmpaque"
+                                        x-bind:placeholder="pasoUnidad === 1 ? '24' : '46'" />
+                                </div>
+                                {{-- El código y no el nombre: «UND por caja» no necesita
+                                     plural, y «unidads» es lo que salía al pegarle una
+                                     «s» a «unidad». Las reglas del plural ya viven en
+                                     el servidor y no hace falta una segunda copia aquí. --}}
+                                <span class="text-theme-sm text-gray-500 dark:text-gray-400">
+                                    <span x-text="unidadCodigo || 'unidades'"></span>
+                                    por <span x-text="empaque"></span>
+                                </span>
+                            </div>
                         </x-form.campo>
-
-                        <div x-show="empaqueRepiteLaUnidad" x-cloak class="sm:col-span-2">
-                            <x-ui.alert variant="warning" title="El empaque se llama igual que la unidad de venta"
-                                message="Tal como está, compras envases llenos de ese mismo envase. Si lo que despachas
-                                    en el mostrador es el envase entero, desmarca la casilla; si lo despachas por
-                                    unidad, cambia la unidad de venta." />
-                        </div>
-
-                        {{-- La frase completa, para que la regla no haya que
-                             deducirla del formulario. --}}
-                        <div class="rounded-xl bg-gray-50 p-4 text-theme-sm sm:col-span-2 dark:bg-white/[0.03]">
-                            <template x-if="hayEmpaque && unidad">
-                                <p class="text-gray-700 dark:text-gray-300">
-                                    Compras de a <b><span x-text="empaque"></span> de
-                                        <span x-text="contenido"></span>
-                                        <span x-text="unidadCodigo"></span></b>
-                                    y vendes de a <b><span x-text="unidadNombre"></span></b>.
-                                    Al ingresar mercadería escribirás cuántas
-                                    <span x-text="empaque"></span>s llegaron y cuántas sueltas,
-                                    y el sistema hace la multiplicación.
-                                </p>
-                            </template>
-                            <template x-if="!(hayEmpaque && unidad)">
-                                <p class="text-gray-500 dark:text-gray-400">
-                                    Completa la unidad de venta y cuántas unidades trae el empaque.
-                                </p>
-                            </template>
-                        </div>
                     </div>
 
-                    <p x-show="!vieneEnEmpaque" x-cloak class="text-theme-xs text-gray-500 dark:text-gray-400">
-                        Sirve igual para lo que se cuenta y para lo que se pesa o se mide: una caja de 24 gaseosas,
-                        un saco de 46 kg de arroz, un bidón de 20 L de aceite. Déjalo sin marcar solo si compras
-                        exactamente en la misma unidad en la que vendes.
-                    </p>
+                    <div x-show="empaqueRepiteLaUnidad" x-cloak class="sm:col-span-2">
+                        <x-ui.alert variant="warning" title="El empaque se llama igual que la unidad de venta"
+                            message="Tal como está, compras envases llenos de ese mismo envase. Si lo que despachas
+                                en el mostrador es el envase entero, ponlo como «Suelto»; si lo despachas por
+                                unidad, cambia la unidad de venta." />
+                    </div>
+
+                    {{-- La frase completa, para que la regla no haya que
+                         deducirla del formulario. --}}
+                    <div class="rounded-xl bg-gray-50 p-4 text-theme-sm sm:col-span-2 dark:bg-white/[0.03]">
+                        <template x-if="hayEmpaque && unidad">
+                            <p class="text-gray-700 dark:text-gray-300">
+                                Compras de a <b><span x-text="empaque"></span> de
+                                    <span x-text="contenido"></span>
+                                    <span x-text="unidadCodigo"></span></b>
+                                y vendes de a <b><span x-text="unidadNombre"></span></b>.
+                                {{-- «el número de» y no «cuántas»: en castellano el
+                                     artículo depende del género y esto vale igual para
+                                     las cajas que para los sacos. --}}
+                                Al ingresar mercadería pondrás el número de
+                                <span x-text="empaquePlural"></span> y el de unidades
+                                sueltas, y el sistema hace la multiplicación.
+                            </p>
+                        </template>
+                        <template x-if="!hayEmpaque && unidad">
+                            <p class="text-gray-700 dark:text-gray-300">
+                                Compras y vendes de a <b><span x-text="unidadNombre"></span></b>: no hay ninguna
+                                cuenta que hacer al cargar mercadería.
+                            </p>
+                        </template>
+                        <template x-if="!unidad">
+                            <p class="text-gray-500 dark:text-gray-400">
+                                Di cómo lo vendes y, si viene en envase, cuántas unidades trae.
+                            </p>
+                        </template>
+                    </div>
                 </div>
             </x-common.component-card>
 

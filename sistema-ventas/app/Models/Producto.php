@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\Inventario;
 use App\Support\Config;
+use App\Support\Palabras;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -157,7 +158,7 @@ class Producto extends Model
     /** El nombre del empaque en plural: «cajas», «planchas», «cartones». */
     public function getEmpaquePluralAttribute(): ?string
     {
-        return $this->tieneEmpaque() ? self::pluralizar($this->nombre_empaque) : null;
+        return $this->tieneEmpaque() ? Palabras::plural($this->nombre_empaque) : null;
     }
 
     /**
@@ -215,44 +216,6 @@ class Producto extends Model
     public function getStockDesglosadoAttribute(): ?string
     {
         return $this->desglosar($this->stock_actual);
-    }
-
-    /**
-     * Plural del nombre del empaque.
-     *
-     * El campo es texto libre —cada rubro llama distinto a su empaque— así que
-     * no alcanza con pegarle una «s». Se aplican las reglas del castellano que
-     * hacen falta de verdad para estas palabras: vocal + s (caja→cajas),
-     * z → ces (haz→haces), aguda acabada en -ón/-ín/-án que pierde la tilde
-     * (cartón→cartones), y consonante + es (pack→packs queda como excepción
-     * porque es un préstamo y «packes» no lo diría nadie).
-     */
-    private static function pluralizar(string $palabra): string
-    {
-        $palabra = mb_strtolower(trim($palabra));
-
-        if ($palabra === '') {
-            return $palabra;
-        }
-
-        // Préstamos del inglés de uso corriente en el rubro: plural con «s».
-        if (preg_match('/(pack|display|blister|six)$/u', $palabra)) {
-            return $palabra.'s';
-        }
-
-        if (preg_match('/[aeiou]$/u', $palabra)) {
-            return $palabra.'s';
-        }
-
-        if (str_ends_with($palabra, 'z')) {
-            return mb_substr($palabra, 0, -1).'ces';
-        }
-
-        // Aguda terminada en -ón, -ín, -án…: al alargarse deja de necesitar la
-        // tilde, porque el acento ya no cae en la última sílaba.
-        $sinTilde = strtr(mb_substr($palabra, -2), ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
-
-        return mb_substr($palabra, 0, -2).$sinTilde.'es';
     }
 
     // ------------------------------------------------------------- derivados

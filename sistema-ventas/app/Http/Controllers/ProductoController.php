@@ -10,6 +10,7 @@ use App\Models\Proveedor;
 use App\Models\UnidadMedida;
 use App\Services\Auditor;
 use App\Services\Inventario;
+use App\Support\Palabras;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -375,6 +376,29 @@ class ProductoController extends Controller
             ]]),
             'proveedores' => Proveedor::activos()->orderBy('razon_social')->pluck('razon_social', 'id'),
         ];
+    }
+
+    /**
+     * Los empaques con los que llega la mercadería a una tienda, con su plural.
+     *
+     * El plural viaja calculado desde aquí y no se arma en el navegador: las
+     * reglas ya existen en {@see Palabras} y una segunda copia en JavaScript se
+     * separaría de esta el día que alguien corrija una. Además son cinco
+     * palabras conocidas, no hace falta resolverlo en vivo.
+     *
+     * La lista mezcla a propósito lo que se cuenta (caja, plancha, docena), lo
+     * que se pesa (saco, fardo, balde) y lo que se mide (bidón, turril): el
+     * empaque no depende de la unidad en la que se vende, y separarlos en
+     * listas obligaría a adivinar a qué familia pertenece cada unidad.
+     *
+     * @return array<string, string>
+     */
+    public static function empaquesUsuales(): array
+    {
+        $nombres = ['Caja', 'Paquete', 'Bolsa', 'Saco', 'Fardo', 'Plancha',
+            'Docena', 'Bidón', 'Turril', 'Balde', 'Blíster'];
+
+        return array_combine($nombres, array_map(Palabras::plural(...), $nombres));
     }
 
     private function validar(Request $request, ?Producto $producto = null): array
