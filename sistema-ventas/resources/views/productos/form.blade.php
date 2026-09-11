@@ -156,8 +156,16 @@
                  vender no tienen por qué usar la misma unidad. --}}
             <x-common.component-card title="Cómo se vende y cómo se compra"
                 desc="El stock siempre se cuenta en la unidad de venta. El empaque solo sirve para cargar mercadería sin sacar la calculadora.">
+                {{-- La ayuda nombra el caso exacto en el que se tropieza.
+                     «Caja» y «Paquete» están en esta lista porque hay negocios
+                     que despachan la caja entera, pero quien viene pensando en
+                     la caja que acaba de comprarle al proveedor las elige aquí
+                     por reflejo — y entonces el mostrador vende cajas. La cuenta
+                     de «cuántas unidades trae la caja» no se hace aquí: se hace
+                     abajo, con el empaque. --}}
                 <x-form.campo label="¿En qué unidad lo vendes?" for="unidad_medida_id" name="unidad_medida_id"
-                    required help="Es la unidad en la que se despacha en el mostrador y en la que se cuenta el stock.">
+                    required
+                    help="Cómo lo despachas en el mostrador. Si compras cajas pero vendes de a uno, aquí va «Unidad»: la caja se declara abajo. Elige «Caja» o «Paquete» solo si el cliente se lleva el envase entero.">
                     <x-form.select id="unidad_medida_id" name="unidad_medida_id"
                         :value="$producto->unidad_medida_id" placeholder="Selecciona una unidad"
                         :opciones="$unidades" x-model.number="unidad" required />
