@@ -119,9 +119,14 @@
                                     @if ($devolucion->espera === 'NOTA_CREDITO')
                                         <span class="text-gray-400 dark:text-gray-600">—</span>
                                     @elseif ($linea->pendiente_reposicion > 0)
+                                        {{-- Mientras no haya llegado nada, «0 · faltan 7» hace leer
+                                             dos cifras para entender una. Solo cuando el proveedor
+                                             trajo una parte tiene sentido mostrar las dos. --}}
                                         <span class="text-warning-600 dark:text-warning-400">
-                                            {{ Config::cantidad($linea->cantidad_repuesta) }}
-                                            · faltan {{ Config::cantidad($linea->pendiente_reposicion) }}
+                                            @if ((float) $linea->cantidad_repuesta > 0)
+                                                {{ Config::cantidad($linea->cantidad_repuesta) }} ·
+                                            @endif
+                                            faltan {{ Config::cantidad($linea->pendiente_reposicion) }}
                                         </span>
                                     @else
                                         <span class="text-success-700 dark:text-success-500">completo</span>

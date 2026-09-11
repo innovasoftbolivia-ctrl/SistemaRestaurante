@@ -14,9 +14,9 @@
         </svg>
     </button>
 
-    <div x-show="abierto" x-cloak x-transition:enter="transition ease-out duration-100"
+    <div x-show="abierto" x-cloak x-transition:enter="transition ease-salida duration-150"
         x-transition:enter-start="transform opacity-0 scale-95" x-transition:enter-end="transform opacity-100 scale-100"
-        x-transition:leave="transition ease-in duration-75" x-transition:leave-start="transform opacity-100 scale-100"
+        x-transition:leave="transition ease-salida duration-100" x-transition:leave-start="transform opacity-100 scale-100"
         x-transition:leave-end="transform opacity-0 scale-95"
         class="absolute right-0 z-50 mt-[17px] flex w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark">
 

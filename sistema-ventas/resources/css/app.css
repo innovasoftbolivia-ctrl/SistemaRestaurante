@@ -10,6 +10,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  /* Las curvas de serie de CSS son flojas: `ease-out` a 200 ms se siente más
+     lento que esta a la misma duración, porque arranca con menos empuje, que
+     es justo el instante que se mira. Dos, y ninguna más:
+
+       ease-salida   lo que entra o sale de pantalla (arranca rápido)
+       ease-vaiven   lo que se mueve de un sitio a otro sin desaparecer
+
+     Declaradas aquí y no en `:root` para que Tailwind genere además las
+     utilidades `ease-salida` y `ease-vaiven` y las vistas puedan usarlas. */
+  --ease-salida: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-vaiven: cubic-bezier(0.77, 0, 0.175, 1);
+
   --font-*: initial;
   --font-outfit: Outfit, sans-serif;
 
@@ -349,6 +361,36 @@
 
 .dark {
   color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------- el pulsado
+   Ningún control del sistema respondía a ser pulsado. En una caja donde el
+   cajero hace cientos de clics al día, eso es lo que más se nota: se pulsa y
+   no pasa nada hasta que la página responde. Un 3 % de encogimiento durante
+   160 ms confirma que la interfaz escuchó, antes incluso de que el servidor
+   conteste.
+
+   Va en CSS y no clase por clase porque hay botones de componente, botones
+   llanos y enlaces con pinta de botón repartidos por todo el sistema, y el que
+   se olvide es justo el que se va a sentir raro.
+
+   `:not(:disabled)` para que lo apagado no finja responder, y `[aria-disabled]`
+   por los enlaces, que no admiten `disabled`. */
+:where(button, [role='button'], a[href], summary, label[for]):not(:disabled):not([aria-disabled='true']) {
+  transition-property: transform, background-color, color, border-color, box-shadow, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-salida);
+}
+
+:where(button, [role='button'], a[href], summary):not(:disabled):not([aria-disabled='true']):active {
+  transform: scale(0.97);
+}
+
+/* Los enlaces de texto —el nombre de un producto en una tabla, una miga de pan—
+   no son botones: encogerlos haría saltar la línea entera. Solo responden los
+   que se ven como algo que se pulsa. */
+:where(td, th, p, nav[aria-label='Breadcrumb']) a[href]:active {
+  transform: none;
 }
 
 /* Quien pide menos movimiento en su sistema no debería ver nada deslizarse.

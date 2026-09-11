@@ -17,8 +17,8 @@
 
     <!-- Backdrop -->
     <div @click="open = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"
-        x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0"
-        x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-200"
+        x-transition:enter="transition ease-salida duration-200" x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100" x-transition:leave="transition ease-salida duration-150"
         x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
     </div>
 
@@ -28,8 +28,8 @@
          el modal al cerrarse. Plugin oficial de Alpine (@alpinejs/focus). --}}
     <div @click.stop x-trap.inert.noscroll="open"
         class="relative w-full rounded-3xl bg-white dark:bg-gray-900 {{ $attributes->get('class') }} focus:outline-none"
-        x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
-        x-transition:enter-end="opacity-100 transform scale-100" x-transition:leave="transition ease-in duration-200"
+        x-transition:enter="transition ease-salida duration-200" x-transition:enter-start="opacity-0 transform scale-95"
+        x-transition:enter-end="opacity-100 transform scale-100" x-transition:leave="transition ease-salida duration-150"
         x-transition:leave-start="opacity-100 transform scale-100"
         x-transition:leave-end="opacity-0 transform scale-95">
 
