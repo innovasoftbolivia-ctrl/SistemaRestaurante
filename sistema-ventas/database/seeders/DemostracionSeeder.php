@@ -103,7 +103,10 @@ class DemostracionSeeder extends Seeder
     {
         $ids = Categoria::whereIn('nombre', self::CATEGORIAS_QUE_VENCEN)->pluck('id');
 
-        $encendidos = Producto::whereIn('categoria_id', $ids)
+        // Solo los activos: un producto descatalogado no se compra ni se vende,
+        // y llenarle el almacén de tandas es ruido que nadie va a mirar.
+        $encendidos = Producto::activos()
+            ->whereIn('categoria_id', $ids)
             ->where('controla_vencimiento', false)
             ->update(['controla_vencimiento' => true]);
 
@@ -121,7 +124,8 @@ class DemostracionSeeder extends Seeder
      */
     private function repartirElStockEnTandas(): void
     {
-        $productos = Producto::where('controla_vencimiento', true)
+        $productos = Producto::activos()
+            ->where('controla_vencimiento', true)
             ->whereDoesntHave('lotes')
             ->where('stock_actual', '>', 0)
             ->get();

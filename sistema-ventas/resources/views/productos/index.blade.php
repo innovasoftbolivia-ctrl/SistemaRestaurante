@@ -63,14 +63,20 @@
                         :opciones="['BAJO' => 'Bajo el mínimo', 'AGOTADO' => 'Agotados']" />
                 </x-form.campo>
 
+                {{-- Arranca en «Vigentes»: es lo que se quiere ver casi siempre.
+                     Los descatalogados no se borran —tienen historia detrás— y
+                     por eso hay que poder llegar a ellos, pero no tropezarse. --}}
+                <x-form.campo label="Estado" for="estado">
+                    <x-form.select id="estado" name="estado" :value="$filtros['estado']" placeholder="Todos"
+                        :opciones="['ACTIVO' => 'Vigentes', 'CESADO' => 'Descatalogados']" />
+                </x-form.campo>
+
                 <div class="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-5">
                     <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
                     <x-ui.button variant="outline" size="sm" :href="route('productos.index')">Limpiar</x-ui.button>
                     <x-ui.button size="sm" class="ml-auto" :href="route('productos.create')">Nuevo producto</x-ui.button>
                 </div>
 
-                {{-- El filtro de estado va aparte: casi siempre se quiere ver solo el catálogo vigente. --}}
-                <input type="hidden" name="estado" value="{{ $filtros['estado'] }}" />
             </form>
         </div>
 

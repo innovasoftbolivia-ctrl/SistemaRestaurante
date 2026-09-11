@@ -30,7 +30,13 @@ class ProductoController extends Controller
             'buscar' => $request->string('buscar')->toString(),
             'categoria' => $request->integer('categoria') ?: null,
             'proveedor' => $request->integer('proveedor') ?: null,
-            'estado' => $request->string('estado')->toString(),
+            // Por omisión, solo el catálogo vigente. Un descatalogado no se
+            // compra ni se vende: verlo cuesta un clic, y no verlo ahorra
+            // recorrer cientos de filas muertas para llegar a lo de hoy.
+            // `?estado=` vacío —el que manda «Todos»— sigue mostrándolo todo.
+            'estado' => $request->has('estado')
+                ? $request->string('estado')->toString()
+                : 'ACTIVO',
             'stock' => $request->string('stock')->toString(),
         ];
 

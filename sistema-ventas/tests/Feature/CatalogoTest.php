@@ -42,6 +42,43 @@ class CatalogoTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    /**
+     * El catálogo arranca mostrando lo vigente.
+     *
+     * Antes mostraba todo, y no se notaba porque no había descatalogados. El
+     * día que hubo 152, el listado eran cientos de filas muertas antes de
+     * llegar a lo que se vende hoy.
+     */
+    public function test_el_catalogo_muestra_solo_lo_vigente_por_omision(): void
+    {
+        $vigente = $this->producto();
+        $cesado = Producto::where('id', '<>', $vigente->id)->firstOrFail();
+        $cesado->forceFill(['activo' => 0])->save();
+
+        $this->actingAs($this->admin())
+            ->get(route('productos.index', ['buscar' => $cesado->codigo]))
+            ->assertOk()
+            ->assertDontSee($cesado->nombre);
+    }
+
+    /** Pero se llega a ellos: tienen historia detrás y no se borran. */
+    public function test_los_descatalogados_se_pueden_ver_cuando_se_piden(): void
+    {
+        $cesado = $this->producto();
+        $cesado->forceFill(['activo' => 0])->save();
+
+        $this->actingAs($this->admin())
+            ->get(route('productos.index', ['estado' => 'CESADO', 'buscar' => $cesado->codigo]))
+            ->assertOk()
+            ->assertSee($cesado->nombre);
+
+        // Y «Todos» —el estado vacío— los sigue trayendo junto al resto.
+        $this->actingAs($this->admin())
+            ->get(route('productos.index', ['estado' => '', 'buscar' => $cesado->codigo]))
+            ->assertOk()
+            ->assertSee($cesado->nombre);
+    }
+
     private function datosProducto(array $sobrescribir = []): array
     {
         return [
