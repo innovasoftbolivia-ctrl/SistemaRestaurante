@@ -64,19 +64,41 @@
                 </x-form.campo>
             </div>
 
-            {{-- El cambio no es otro formulario: es esta casilla. --}}
+            {{-- El cambio no es otro formulario: es esta pregunta. Y son tres
+                 finales, no dos: «me lo trae la semana que viene» no es lo
+                 mismo que «no me trae nada», y con un sí o un no el sistema no
+                 podía distinguirlos ni avisar después de lo que falta. --}}
             <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-                <x-form.check name="con_reposicion" model="conReposicion"
-                    label="El proveedor lo repone (cambio)" />
-                <p class="mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
-                    <span x-show="conReposicion" x-cloak>
-                        Sale lo fallado y entra lo repuesto, todo en este mismo documento: el stock queda como
-                        estaba, pero registrado. Si lo repuesto trae otra fecha de vencimiento, anótala en la línea.
-                    </span>
-                    <span x-show="!conReposicion" x-cloak>
-                        La mercadería se va y el stock baja. Se espera la nota de crédito del proveedor.
-                    </span>
-                </p>
+                <span class="mb-3 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                    ¿En qué quedaron con el proveedor?
+                </span>
+
+                <div class="space-y-3">
+                    @foreach ($esperas as $clave => $etiqueta)
+                        <label class="flex cursor-pointer items-start gap-3">
+                            <input type="radio" name="espera" value="{{ $clave }}" required
+                                x-model="espera"
+                                class="mt-0.5 h-4 w-4 border-gray-300 text-brand-500 focus:ring-brand-500/40 dark:border-gray-700 dark:bg-gray-800" />
+                            <span>
+                                <span class="block text-sm text-gray-700 dark:text-gray-400">{{ $etiqueta }}</span>
+                                <span class="block text-theme-xs text-gray-500 dark:text-gray-500">
+                                    @switch($clave)
+                                        @case('REPUESTO')
+                                            Sale lo fallado y entra lo repuesto, todo en este documento: el stock
+                                            queda como estaba, pero registrado.
+                                            @break
+                                        @case('PENDIENTE')
+                                            El stock baja hoy y vuelve a subir cuando llegue el reemplazo. Queda
+                                            anotado que el proveedor debe mercadería.
+                                            @break
+                                        @default
+                                            La mercadería se va y el stock baja. No vuelve nada: queda a cuenta.
+                                    @endswitch
+                                </span>
+                            </span>
+                        </label>
+                    @endforeach
+                </div>
             </div>
 
             <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -119,7 +141,7 @@
                                             <input type="hidden" :name="`lineas[${i}][compra_detalle_id]`" :value="l.id" />
                                             <input type="hidden" :name="`lineas[${i}][cantidad]`" :value="l.cantidad" />
                                             <input type="hidden" :name="`lineas[${i}][lote_id]`" :value="l.loteId || ''" />
-                                            <input type="hidden" :name="`lineas[${i}][vence_repuesto]`" :value="conReposicion ? (l.venceRepuesto || '') : ''" />
+                                            <input type="hidden" :name="`lineas[${i}][vence_repuesto]`" :value="espera === 'REPUESTO' ? (l.venceRepuesto || '') : ''" />
                                         </span>
                                     </template>
 
@@ -152,7 +174,7 @@
                                         </x-form.select>
                                     </div>
 
-                                    <div x-show="l.cantidad > 0 && conReposicion && l.controlaVencimiento"
+                                    <div x-show="l.cantidad > 0 && espera === 'REPUESTO' && l.controlaVencimiento"
                                         x-cloak class="mt-2 w-44">
                                         <span class="mb-1 block text-theme-xs text-gray-500 dark:text-gray-400">Lo repuesto vence el</span>
                                         <x-form.input type="date" x-model="l.venceRepuesto" />
@@ -207,7 +229,11 @@
     <script>
         function devolucionNueva(filas, elegido) {
             return {
-                conReposicion: false,
+                /* Sin valor por defecto a propósito: el radio arranca vacío y
+                   el formulario no deja guardar hasta elegir. Poner uno
+                   marcado de fábrica haría que el caso más común se registre
+                   sin que nadie lo haya decidido. */
+                espera: '',
                 avisoSinLineas: false,
 
                 /* Cada fila arranca en cero: se devuelve lo que se marca, no

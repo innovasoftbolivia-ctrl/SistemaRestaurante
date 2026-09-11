@@ -11,6 +11,7 @@ use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
 use App\Services\Compras;
+use App\Services\DevolucionesCompra;
 use App\Services\Devoluciones;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -86,6 +87,16 @@ class AuditoriaPermisosTest extends TestCase
             lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'costo_unitario' => 1]],
         );
 
+        // Y una devolución al proveedor que espera reposición: de ella cuelga
+        // la ruta que registra lo que el proveedor trae después.
+        $devolucionCompra = DevolucionesCompra::registrar(
+            usuario: Usuario::where('usuario', 'almacen')->firstOrFail(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 1]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
         return [
             'venta' => $venta->id,
             'sesion' => $sesion->id,
@@ -94,6 +105,7 @@ class AuditoriaPermisosTest extends TestCase
             'cobro' => $cobro->id,
             'compra' => $compra->id,
             'lote' => $lote->id,
+            'devolucionCompra' => $devolucionCompra->id,
             'producto' => DB::table('productos')->max('id'),
             'categoria' => DB::table('categorias')->max('id'),
             'unidad' => DB::table('unidades_medida')->max('id'),

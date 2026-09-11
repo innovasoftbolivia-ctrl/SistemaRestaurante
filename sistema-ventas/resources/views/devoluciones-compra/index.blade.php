@@ -27,6 +27,26 @@
             @endforeach
         </div>
 
+        {{-- Lo que el proveedor debe hoy va aparte de los totales de arriba:
+             aquellos son dinero ya devuelto, y esto es una deuda abierta — la
+             única cifra de la pantalla sobre la que hay algo que hacer. --}}
+        @if ($esperando > 0)
+            <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-warning-200 bg-warning-50 p-5 dark:border-warning-500/20 dark:bg-warning-500/[0.07]">
+                <div>
+                    <p class="text-theme-sm font-medium text-warning-700 dark:text-warning-400">
+                        {{ $esperando }}
+                        {{ $esperando === 1 ? 'devolución espera' : 'devoluciones esperan' }}
+                        que el proveedor reponga la mercadería
+                    </p>
+                    <p class="mt-1 text-theme-xs text-warning-600 dark:text-warning-500">
+                        Salió del stock y todavía no volvió nada. Abre cada una para anotar lo que vaya llegando.
+                    </p>
+                </div>
+                <x-ui.button size="sm" variant="outline"
+                    :href="route('devoluciones-compra.index', ['pendientes' => 1])">Ver solo esas</x-ui.button>
+            </div>
+        @endif
+
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <form method="GET" action="{{ route('devoluciones-compra.index') }}"
                 class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-start">
@@ -42,6 +62,10 @@
                 <x-form.campo label="Hasta" for="hasta">
                     <x-form.input id="hasta" name="hasta" type="date" :value="$filtros['hasta']?->toDateString()" />
                 </x-form.campo>
+
+                @if ($filtros['pendientes'])
+                    <input type="hidden" name="pendientes" value="1" />
+                @endif
 
                 <div class="flex flex-wrap items-end gap-2 pb-1">
                     <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
@@ -82,8 +106,12 @@
                                         class="font-medium text-gray-800 hover:text-brand-500 text-theme-sm dark:text-white/90">
                                         {{ $devolucion->documento_externo ?: 'Devolución #'.$devolucion->id }}
                                     </a>
-                                    @if ($devolucion->con_reposicion)
-                                        <span class="block text-theme-xs text-success-700 dark:text-success-500">con reposición</span>
+                                    @if ($devolucion->espera === 'PENDIENTE' && $devolucion->pendiente_reposicion > 0)
+                                        <span class="block text-theme-xs text-warning-600 dark:text-warning-400">
+                                            faltan {{ \App\Support\Config::cantidad($devolucion->pendiente_reposicion) }} por reponer
+                                        </span>
+                                    @elseif ($devolucion->espera === 'REPUESTO')
+                                        <span class="block text-theme-xs text-success-700 dark:text-success-500">repuesta</span>
                                     @endif
                                 </td>
                                 <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400">

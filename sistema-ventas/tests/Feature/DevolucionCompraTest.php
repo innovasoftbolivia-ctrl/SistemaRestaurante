@@ -26,9 +26,13 @@ use Tests\TestCase;
  * es eso: que la salida quede contada, atada a su compra y separable por motivo.
  *
  * Y que el cambio no sea un módulo aparte. Cambiar lo fallado por lo bueno es
- * esta misma devolución con `con_reposicion`: sale y entra, el stock termina
- * igual que antes —que es lo que pasó en el mostrador— pero queda escrito que
- * hubo un problema, cosa que un ajuste a cero nunca podría contar.
+ * esta misma devolución con `espera`: sale y entra, el stock termina igual que
+ * antes —que es lo que pasó en el mostrador— pero queda escrito que hubo un
+ * problema, cosa que un ajuste a cero nunca podría contar.
+ *
+ * `espera` tiene tres valores y no dos porque los finales son tres: se lo
+ * cambió en el momento, lo va a traer, o no trae nada y acredita. El de en
+ * medio es el que obliga al sistema a acordarse de que el proveedor debe algo.
  */
 class DevolucionCompraTest extends TestCase
 {
@@ -124,6 +128,7 @@ class DevolucionCompraTest extends TestCase
         $this->actingAs($this->cajero())
             ->post(route('devoluciones-compra.store', $compra), [
                 'motivo' => 'DEFECTO',
+                'espera' => 'NOTA_CREDITO',
                 'lineas' => [[
                     'compra_detalle_id' => $compra->detalle->first()->id,
                     'cantidad' => 1,
@@ -257,7 +262,7 @@ class DevolucionCompraTest extends TestCase
             compra: $compra,
             lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 10]],
             motivo: 'DEFECTO',
-            conReposicion: true,
+            espera: 'REPUESTO',
         );
 
         // El stock termina como estaba: es lo que pasó en el mostrador.
@@ -272,7 +277,235 @@ class DevolucionCompraTest extends TestCase
         $this->assertSame('SALIDA', $movimientos[0]->tipo);
         $this->assertSame('ENTRADA', $movimientos[1]->tipo);
         $this->assertSame('DEVOLUCION_COMPRA', $movimientos[1]->origen);
-        $this->assertTrue($devolucion->con_reposicion);
+        $this->assertSame('REPUESTO', $devolucion->espera);
+    }
+
+    // ------------------------------------------- la reposición que llega después
+
+    /**
+     * «Me lo trae la semana que viene» no es «no me trae nada».
+     *
+     * Con un booleano los dos casos se registraban igual y la deuda del
+     * proveedor desaparecía: el stock bajaba y no quedaba constancia de que
+     * alguien debía mercadería.
+     */
+    public function test_una_devolucion_puede_quedar_esperando_reposicion(): void
+    {
+        $producto = $this->producto();
+        $compra = $this->compra(producto: $producto);
+        $antes = (float) $producto->fresh()->stock_actual;
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 10]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        // El stock baja hoy: la mercadería físicamente no está.
+        $this->assertSame($antes - 10, (float) $producto->fresh()->stock_actual);
+        $this->assertSame(10.0, $devolucion->pendiente_reposicion);
+        $this->assertCount(1, MovimientoInventario::where('devolucion_compra_id', $devolucion->id)->get());
+    }
+
+    public function test_lo_que_el_proveedor_repone_despues_vuelve_al_stock(): void
+    {
+        $producto = $this->producto();
+        $compra = $this->compra(producto: $producto);
+        $antes = (float) $producto->fresh()->stock_actual;
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 10]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero(),
+            devolucion: $devolucion,
+            lineas: [['linea_id' => $devolucion->detalle->first()->id, 'cantidad' => 10]],
+            documentoExterno: 'G-00120',
+        );
+
+        $this->assertSame($antes, (float) $producto->fresh()->stock_actual);
+
+        // Ya no debe nada, y el estado lo dice el saldo.
+        $devolucion = $devolucion->fresh('detalle');
+        $this->assertSame('REPUESTO', $devolucion->espera);
+        $this->assertSame(0.0, $devolucion->pendiente_reposicion);
+
+        $entrada = MovimientoInventario::where('devolucion_compra_id', $devolucion->id)
+            ->where('tipo', 'ENTRADA')
+            ->sole();
+
+        $this->assertSame('DEVOLUCION_COMPRA', $entrada->origen);
+        $this->assertSame('G-00120', $entrada->documento_externo);
+    }
+
+    /** El proveedor trae 6 de las 10 que debe: eso pasa, y tiene que caber. */
+    public function test_la_reposicion_puede_llegar_en_partes(): void
+    {
+        $producto = $this->producto();
+        $compra = $this->compra(producto: $producto);
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 10]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        $linea = $devolucion->detalle->first();
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero(),
+            devolucion: $devolucion,
+            lineas: [['linea_id' => $linea->id, 'cantidad' => 6]],
+        );
+
+        $devolucion = $devolucion->fresh('detalle');
+
+        // Sigue esperando: no se cierra hasta que no falte nada.
+        $this->assertSame('PENDIENTE', $devolucion->espera);
+        $this->assertSame(4.0, $devolucion->pendiente_reposicion);
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero(),
+            devolucion: $devolucion,
+            lineas: [['linea_id' => $linea->id, 'cantidad' => 4]],
+        );
+
+        $this->assertSame('REPUESTO', $devolucion->fresh()->espera);
+    }
+
+    /** No se puede reponer más de lo que se devolvió. */
+    public function test_no_se_repone_mas_de_lo_devuelto(): void
+    {
+        $compra = $this->compra();
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 5]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        $this->expectException(RuntimeException::class);
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero(),
+            devolucion: $devolucion,
+            lineas: [['linea_id' => $devolucion->detalle->first()->id, 'cantidad' => 6]],
+        );
+    }
+
+    /** Una devolución que no esperaba nada no admite reposición. */
+    public function test_una_nota_de_credito_no_admite_reposicion(): void
+    {
+        $compra = $this->compra();
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 5]],
+            motivo: 'OTRO',
+            espera: 'NOTA_CREDITO',
+        );
+
+        $this->expectException(RuntimeException::class);
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero(),
+            devolucion: $devolucion,
+            lineas: [['linea_id' => $devolucion->detalle->first()->id, 'cantidad' => 1]],
+        );
+    }
+
+    /** El listado tiene que poder responder «¿qué me deben?». */
+    public function test_el_listado_filtra_lo_que_espera_reposicion(): void
+    {
+        $compra = $this->compra();
+
+        $pendiente = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 5]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+            documentoExterno: 'NC-PEND',
+        );
+
+        $acreditada = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 5]],
+            motivo: 'OTRO',
+            espera: 'NOTA_CREDITO',
+            documentoExterno: 'NC-CERR',
+        );
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.index', ['pendientes' => 1]))
+            ->assertOk()
+            ->assertSee('NC-PEND')
+            ->assertDontSee('NC-CERR');
+
+        $this->assertSame(5.0, $pendiente->fresh('detalle')->pendiente_reposicion);
+        $this->assertSame(0.0, $acreditada->fresh('detalle')->pendiente_reposicion);
+    }
+
+    public function test_el_formulario_registra_lo_que_trajo_el_proveedor(): void
+    {
+        $producto = $this->producto();
+        $compra = $this->compra(producto: $producto);
+        $antes = (float) $producto->fresh()->stock_actual;
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 8]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        $this->actingAs($this->almacenero())
+            ->post(route('devoluciones-compra.reponer', $devolucion), [
+                'documento_externo' => 'G-00500',
+                'lineas' => [[
+                    'linea_id' => $devolucion->detalle->first()->id,
+                    'cantidad' => 8,
+                ]],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($antes, (float) $producto->fresh()->stock_actual);
+        $this->assertSame('REPUESTO', $devolucion->fresh()->espera);
+    }
+
+    public function test_el_cajero_no_registra_reposiciones(): void
+    {
+        $compra = $this->compra();
+
+        $devolucion = DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 3]],
+            motivo: 'DEFECTO',
+            espera: 'PENDIENTE',
+        );
+
+        $this->actingAs($this->cajero())
+            ->post(route('devoluciones-compra.reponer', $devolucion), [
+                'lineas' => [['linea_id' => $devolucion->detalle->first()->id, 'cantidad' => 1]],
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(3.0, $devolucion->fresh('detalle')->pendiente_reposicion);
     }
 
     // ----------------------------------------------------------- vencimiento
@@ -365,7 +598,7 @@ class DevolucionCompraTest extends TestCase
                 'vence_repuesto' => $nueva,
             ]],
             motivo: 'VENCIMIENTO',
-            conReposicion: true,
+            espera: 'REPUESTO',
         );
 
         $lotes = Lote::where('producto_id', $producto->id)->get();
@@ -679,7 +912,10 @@ class DevolucionCompraTest extends TestCase
         $compra = $this->compra();
 
         $this->actingAs($this->almacenero())
-            ->post(route('devoluciones-compra.store', $compra), ['motivo' => 'DEFECTO'])
+            ->post(route('devoluciones-compra.store', $compra), [
+                'motivo' => 'DEFECTO',
+                'espera' => 'NOTA_CREDITO',
+            ])
             ->assertSessionHasErrors('lineas');
     }
 
@@ -692,6 +928,7 @@ class DevolucionCompraTest extends TestCase
         $this->actingAs($this->almacenero())
             ->post(route('devoluciones-compra.store', $compra), [
                 'motivo' => 'ERROR',
+                'espera' => 'NOTA_CREDITO',
                 'documento_externo' => 'NC-0100',
                 'observacion' => 'Mandaron otro sabor',
                 'lineas' => [[
@@ -705,7 +942,7 @@ class DevolucionCompraTest extends TestCase
 
         $this->assertSame('ERROR', $devolucion->motivo);
         $this->assertSame('Mandaron otro sabor', $devolucion->observacion);
-        $this->assertFalse($devolucion->con_reposicion);
+        $this->assertSame('NOTA_CREDITO', $devolucion->espera);
         $this->assertSame($antes - 9, (float) $producto->fresh()->stock_actual);
     }
 }

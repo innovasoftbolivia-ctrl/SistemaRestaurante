@@ -305,6 +305,12 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
             ->name('devoluciones-compra.create');
         Route::post('compras/{compra}/devolucion', [DevolucionCompraController::class, 'store'])
             ->name('devoluciones-compra.store');
+
+        // Lo que el proveedor trajo después. Es una entrada de mercadería, así
+        // que pide el mismo permiso que cargar una compra.
+        Route::post('devoluciones-compra/{devolucionCompra}/reposicion',
+            [DevolucionCompraController::class, 'reponer'])
+            ->name('devoluciones-compra.reponer');
     });
 
     // Va al final del bloque a propósito: `compras/{compra}` es un comodín y,

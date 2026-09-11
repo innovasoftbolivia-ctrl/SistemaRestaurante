@@ -26,8 +26,13 @@
                     <div class="mt-3 flex flex-wrap gap-2">
                         <x-ui.estado estado="INDEFINIDO" :texto="$devolucion->fecha?->format('d/m/Y H:i')" />
                         <x-ui.estado estado="SUSPENDIDO" :texto="$devolucion->etiqueta_motivo" />
-                        <x-ui.estado :estado="$devolucion->con_reposicion ? 'ACTIVO' : 'CESADO'"
-                            :texto="$devolucion->con_reposicion ? 'Cambio: lo repusieron' : 'Sin reposición'" />
+                        <x-ui.estado
+                            :estado="match ($devolucion->espera) {
+                                'REPUESTO' => 'ACTIVO',
+                                'PENDIENTE' => 'SUSPENDIDO',
+                                default => 'CESADO',
+                            }"
+                            :texto="$devolucion->etiqueta_espera" />
                         <x-ui.estado estado="PRACTICAS" :texto="'Registró '.$devolucion->usuario?->usuario" />
                     </div>
                     @if ($devolucion->observacion)
@@ -47,10 +52,14 @@
                 $cifras = [
                     ['Total devuelto', Config::importe($devolucion->total), 'text-gray-800 dark:text-white/90', 'al costo de la compra'],
                     ['Líneas', number_format($devolucion->detalle->count()), 'text-gray-800 dark:text-white/90', 'productos distintos'],
-                    ['Efecto en el stock',
-                        $devolucion->con_reposicion ? 'Ninguno' : '− '.Config::cantidad($devolucion->detalle->sum(fn ($l) => (float) $l->cantidad)),
-                        $devolucion->con_reposicion ? 'text-gray-800 dark:text-white/90' : 'text-error-600 dark:text-error-400',
-                        $devolucion->con_reposicion ? 'salió y volvió a entrar' : 'unidades que se fueron'],
+                    $devolucion->espera === 'REPUESTO'
+                        ? ['Efecto en el stock', 'Ninguno', 'text-gray-800 dark:text-white/90', 'salió y volvió a entrar']
+                        : ($devolucion->pendiente_reposicion > 0
+                            ? ['El proveedor debe', Config::cantidad($devolucion->pendiente_reposicion),
+                                'text-warning-600 dark:text-warning-400', 'unidades sin reponer']
+                            : ['Efecto en el stock',
+                                '− '.Config::cantidad($devolucion->detalle->sum(fn ($l) => (float) $l->cantidad)),
+                                'text-error-600 dark:text-error-400', 'unidades que se fueron']),
                 ];
             @endphp
 
@@ -72,7 +81,7 @@
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
-                            @foreach (['Producto', 'Tanda', 'Cantidad', 'Costo', 'Importe'] as $i => $columna)
+                            @foreach (['Producto', 'Tanda', 'Cantidad', 'Repuesto', 'Costo', 'Importe'] as $i => $columna)
                                 <th class="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 {{ $i >= 2 ? 'text-right' : 'text-left' }}">
                                     {{ $columna }}
                                 </th>
@@ -106,6 +115,18 @@
                                 <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-800 dark:text-white/90">
                                     {{ Config::cantidad($linea->cantidad) }} {{ $linea->producto?->unidadMedida?->codigo }}
                                 </td>
+                                <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm">
+                                    @if ($devolucion->espera === 'NOTA_CREDITO')
+                                        <span class="text-gray-400 dark:text-gray-600">—</span>
+                                    @elseif ($linea->pendiente_reposicion > 0)
+                                        <span class="text-warning-600 dark:text-warning-400">
+                                            {{ Config::cantidad($linea->cantidad_repuesta) }}
+                                            · faltan {{ Config::cantidad($linea->pendiente_reposicion) }}
+                                        </span>
+                                    @else
+                                        <span class="text-success-700 dark:text-success-500">completo</span>
+                                    @endif
+                                </td>
                                 <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ Config::importe($linea->costo_unitario) }}
                                 </td>
@@ -117,7 +138,7 @@
                     </tbody>
                     <tfoot class="border-t border-gray-200 dark:border-gray-700">
                         <tr>
-                            <td colspan="4" class="px-5 py-4 text-right text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                            <td colspan="5" class="px-5 py-4 text-right text-theme-sm font-medium text-gray-800 dark:text-white/90">
                                 Total
                             </td>
                             <td class="px-5 py-4 text-right whitespace-nowrap text-base font-bold text-gray-800 dark:text-white/90">
@@ -129,14 +150,120 @@
             </div>
         </div>
 
+        @if ($devolucion->espera === 'PENDIENTE' && $devolucion->pendiente_reposicion > 0)
+            @puede('inventario.ingresar')
+                @php
+                    $faltan = $devolucion->detalle
+                        ->filter(fn ($l) => $l->pendiente_reposicion > 0)
+                        ->map(fn ($l) => [
+                            'id' => $l->id,
+                            'producto' => $l->producto?->nombre,
+                            'unidad' => $l->producto?->unidadMedida?->codigo,
+                            'paso' => $l->producto?->unidadMedida?->permite_decimal ? 0.001 : 1,
+                            'falta' => $l->pendiente_reposicion,
+                            'controlaVencimiento' => (bool) $l->producto?->controla_vencimiento,
+                        ])->values();
+                @endphp
+
+                <form method="POST" action="{{ route('devoluciones-compra.reponer', $devolucion) }}"
+                    x-data="reposicion(@js($faltan))">
+                    @csrf
+
+                    <x-common.component-card title="El proveedor trajo el reemplazo"
+                        desc="Anota lo que llegó. Puede venir en partes: lo que no pongas queda como pendiente.">
+                        <div class="max-w-full overflow-x-auto overscroll-x-contain">
+                            <table class="min-w-full">
+                                <thead class="border-b border-gray-100 dark:border-gray-800">
+                                    <tr>
+                                        <th class="px-3 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Producto</th>
+                                        <th class="px-3 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Falta</th>
+                                        <th class="px-3 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Trajo</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                                    <template x-for="(l, i) in filas" :key="l.id">
+                                        <tr>
+                                            <td class="px-3 py-4 align-top">
+                                                <template x-if="l.cantidad > 0">
+                                                    <span>
+                                                        <input type="hidden" :name="`lineas[${i}][linea_id]`" :value="l.id" />
+                                                        <input type="hidden" :name="`lineas[${i}][cantidad]`" :value="l.cantidad" />
+                                                        <input type="hidden" :name="`lineas[${i}][vence]`" :value="l.vence || ''" />
+                                                    </span>
+                                                </template>
+                                                <span class="text-theme-sm font-medium text-gray-800 dark:text-white/90" x-text="l.producto"></span>
+                                            </td>
+                                            <td class="px-3 py-4 text-right align-top text-theme-sm text-gray-500 dark:text-gray-400">
+                                                <span x-text="l.falta + ' ' + l.unidad"></span>
+                                            </td>
+                                            <td class="px-3 py-4 align-top">
+                                                <div class="w-32">
+                                                    <x-form.input type="number" min="0" x-bind:max="l.falta"
+                                                        x-bind:step="l.paso" x-model.number="l.cantidad" placeholder="0" />
+                                                </div>
+
+                                                {{-- Lo repuesto abre su propia tanda: el
+                                                     reemplazo de algo vencido viene, por
+                                                     definición, con otra fecha. --}}
+                                                <div x-show="l.cantidad > 0 && l.controlaVencimiento" x-cloak class="mt-2 w-44">
+                                                    <span class="mb-1 block text-theme-xs text-gray-500 dark:text-gray-400">Vence el</span>
+                                                    <x-form.input type="date" x-model="l.vence" />
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <x-form.campo label="Guía o nota de entrega" for="rep_documento" name="documento_externo"
+                                help="El papel con el que llegó el reemplazo, si trae uno.">
+                                <x-form.input id="rep_documento" name="documento_externo" maxlength="30"
+                                    placeholder="{{ $devolucion->documento_externo ?: 'G-00120' }}" />
+                            </x-form.campo>
+
+                            <div class="flex items-end">
+                                <x-ui.button type="submit" size="sm" x-bind:disabled="!hayLineas">
+                                    Registrar lo que trajo
+                                </x-ui.button>
+                            </div>
+                        </div>
+                    </x-common.component-card>
+                </form>
+            @endpuede
+        @endif
+
         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-            @if ($devolucion->con_reposicion)
-                Fue un cambio: cada línea dejó dos movimientos en el kardex —la salida de lo devuelto y la entrada
-                de lo repuesto—, así que el stock quedó igual pero el problema quedó registrado.
-            @else
-                Cada línea dejó su salida en el kardex. Si el proveedor termina reponiendo la mercadería, cárgala
-                como un ingreso normal citando esta devolución.
-            @endif
+            @switch($devolucion->espera)
+                @case('REPUESTO')
+                    Cada línea dejó dos movimientos en el kardex —la salida de lo devuelto y la entrada de lo
+                    repuesto—, así que el stock quedó igual pero el problema quedó registrado.
+                    @break
+                @case('PENDIENTE')
+                    La mercadería salió y el proveedor debe reponerla. Cuando llegue, se anota aquí y entra al
+                    stock contra esta misma devolución: así se puede saber en cualquier momento qué falta.
+                    @break
+                @default
+                    Cada línea dejó su salida en el kardex. No se espera que vuelva nada: la devolución queda a
+                    cuenta con el proveedor.
+            @endswitch
         </p>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        function reposicion(filas) {
+            return {
+                /* Arranca en cero: se registra lo que el proveedor trajo de
+                   verdad, no lo que debía. Traer de menos es lo normal. */
+                filas: filas.map((f) => ({ ...f, cantidad: null, vence: '' })),
+
+                get hayLineas() {
+                    return this.filas.some((l) => (Number(l.cantidad) || 0) > 0);
+                },
+            };
+        }
+    </script>
+@endpush

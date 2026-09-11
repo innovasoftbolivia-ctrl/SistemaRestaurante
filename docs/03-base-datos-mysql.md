@@ -140,7 +140,7 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | 26 | `compra_detalle` | `id` | 3FN + `cantidad_devuelta` acumulado (justificado) |
 | 27 | `lotes` | `id` | 3FN — el stock partido por fecha de vencimiento |
 | 28 | `devoluciones_compra` | `id` | 3FN — la mercadería que vuelve al proveedor |
-| 29 | `devolucion_compra_detalle` | `id` | 3FN |
+| 29 | `devolucion_compra_detalle` | `id` | 3FN + `cantidad_repuesta` acumulado (justificado) |
 | 30 | `movimientos_inventario` | `id` | 3FN — referencia polimórfica reemplazada por FK por origen |
 | 31 | `configuracion` | `clave` | 3FN — tabla de parámetros clave/valor |
 | 32 | `auditoria` | `id` | 3FN — bitácora, solo inserción |

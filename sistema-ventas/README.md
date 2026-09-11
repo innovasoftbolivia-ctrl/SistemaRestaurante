@@ -415,10 +415,26 @@ factura», y arrancar eligiendo la factura evita devolverle al proveedor equivoc
 lleva el acumulado `cantidad_devuelta`, así que no se pueden devolver 30 unidades de una línea que
 trajo 24 — y el tope lo comprueba tanto el servicio como un `CHECK`.
 
-**El cambio no es otro módulo, es una casilla.** Con `con_reposicion` sale lo fallado y entra lo
-repuesto, los dos movimientos colgados del mismo documento: el stock termina como estaba —que es lo
-que pasó en el mostrador— pero queda escrito que hubo un problema, cosa que un ajuste a cero nunca
-podría contar. Si lo repuesto trae otra fecha de vencimiento, abre su propia tanda.
+**El cambio no es otro módulo, es una pregunta: «¿en qué quedaron?».** `espera` tiene tres valores
+porque los finales de una devolución son tres:
+
+| `espera` | Qué pasó | Qué hace el sistema |
+|---|---|---|
+| `REPUESTO` | Se lo cambió en el momento | Sale lo fallado y entra lo repuesto en el mismo documento: el stock queda como estaba, pero registrado |
+| `PENDIENTE` | Se llevó la mercadería y traerá el reemplazo | El stock baja hoy, y la devolución queda **debiendo** hasta que llegue |
+| `NOTA_CREDITO` | No repone: queda a cuenta | El stock baja y no vuelve nada |
+
+El de en medio es el que hacía falta. Era un booleano, y con un sí o un no «me lo trae la semana que
+viene» era indistinguible de «no me trae nada»: la mercadería salía, el reemplazo terminaba cargado
+como un ingreso suelto, y nadie podía responder **qué le deben todavía**.
+
+Ahora `/devoluciones-compra` avisa cuántas esperan reposición, y desde cada una se anota lo que el
+proveedor va trayendo. **Puede llegar en partes** —trae 6 de las 10 que debe— porque así llega:
+`devolucion_compra_detalle.cantidad_repuesta` acumula, y la devolución deja de esperar cuando el
+saldo llega a cero, no cuando alguien lo dice. Lo repuesto entra por el mismo
+`Inventario::entradaPorReposicion()` que el cambio inmediato —para el inventario son el mismo hecho
+y lo único que las distingue es la fecha— y, si trae otra fecha de vencimiento, abre su propia
+tanda.
 
 El motivo es un ENUM (`DEFECTO`, `VENCIMIENTO`, `ERROR`, `OTRO`) y no texto libre porque es lo que
 después permite contar: «este trimestre devolví Bs 900 por vencimiento» es una conversación con el

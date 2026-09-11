@@ -6,6 +6,7 @@ use App\Models\Categoria;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
 use App\Models\DevolucionCompra;
+use App\Models\DevolucionCompraDetalle;
 use App\Models\Lote;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
@@ -262,20 +263,24 @@ class DemostracionSeeder extends Seeder
      */
     private function devolucionesAlProveedor(array $compras): void
     {
-        // Un caso por motivo, y el número de líneas puesto a mano: con dos
-        // productos en la misma nota de crédito se ve que la devolución es un
-        // documento y no una corrección suelta por producto.
+        // Un caso por motivo y por final. El número de líneas va a mano: con
+        // dos o tres productos en la misma nota de crédito se ve que la
+        // devolución es un documento y no una corrección suelta por producto.
+        //
+        // Hay dos PENDIENTE porque es el caso que la demostración tiene que
+        // enseñar —el proveedor que se lleva la mercadería y debe el
+        // reemplazo—, y una de ellas se repone a medias más abajo.
         $guion = [
-            ['motivo' => 'DEFECTO', 'reposicion' => true, 'compra' => 1, 'lineas' => 1,
+            ['motivo' => 'DEFECTO', 'espera' => 'REPUESTO', 'compra' => 1, 'lineas' => 1,
                 'observacion' => 'Tres unidades llegaron con el envase reventado.'],
-            ['motivo' => 'VENCIMIENTO', 'reposicion' => false, 'compra' => 3, 'lineas' => 1,
-                'observacion' => 'Vino con menos de un mes de vida útil.'],
-            ['motivo' => 'ERROR', 'reposicion' => true, 'compra' => 5, 'lineas' => 1,
+            ['motivo' => 'VENCIMIENTO', 'espera' => 'PENDIENTE', 'compra' => 3, 'lineas' => 1,
+                'observacion' => 'Vino con menos de un mes de vida útil. Queda en traer el cambio.'],
+            ['motivo' => 'ERROR', 'espera' => 'REPUESTO', 'compra' => 5, 'lineas' => 1,
                 'observacion' => 'Mandaron otro sabor del que se pidió.'],
-            ['motivo' => 'OTRO', 'reposicion' => false, 'compra' => 6, 'lineas' => 1,
+            ['motivo' => 'OTRO', 'espera' => 'NOTA_CREDITO', 'compra' => 6, 'lineas' => 1,
                 'observacion' => null],
-            ['motivo' => 'DEFECTO', 'reposicion' => false, 'compra' => 4, 'lineas' => 3,
-                'observacion' => 'Media paleta venía golpeada; se pide nota de crédito.'],
+            ['motivo' => 'DEFECTO', 'espera' => 'PENDIENTE', 'compra' => 4, 'lineas' => 3,
+                'observacion' => 'Media paleta venía golpeada; el distribuidor la cambia el lunes.'],
         ];
 
         $hechas = 0;
@@ -298,7 +303,7 @@ class DemostracionSeeder extends Seeder
                 compra: $compra,
                 lineas: $lineas,
                 motivo: $caso['motivo'],
-                conReposicion: $caso['reposicion'],
+                espera: $caso['espera'],
                 documentoExterno: sprintf('NC-%05d', 310 + $i * 3),
                 observacion: $caso['observacion'],
             );
@@ -306,10 +311,41 @@ class DemostracionSeeder extends Seeder
             // Un día o dos después de que llegó la mercadería: es cuando se
             // descubre el problema, no el mismo minuto.
             $this->fecharDocumento($devolucion, $compra->fecha->copy()->addDays(mt_rand(1, 3)));
+
+            // A la primera pendiente el proveedor le trae parte: es el caso
+            // que hay que poder enseñar —lo que llegó y lo que sigue debiendo—
+            // y con una reposición completa no se vería.
+            if ($caso['espera'] === 'PENDIENTE' && $i === 1) {
+                $this->reposicionAMedias($devolucion);
+            }
+
             $hechas++;
         }
 
         $this->command?->info("{$hechas} devolución(es) al proveedor registradas.");
+    }
+
+    /** El proveedor trae la mitad de lo que debe: el resto queda pendiente. */
+    private function reposicionAMedias(DevolucionCompra $devolucion): void
+    {
+        $lineas = $devolucion->detalle->map(function (DevolucionCompraDetalle $linea) {
+            $trae = max(1, (int) floor($linea->pendiente_reposicion / 2));
+
+            return [
+                'linea_id' => $linea->id,
+                'cantidad' => min($trae, $linea->pendiente_reposicion),
+                'vence' => $linea->producto?->controla_vencimiento
+                    ? now()->addDays(mt_rand(150, 330))->toDateString()
+                    : null,
+            ];
+        })->all();
+
+        DevolucionesCompra::reponer(
+            usuario: $this->almacenero,
+            devolucion: $devolucion,
+            lineas: $lineas,
+            documentoExterno: 'G-'.sprintf('%05d', mt_rand(100, 999)),
+        );
     }
 
     /**

@@ -169,10 +169,7 @@
                                 </span>
                                 <span class="text-theme-xs text-gray-500 dark:text-gray-400">
                                     {{ $devolucion->fecha?->format('d/m/Y H:i') }} ·
-                                    {{ $devolucion->etiqueta_motivo }}
-                                    @if ($devolucion->con_reposicion)
-                                        · lo repusieron
-                                    @endif
+                                    {{ $devolucion->etiqueta_motivo }} · {{ $devolucion->etiqueta_espera }}
                                 </span>
                             </span>
                             <span class="text-theme-sm font-medium text-gray-800 dark:text-white/90">

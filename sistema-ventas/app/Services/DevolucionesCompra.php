@@ -27,11 +27,17 @@ use RuntimeException;
  * puerta: registra el documento y pide la salida, igual que {@see Compras}
  * pide la entrada.
  *
- * Y el cambio no es otro módulo. Es esta misma devolución con `con_reposicion`:
- * sale lo fallado y entra lo repuesto, los dos movimientos colgados del mismo
- * documento. El stock termina como estaba, que es exactamente lo que pasó en el
- * mostrador — pero queda escrito que hubo un problema, que es lo que un ajuste
- * a cero nunca podría contar.
+ * Y el cambio no es otro módulo. Es esta misma devolución con `espera`, que
+ * dice en qué se quedó con el proveedor: se lo cambió en el momento (sale lo
+ * fallado y entra lo repuesto, los dos movimientos en el mismo documento, el
+ * stock termina como estaba pero queda escrito que hubo un problema), lo va a
+ * reponer más adelante, o no repone y emite nota de crédito.
+ *
+ * El estado de en medio es el que hacía falta. Con un booleano, «me lo trae la
+ * semana que viene» era indistinguible de «no me trae nada»: la mercadería
+ * salía y el reemplazo terminaba cargado como un ingreso suelto, sin hilo con
+ * lo que lo originó. {@see reponer()} cierra ese círculo, y admite que llegue
+ * en partes —el proveedor trae 6 de las 10 que debe— porque así llega.
  */
 class DevolucionesCompra
 {
@@ -51,7 +57,7 @@ class DevolucionesCompra
         Compra $compra,
         array $lineas,
         string $motivo,
-        bool $conReposicion = false,
+        string $espera = 'NOTA_CREDITO',
         ?string $documentoExterno = null,
         ?string $observacion = null,
     ): DevolucionCompra {
@@ -63,13 +69,17 @@ class DevolucionesCompra
             throw new RuntimeException('Ese motivo de devolución no existe.');
         }
 
-        return DB::transaction(function () use ($usuario, $compra, $lineas, $motivo, $conReposicion, $documentoExterno, $observacion) {
+        if (! in_array($espera, DevolucionCompra::ESPERAS, true)) {
+            throw new RuntimeException('Ese acuerdo con el proveedor no existe.');
+        }
+
+        return DB::transaction(function () use ($usuario, $compra, $lineas, $motivo, $espera, $documentoExterno, $observacion) {
             $devolucion = DevolucionCompra::create([
                 'compra_id' => $compra->id,
                 'usuario_id' => $usuario->id,
                 'fecha' => now(),
                 'motivo' => $motivo,
-                'con_reposicion' => $conReposicion,
+                'espera' => $espera,
                 'documento_externo' => $documentoExterno,
                 'observacion' => $observacion,
             ]);
@@ -81,13 +91,125 @@ class DevolucionesCompra
             Auditor::registrar('DEVOLUCION_COMPRA_REGISTRADA', 'devoluciones_compra', $devolucion->id, [
                 'compra' => $compra->documento_externo ?: "#{$compra->id}",
                 'motivo' => $motivo,
-                'con_reposicion' => $conReposicion,
+                'espera' => $espera,
                 'lineas' => count($lineas),
                 'total' => $devolucion->fresh('detalle')->total,
             ], $usuario->id);
 
             return $devolucion->fresh(['detalle.producto', 'compra.proveedor']);
         }, self::REINTENTOS);
+    }
+
+    /**
+     * La mercadería que el proveedor trae después, contra una devolución suya.
+     *
+     * Es el otro extremo del hilo: sin esto el reemplazo entraba como un
+     * ingreso cualquiera y nadie podía responder «de lo que devolví, ¿qué me
+     * repusieron y qué me siguen debiendo?».
+     *
+     * Entra por {@see Inventario::entradaPorReposicion()}, igual que el cambio
+     * en el momento: para el inventario son el mismo hecho y lo único que las
+     * distingue es la fecha. Y admite llegar en partes, porque así llega.
+     *
+     * @param  array<int, array{linea_id: int, cantidad: float, vence?: ?string}>  $lineas
+     */
+    public static function reponer(
+        Usuario $usuario,
+        DevolucionCompra $devolucion,
+        array $lineas,
+        ?string $documentoExterno = null,
+    ): DevolucionCompra {
+        if ($devolucion->espera !== 'PENDIENTE') {
+            throw new RuntimeException('Esa devolución no está esperando reposición.');
+        }
+
+        if ($lineas === []) {
+            throw new RuntimeException('No se indicó qué repuso el proveedor.');
+        }
+
+        return DB::transaction(function () use ($usuario, $devolucion, $lineas, $documentoExterno) {
+            $repuestas = 0;
+
+            foreach ($lineas as $linea) {
+                $repuestas += self::reponerLinea($devolucion, $linea, $documentoExterno) ? 1 : 0;
+            }
+
+            if ($repuestas === 0) {
+                throw new RuntimeException('No se indicó qué repuso el proveedor.');
+            }
+
+            // El estado lo dice el saldo, no quien registra: la devolución
+            // deja de esperar cuando ya no falta nada, y ni un minuto antes.
+            $devolucion->load('detalle');
+
+            if ($devolucion->pendiente_reposicion <= 0) {
+                $devolucion->forceFill(['espera' => 'REPUESTO'])->save();
+            }
+
+            Auditor::registrar('DEVOLUCION_COMPRA_REPUESTA', 'devoluciones_compra', $devolucion->id, [
+                'lineas' => $repuestas,
+                'documento' => $documentoExterno,
+                'queda_pendiente' => $devolucion->fresh('detalle')->pendiente_reposicion,
+            ], $usuario->id);
+
+            return $devolucion->fresh(['detalle.producto', 'compra.proveedor']);
+        }, self::REINTENTOS);
+    }
+
+    /**
+     * Una línea de la reposición. Devuelve si entró algo.
+     *
+     * @param  array<string, mixed>  $linea
+     */
+    private static function reponerLinea(DevolucionCompra $devolucion, array $linea, ?string $documentoExterno): bool
+    {
+        $cantidad = round((float) ($linea['cantidad'] ?? 0), 3);
+
+        if ($cantidad <= 0) {
+            return false;
+        }
+
+        /** @var DevolucionCompraDetalle|null $original */
+        $original = DevolucionCompraDetalle::with('producto.unidadMedida')
+            ->where('devolucion_compra_id', $devolucion->id)
+            ->whereKey($linea['linea_id'])
+            ->lockForUpdate()
+            ->first();
+
+        if (! $original) {
+            throw new RuntimeException('Una de las líneas no pertenece a esta devolución.');
+        }
+
+        $producto = $original->producto;
+        $pendiente = $original->pendiente_reposicion;
+
+        if ($cantidad > $pendiente) {
+            throw new RuntimeException(
+                "De «{$producto->nombre}» solo faltan ".Config::cantidad($pendiente).' por reponer.'
+            );
+        }
+
+        if (! $producto->unidadMedida?->permite_decimal && fmod($cantidad, 1.0) !== 0.0) {
+            throw new RuntimeException("«{$producto->nombre}» se repone por unidad entera.");
+        }
+
+        Inventario::entradaPorReposicion(
+            producto: $producto,
+            cantidad: $cantidad,
+            devolucionCompraId: $devolucion->id,
+            proveedorId: $devolucion->compra?->proveedor_id,
+            documentoExterno: $documentoExterno ?: $devolucion->documento_externo,
+            costoUnitario: (float) $original->costo_unitario,
+            // Lo repuesto abre su propia tanda: el reemplazo de algo vencido
+            // viene, por definición, con otra fecha.
+            vence: $linea['vence'] ?? null,
+        );
+
+        $original->forceFill([
+            'cantidad_repuesta' => round((float) $original->cantidad_repuesta + $cantidad, 3),
+        ])->save();
+
+        return true;
     }
 
     /**
@@ -139,6 +261,10 @@ class DevolucionesCompra
             'producto_id' => $producto->id,
             'lote_id' => $lote?->id,
             'cantidad' => $cantidad,
+            // El cambio en el momento repone todo de una: si no, la devolución
+            // quedaría figurando como que el proveedor debe mercadería que ya
+            // está en el estante.
+            'cantidad_repuesta' => $devolucion->espera === 'REPUESTO' ? $cantidad : 0,
             'costo_unitario' => $original->costo_unitario,
         ]);
 
@@ -158,10 +284,11 @@ class DevolucionesCompra
             lote: $lote,
         );
 
-        // El cambio: lo repuesto entra de vuelta, con su fecha nueva si la
-        // trae. Es lo que distingue «me lo cambiaron» de «me deben una nota de
-        // crédito», y por eso los dos movimientos van en el mismo documento.
-        if ($devolucion->con_reposicion) {
+        // El cambio en el momento: lo repuesto entra de vuelta, con su fecha
+        // nueva si la trae, y los dos movimientos van en el mismo documento.
+        // Si el proveedor lo va a traer después, esto no pasa hoy: pasa el día
+        // que llegue, por `reponer()`.
+        if ($devolucion->espera === 'REPUESTO') {
             Inventario::entradaPorReposicion(
                 producto: $producto,
                 cantidad: $cantidad,

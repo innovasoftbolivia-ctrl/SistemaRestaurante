@@ -43,10 +43,12 @@ class DevolucionCompraController extends Controller
             'motivo' => $request->string('motivo')->toString(),
             'desde' => $request->date('desde'),
             'hasta' => $request->date('hasta'),
+            'pendientes' => $request->boolean('pendientes'),
         ];
 
-        $devoluciones = DevolucionCompra::with(['compra.proveedor:id,razon_social', 'usuario:id,usuario'])
+        $devoluciones = DevolucionCompra::with(['compra.proveedor:id,razon_social', 'usuario:id,usuario', 'detalle'])
             ->withCount('detalle')
+            ->when($filtros['pendientes'], fn ($q) => $q->esperandoReposicion())
             ->when($filtros['motivo'] !== '', fn ($q) => $q->where('motivo', $filtros['motivo']))
             ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', $d->startOfDay()))
             ->when($filtros['hasta'], fn ($q, $d) => $q->where('fecha', '<=', $d->endOfDay()))
@@ -64,6 +66,11 @@ class DevolucionCompraController extends Controller
             // Por motivo y no un total suelto: «Bs 900 por vencimiento» es una
             // conversación con el proveedor distinta de «Bs 900 porque vino
             // fallado», y sumarlas las haría desaparecer a las dos.
+            // Lo que el proveedor debe hoy. Va aparte de los totales por
+            // motivo porque no es una cifra de dinero devuelto: es una deuda
+            // abierta, y es la única de la pantalla sobre la que hay que hacer
+            // algo.
+            'esperando' => DevolucionCompra::esperandoReposicion()->count(),
             'porMotivo' => DevolucionesCompra::porMotivo(
                 $filtros['desde']?->copy()->startOfDay()->toDateTimeString(),
                 $filtros['hasta']?->copy()->endOfDay()->toDateTimeString(),
@@ -151,6 +158,7 @@ class DevolucionCompraController extends Controller
             'compra' => $compra,
             'lotes' => $lotes,
             'motivos' => $this->motivos(),
+            'esperas' => $this->esperas(),
             // La tanda con la que se llegó, si se llegó con una. Se comprueba
             // que sea de un producto de ESTA compra: un id de la barra de
             // direcciones no puede prellenar una línea que no corresponde.
@@ -162,7 +170,7 @@ class DevolucionCompraController extends Controller
     {
         $datos = $request->validate([
             'motivo' => ['required', Rule::in(DevolucionCompra::MOTIVOS)],
-            'con_reposicion' => ['boolean'],
+            'espera' => ['required', Rule::in(DevolucionCompra::ESPERAS)],
             'documento_externo' => ['nullable', 'string', 'max:30'],
             'observacion' => ['nullable', 'string', 'max:255'],
             'lineas' => ['required', 'array', 'min:1'],
@@ -175,6 +183,7 @@ class DevolucionCompraController extends Controller
             'lineas.required' => 'Marca al menos un producto para devolver.',
             'lineas.min' => 'Marca al menos un producto para devolver.',
             'motivo.required' => 'Di por qué se devuelve: es lo que después permite contarlo.',
+            'espera.required' => 'Di en qué quedaron: si repone ahora, si lo trae después o si acredita.',
         ]);
 
         try {
@@ -183,7 +192,7 @@ class DevolucionCompraController extends Controller
                 compra: $compra,
                 lineas: $datos['lineas'],
                 motivo: $datos['motivo'],
-                conReposicion: $request->boolean('con_reposicion'),
+                espera: $datos['espera'],
                 documentoExterno: $datos['documento_externo'] ?? null,
                 observacion: $datos['observacion'] ?? null,
             );
@@ -197,9 +206,11 @@ class DevolucionCompraController extends Controller
             'exito',
             "Devolución registrada: {$lineas} ".($lineas === 1 ? 'producto' : 'productos')
             .' por '.Config::importe($devolucion->total).'. '
-            .($devolucion->con_reposicion
-                ? 'La reposición ya entró al stock.'
-                : 'El stock ya bajó.')
+            .match ($devolucion->espera) {
+                'REPUESTO' => 'La reposición ya entró al stock.',
+                'PENDIENTE' => 'El stock ya bajó, y queda anotado que el proveedor debe reponerla.',
+                default => 'El stock ya bajó. Se espera la nota de crédito.',
+            }
         );
     }
 
@@ -221,6 +232,48 @@ class DevolucionCompraController extends Controller
             ],
             'devolucion' => $devolucionCompra,
         ]);
+    }
+
+    /**
+     * Lo que el proveedor trajo después, contra una devolución que lo esperaba.
+     *
+     * Cierra el hilo que faltaba: hasta aquí el reemplazo entraba como un
+     * ingreso cualquiera y nadie podía responder «de lo que devolví, ¿qué me
+     * repusieron y qué me siguen debiendo?».
+     */
+    public function reponer(Request $request, DevolucionCompra $devolucionCompra): RedirectResponse
+    {
+        $datos = $request->validate([
+            'documento_externo' => ['nullable', 'string', 'max:30'],
+            'lineas' => ['required', 'array', 'min:1'],
+            'lineas.*.linea_id' => ['required', Rule::exists('devolucion_compra_detalle', 'id')],
+            'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'max:999999'],
+            'lineas.*.vence' => ['nullable', 'date'],
+        ], [
+            'lineas.required' => 'Marca al menos un producto de los que trajo el proveedor.',
+            'lineas.min' => 'Marca al menos un producto de los que trajo el proveedor.',
+        ]);
+
+        try {
+            $devolucion = DevolucionesCompra::reponer(
+                usuario: Auth::user(),
+                devolucion: $devolucionCompra,
+                lineas: $datos['lineas'],
+                documentoExterno: $datos['documento_externo'] ?? null,
+            );
+        } catch (RuntimeException $e) {
+            throw ValidationException::withMessages(['lineas' => $e->getMessage()]);
+        }
+
+        $falta = $devolucion->pendiente_reposicion;
+
+        return redirect()->route('devoluciones-compra.show', $devolucion)->with(
+            'exito',
+            'Reposición registrada: la mercadería ya entró al stock. '
+            .($falta > 0
+                ? 'Todavía faltan '.Config::cantidad($falta).' por reponer.'
+                : 'Con esto el proveedor ya no debe nada de esta devolución.')
+        );
     }
 
     /**
@@ -258,6 +311,16 @@ class DevolucionCompraController extends Controller
         return collect(DevolucionCompra::MOTIVOS)
             ->mapWithKeys(fn (string $m) => [
                 $m => (new DevolucionCompra(['motivo' => $m]))->etiqueta_motivo,
+            ])
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    private function esperas(): array
+    {
+        return collect(DevolucionCompra::ESPERAS)
+            ->mapWithKeys(fn (string $e) => [
+                $e => (new DevolucionCompra(['espera' => $e]))->etiqueta_espera,
             ])
             ->all();
     }

@@ -765,17 +765,26 @@ CREATE TABLE devoluciones_compra (
     -- permite contar «cuánto devolví por vencimiento este trimestre», que es
     -- justo la cifra que dice si hay que comprar menos o rotar mejor.
     motivo              ENUM('DEFECTO','VENCIMIENTO','ERROR','OTRO') NOT NULL,
-    -- 1 = el proveedor repone la mercadería (cambio): sale la fallada y entra
-    -- la repuesta, los dos movimientos en este mismo documento, y el stock
-    -- queda igual que antes. 0 = se va y se espera la nota de crédito.
-    -- El cambio no es un módulo aparte; es esta casilla.
-    con_reposicion      TINYINT(1)   NOT NULL DEFAULT 0,
+    -- En qué se quedó con el proveedor. Son TRES finales y no dos, que es lo
+    -- que un booleano no podía expresar:
+    --
+    --   REPUESTO      lo cambió en el momento: sale lo fallado y entra lo
+    --                 bueno en este mismo documento, el stock queda igual que
+    --                 antes, pero registrado. El cambio no es un módulo
+    --                 aparte; es este valor.
+    --   PENDIENTE     se llevó la mercadería y traerá el reemplazo. El stock
+    --                 bajó hoy y subirá cuando llegue. Mientras tanto el
+    --                 proveedor DEBE mercadería, y eso hay que poder verlo.
+    --   NOTA_CREDITO  no repone: queda a cuenta.
+    espera              ENUM('REPUESTO','PENDIENTE','NOTA_CREDITO') NOT NULL DEFAULT 'NOTA_CREDITO',
     documento_externo   VARCHAR(30)  NULL,       -- nota de crédito o guía de devolución
     observacion         VARCHAR(255) NULL,
     creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY ix_devcompra_compra (compra_id),
     KEY ix_devcompra_fecha  (fecha),
+    -- «¿Qué me deben todavía?» es una consulta de todos los días en el almacén.
+    KEY ix_devcompra_espera (espera, fecha),
     CONSTRAINT fk_devcompra_compra  FOREIGN KEY (compra_id)  REFERENCES compras (id),
     CONSTRAINT fk_devcompra_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 ) ENGINE=InnoDB;
@@ -790,6 +799,11 @@ CREATE TABLE devolucion_compra_detalle (
     -- tocaría por orden de salida.
     lote_id               BIGINT UNSIGNED NULL,
     cantidad              DECIMAL(12,3)   NOT NULL,
+    -- Lo que el proveedor ya repuso de esta línea. Mismo motivo que los otros
+    -- acumulados del esquema: el reemplazo puede llegar en partes —trae 6 de
+    -- las 10 que debe— y una restricción no puede consultar otra tabla, así que
+    -- el tope vive en la propia línea.
+    cantidad_repuesta     DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
     costo_unitario        DECIMAL(12,2)   NOT NULL,
     importe               DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
     PRIMARY KEY (id),
@@ -802,7 +816,8 @@ CREATE TABLE devolucion_compra_detalle (
     -- SET NULL y no CASCADE: el lote puede desaparecer del control, pero lo
     -- que se devolvió pasó y su línea tiene que seguir ahí.
     CONSTRAINT fk_devcompradet_lote     FOREIGN KEY (lote_id)              REFERENCES lotes (id) ON DELETE SET NULL,
-    CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0)
+    CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0),
+    CONSTRAINT ck_devcompradet_repuesta CHECK (cantidad_repuesta >= 0 AND cantidad_repuesta <= cantidad)
 ) ENGINE=InnoDB;
 
 -- El documento que originó el movimiento se referencia con una FOREIGN KEY por origen,
