@@ -510,6 +510,33 @@ class PuntoDeVentaTest extends TestCase
     }
 
     /**
+     * En 80 mm no caben cuatro columnas: de los 50 px que le tocaban a cada
+     * cifra, «1,234.00» ya pide 56, y cualquier venta de más de mil se montaba
+     * encima de la columna de al lado. En el rollo la cantidad y el precio
+     * bajan bajo la descripción; en A4, donde sobra sitio, siguen en columna.
+     */
+    public function test_el_rollo_no_lleva_las_columnas_que_no_le_caben(): void
+    {
+        $producto = Producto::activos()->firstOrFail();
+        $venta = $this->vender($this->turno(), $producto, 2);
+        $ruta = '/comprobantes/'.$venta->comprobante->id.'/imprimir';
+
+        // Se busca la CELDA y no el texto suelto: «P. Unit» también aparece en
+        // el comentario del CSS que explica por qué no está en el rollo, y una
+        // prueba que se conforma con el texto daría por bueno cualquier cosa.
+        $columna = '<th class="cifra derecha">P. Unit</th>';
+
+        $this->actingAs($this->admin())->get($ruta.'?formato=ticket')
+            ->assertOk()
+            ->assertDontSee($columna, false)
+            ->assertSee('<th class="cifra derecha">Importe</th>', false);
+
+        $this->actingAs($this->admin())->get($ruta.'?formato=a4')
+            ->assertOk()
+            ->assertSee($columna, false);
+    }
+
+    /**
      * La unidad se copia, como el nombre y el precio. Si se leyera del catálogo
      * al imprimir, corregir un producto de unidades a kilos reescribiría todos
      * los tickets viejos, y un comprobante reimpreso dejaría de coincidir con

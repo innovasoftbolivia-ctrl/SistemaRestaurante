@@ -57,6 +57,45 @@
         th, td { padding: 3px 0; vertical-align: top; }
         thead th { border-bottom: 1px solid #d0d5dd; font-size: 11px; text-align: left; }
 
+        /* El detalle lleva anchos fijos y no automáticos.
+           Con el ancho automático, el navegador reparte las cuatro columnas
+           según lo que haya dentro, así que cambiaban de sitio de un ticket a
+           otro: bastaba una descripción larga —o una cantidad con unidad, «5
+           KG» donde antes iba «5»— para estrujar las de la derecha y partir
+           «P. Unit» en dos líneas, dejando «Importe» a media altura. En 80 mm
+           no sobra el espacio para negociarlo cada vez. */
+        .lineas { table-layout: fixed; }
+
+        /* Las tres de la derecha son cifras cortas: no se parten nunca, y así
+           la cabecera queda siempre encima de su columna. */
+        .lineas th, .lineas td { white-space: nowrap; padding-left: 4px; }
+
+        /* La descripción es la única que puede crecer, y por eso es la única
+           que parte. `anywhere` porque un nombre de producto puede traer una
+           palabra más larga que la columna y en fijo no habría dónde ponerla. */
+        .lineas .desc {
+            width: {{ $ticket ? '68%' : '55%' }};
+            padding-left: 0;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .lineas .cifra { width: {{ $ticket ? '32%' : '15%' }}; }
+
+        /* En el ticket, la cantidad y el precio unitario bajan a una segunda
+           línea bajo la descripción en vez de ocupar columna propia.
+
+           No es gusto: en 80 mm de papel quedan 270 px para repartir, y de los
+           50 que le tocaban a cada columna de cifras, «1,234.00» ya pide 56.
+           Cualquier venta de más de mil se montaba encima de la columna de al
+           lado. Es además como está hecho cualquier recibo de rollo, y por este
+           mismo motivo. En A4 sobra sitio y se quedan las cuatro columnas. */
+        .lineas .detalle-linea {
+            display: block;
+            color: #667085;
+            font-size: 11px;
+        }
+
         .totales td { padding: 2px 0; }
         .total-final td {
             border-top: 1px solid #101828;
@@ -174,30 +213,44 @@
 
         <hr class="regla">
 
-        <table>
+        <table class="lineas">
             <thead>
                 <tr>
-                    <th>Descripción</th>
-                    <th class="derecha">Cant.</th>
-                    <th class="derecha">P. Unit</th>
-                    <th class="derecha">Importe</th>
+                    <th class="desc">Descripción</th>
+                    @unless ($ticket)
+                        <th class="cifra derecha">Cant.</th>
+                        <th class="cifra derecha">P. Unit</th>
+                    @endunless
+                    <th class="cifra derecha">Importe</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach ($venta->detalle as $linea)
                     <tr>
-                        <td>
+                        <td class="desc">
                             {{ $linea->descripcion }}
-                            @unless ($linea->afecto_impuesto)
+
+                            {{-- La cantidad va con su unidad: un «2.5» pelado no le
+                                 dice nada a quien compró dos kilos y medio de arroz,
+                                 y comprobar lo que le cobraron es justo para lo que
+                                 sirve el papel. --}}
+                            @if ($ticket)
+                                <span class="detalle-linea">
+                                    {{ $linea->cantidad_con_unidad }} ×
+                                    {{ number_format((float) $linea->precio_unitario, 2) }}
+                                    @unless ($linea->afecto_impuesto)
+                                        · exonerado
+                                    @endunless
+                                </span>
+                            @elseif (! $linea->afecto_impuesto)
                                 <span class="tenue">(exonerado)</span>
-                            @endunless
+                            @endif
                         </td>
-                        {{-- Con la unidad: un «2.5» pelado no le dice nada a quien
-                             compró dos kilos y medio de arroz, y comprobar lo que
-                             le cobraron es justo para lo que sirve el papel. --}}
-                        <td class="derecha">{{ $linea->cantidad_con_unidad }}</td>
-                        <td class="derecha">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
-                        <td class="derecha">{{ number_format((float) $linea->importe, 2) }}</td>
+                        @unless ($ticket)
+                            <td class="cifra derecha">{{ $linea->cantidad_con_unidad }}</td>
+                            <td class="cifra derecha">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
+                        @endunless
+                        <td class="cifra derecha">{{ number_format((float) $linea->importe, 2) }}</td>
                     </tr>
                 @endforeach
             </tbody>
