@@ -111,7 +111,7 @@
                                             </span>
                                         </td>
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
-                                            {{ Config::cantidad($linea->cantidad) }}
+                                            {{ $linea->cantidad_con_unidad }}
                                             {{ $linea->producto?->unidadMedida?->codigo }}
                                             @if ((float) $linea->cantidad_devuelta > 0)
                                                 <span class="block text-theme-xs text-error-600 dark:text-error-400">

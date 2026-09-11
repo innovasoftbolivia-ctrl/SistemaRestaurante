@@ -162,6 +162,10 @@ class Ventas
                 'producto_id' => $producto->id,
                 // Copia histórica: la venta no cambia si mañana cambia el catálogo.
                 'descripcion' => $producto->nombre,
+                // La unidad se copia por el mismo motivo que el nombre y el
+                // precio. Sin esto, corregir un producto de UND a KG reescribía
+                // todos los tickets viejos de ese producto.
+                'unidad' => $producto->unidadMedida?->codigo,
                 'cantidad' => $cantidad,
                 // `precio_unitario` explícito es para llamadores de confianza
                 // (pruebas, scripts internos): PosController, el único que

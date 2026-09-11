@@ -427,6 +427,7 @@ CREATE TABLE venta_detalle (
     venta_id            BIGINT UNSIGNED NOT NULL,
     producto_id         INT UNSIGNED NOT NULL,
     descripcion         VARCHAR(120)  NOT NULL,      -- copia histórica del nombre
+    unidad              VARCHAR(10)   NULL,          -- copia histórica de la unidad: UND, KG, LT
     cantidad            DECIMAL(12,3) NOT NULL,
     precio_unitario     DECIMAL(12,2) NOT NULL,      -- copia histórica del precio
     descuento           DECIMAL(12,2) NOT NULL DEFAULT 0.00,

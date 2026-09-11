@@ -95,7 +95,9 @@
                                         </td>
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                             {{ Config::cantidad($linea->cantidad) }}
-                                            {{ $linea->producto?->unidadMedida?->codigo }}
+                                            {{-- La de la venta, no la de hoy: la devolución habla
+                                                 de lo que se vendió entonces. --}}
+                                            {{ $linea->ventaDetalle?->unidad ?? $linea->producto?->unidadMedida?->codigo }}
                                         </td>
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                             {{ Config::importe($linea->precio_unitario) }}

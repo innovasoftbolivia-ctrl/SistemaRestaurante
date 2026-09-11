@@ -245,7 +245,7 @@ que se calcularía hoy, y eso es justamente lo que se quiere.
 
 | Dato | Se podría derivar de | Por qué se guarda |
 |------|----------------------|-------------------|
-| `venta_detalle.descripcion`, `precio_unitario`, `afecto_impuesto`, `tasa_impuesto` | `productos` y `configuracion` | Es el precio y el nombre **del día de la venta**. Si mañana sube el precio o cambia la tasa, la venta de ayer no puede cambiar con ellos. |
+| `venta_detalle.descripcion`, `unidad`, `precio_unitario`, `afecto_impuesto`, `tasa_impuesto` | `productos` y `configuracion` | Es el precio, el nombre y la unidad **del día de la venta**. Si mañana sube el precio, cambia la tasa o se corrige la unidad, la venta de ayer no puede cambiar con ellos: un comprobante reimpreso tiene que decir lo mismo que el que se entregó en mano. |
 | `comprobantes.*` (nombre, documento, dirección, importes del cliente) | `clientes` y `ventas` | Un documento contable es inmutable: si el cliente cambia de razón social, la factura emitida no se altera. |
 | `comprobantes.numero_completo` | `serie` + `numero` + `longitud` | El número impreso en el papel. Si mañana cambia el formato de la serie, el documento ya emitido conserva el suyo. |
 | `productos.stock_actual` | `SUM` sobre `movimientos_inventario` | Sumar el kardex entero en cada tecla del lector de código de barras haría inviable el POS (RNF1: respuesta < 1 s). Lo mantienen los triggers dentro de la misma transacción. |
@@ -497,6 +497,7 @@ los listados.
 | `venta_id` | BIGINT FK | No | Venta a la que pertenece (`ON DELETE CASCADE`) |
 | `producto_id` | INT FK | No | Producto vendido |
 | `descripcion` | VARCHAR(120) | No | **Copia histórica** del nombre del producto |
+| `unidad` | VARCHAR(10) | Sí | **Copia histórica** de la unidad de venta (UND, KG, LT). Es lo que imprime el ticket junto a la cantidad |
 | `cantidad` | DECIMAL(12,3) | No | Unidades vendidas (> 0) |
 | `precio_unitario` | DECIMAL(12,2) | No | **Copia histórica** del precio aplicado |
 | `descuento` | DECIMAL(12,2) | No | Descuento sobre la línea (HU-15) |

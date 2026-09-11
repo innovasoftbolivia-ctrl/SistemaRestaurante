@@ -192,7 +192,10 @@
                                 <span class="tenue">(exonerado)</span>
                             @endunless
                         </td>
-                        <td class="derecha">{{ Config::cantidad($linea->cantidad) }}</td>
+                        {{-- Con la unidad: un «2.5» pelado no le dice nada a quien
+                             compró dos kilos y medio de arroz, y comprobar lo que
+                             le cobraron es justo para lo que sirve el papel. --}}
+                        <td class="derecha">{{ $linea->cantidad_con_unidad }}</td>
                         <td class="derecha">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
                         <td class="derecha">{{ number_format((float) $linea->importe, 2) }}</td>
                     </tr>

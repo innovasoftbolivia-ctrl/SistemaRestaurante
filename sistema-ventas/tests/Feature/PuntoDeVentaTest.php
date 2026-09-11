@@ -6,6 +6,7 @@ use App\Models\Caja;
 use App\Models\Cliente;
 use App\Models\MetodoPago;
 use App\Models\Producto;
+use App\Models\UnidadMedida;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Models\Venta;
@@ -483,6 +484,51 @@ class PuntoDeVentaTest extends TestCase
     }
 
     // ------------------------------------------------------------ mostrador
+
+    // ------------------------------------------------- la unidad en el papel
+
+    /**
+     * Un «2.5» pelado no le dice nada a quien compró dos kilos y medio de
+     * arroz, y comprobar lo que le cobraron es para lo que sirve el papel.
+     */
+    public function test_el_ticket_dice_la_unidad_de_lo_que_se_vendio(): void
+    {
+        $porKilo = Producto::activos()
+            ->whereHas('unidadMedida', fn ($q) => $q->where('codigo', 'KG'))
+            ->firstOrFail();
+
+        $venta = $this->vender($this->turno(), $porKilo, 2.5);
+        $linea = $venta->detalle()->firstOrFail();
+
+        $this->assertSame('KG', $linea->unidad);
+        $this->assertSame('2.5 KG', $linea->cantidad_con_unidad);
+
+        $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', $venta->comprobante))
+            ->assertOk()
+            ->assertSee('2.5 KG');
+    }
+
+    /**
+     * La unidad se copia, como el nombre y el precio. Si se leyera del catálogo
+     * al imprimir, corregir un producto de unidades a kilos reescribiría todos
+     * los tickets viejos, y un comprobante reimpreso dejaría de coincidir con
+     * el que se entregó en mano.
+     */
+    public function test_cambiar_la_unidad_del_producto_no_reescribe_las_ventas_viejas(): void
+    {
+        $producto = Producto::activos()
+            ->whereHas('unidadMedida', fn ($q) => $q->where('codigo', 'UND'))
+            ->firstOrFail();
+
+        $venta = $this->vender($this->turno(), $producto, 3);
+
+        $producto->forceFill([
+            'unidad_medida_id' => UnidadMedida::where('codigo', 'KG')->firstOrFail()->id,
+        ])->save();
+
+        $this->assertSame('UND', $venta->detalle()->firstOrFail()->unidad);
+    }
 
     public function test_la_busqueda_del_mostrador_encuentra_por_codigo_de_barras(): void
     {
