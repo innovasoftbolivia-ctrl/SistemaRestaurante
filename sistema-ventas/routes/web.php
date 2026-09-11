@@ -10,6 +10,7 @@ use App\Http\Controllers\CobroQrController;
 use App\Http\Controllers\CompraController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\DevolucionController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\InventarioController;
@@ -272,6 +273,26 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
             ->middleware('throttle:60,1')
             ->name('compras.productos');
         Route::post('compras', [CompraController::class, 'store'])->name('compras.store');
+    });
+
+    // ---- Devoluciones al proveedor: lo que se va de vuelta ----
+    // Se registra desde la compra por la que entró la mercadería: una
+    // devolución siempre es «de esta factura», y arrancar eligiendo la factura
+    // evita devolver contra el proveedor equivocado. El listado general es para
+    // lo otro: mirar cuánto se devolvió y por qué.
+    Route::get('devoluciones-compra', [DevolucionCompraController::class, 'index'])
+        ->middleware('permiso:inventario.ingresar,reportes.ver')
+        ->name('devoluciones-compra.index');
+
+    Route::get('devoluciones-compra/{devolucionCompra}', [DevolucionCompraController::class, 'show'])
+        ->middleware('permiso:inventario.ingresar,reportes.ver')
+        ->name('devoluciones-compra.show');
+
+    Route::middleware('permiso:inventario.ingresar')->group(function () {
+        Route::get('compras/{compra}/devolucion', [DevolucionCompraController::class, 'create'])
+            ->name('devoluciones-compra.create');
+        Route::post('compras/{compra}/devolucion', [DevolucionCompraController::class, 'store'])
+            ->name('devoluciones-compra.store');
     });
 
     // Va al final del bloque a propósito: `compras/{compra}` es un comodín y,

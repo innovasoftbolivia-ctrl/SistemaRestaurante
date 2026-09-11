@@ -225,12 +225,20 @@ class CompraController extends Controller
             'usuario:id,usuario',
             'detalle.producto:id,codigo,nombre,unidad_medida_id,contenido_empaque,nombre_empaque',
             'detalle.producto.unidadMedida:id,codigo',
+            // Lo devuelto se ve aquí y no en una pantalla aparte: quien abre la
+            // factura para revisarla necesita saber en el acto qué parte de
+            // ella ya se fue de vuelta.
+            'devoluciones.detalle',
         ]);
 
         return view('compras.show', [
             'title' => $compra->documento_externo ?: "Compra #{$compra->id}",
             'trail' => ['Almacén' => route('inventario.index'), 'Compras' => route('compras.index')],
             'compra' => $compra,
+            // Si ya no queda nada por devolver, el botón no se ofrece: es más
+            // honesto que llevar a un formulario donde todas las líneas están
+            // en cero.
+            'pendienteDeDevolver' => $compra->detalle->sum(fn ($l) => $l->pendiente_devolucion),
         ]);
     }
 

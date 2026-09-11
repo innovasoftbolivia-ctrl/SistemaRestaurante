@@ -24,6 +24,7 @@ class CompraDetalle extends Model
     {
         return [
             'cantidad' => 'decimal:3',
+            'cantidad_devuelta' => 'decimal:3',
             'costo_unitario' => 'decimal:2',
             'importe' => 'decimal:2',
         ];
@@ -37,5 +38,11 @@ class CompraDetalle extends Model
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class, 'producto_id');
+    }
+
+    /** Cuánto de esta línea queda todavía sin devolver al proveedor. */
+    public function getPendienteDevolucionAttribute(): float
+    {
+        return round((float) $this->cantidad - (float) $this->cantidad_devuelta, 3);
     }
 }

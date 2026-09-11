@@ -388,6 +388,33 @@ el control todavía no está completo.
 inmovilizado; desde cada fila se llega a las tandas de ese producto y, desde cada tanda, a la
 factura por la que entró.
 
+### Devolver al proveedor, y el cambio
+
+Vino fallado, vino equivocado o se venció en el estante. Hasta aquí la única salida era un ajuste
+de inventario con el motivo escrito a mano: bajaba el stock, sí, pero quedaba mezclado con la merma
+y la rotura, no se sabía de qué factura había salido y nadie podía responder después **cuánto le
+devolví a este proveedor**.
+
+Se registra **desde la compra**, no desde un menú suelto: una devolución siempre es «de esta
+factura», y arrancar eligiendo la factura evita devolverle al proveedor equivocado. `compra_detalle`
+lleva el acumulado `cantidad_devuelta`, así que no se pueden devolver 30 unidades de una línea que
+trajo 24 — y el tope lo comprueba tanto el servicio como un `CHECK`.
+
+**El cambio no es otro módulo, es una casilla.** Con `con_reposicion` sale lo fallado y entra lo
+repuesto, los dos movimientos colgados del mismo documento: el stock termina como estaba —que es lo
+que pasó en el mostrador— pero queda escrito que hubo un problema, cosa que un ajuste a cero nunca
+podría contar. Si lo repuesto trae otra fecha de vencimiento, abre su propia tanda.
+
+El motivo es un ENUM (`DEFECTO`, `VENCIMIENTO`, `ERROR`, `OTRO`) y no texto libre porque es lo que
+después permite contar: «este trimestre devolví Bs 900 por vencimiento» es una conversación con el
+proveedor distinta de «devolví Bs 900 porque vino fallado», y sumarlas las haría desaparecer a las
+dos. `/devoluciones-compra` muestra ese corte.
+
+En el kardex es una **salida con origen propio** (`DEVOLUCION_COMPRA`), no un ajuste: un ajuste
+explica un descuadre —merma, rotura, conteo— y esto explica que algo se fue de vuelta por donde
+vino. Cuando el producto lleva vencimiento se puede elegir **de qué tanda** sale: lo vencido se
+devuelve de SU lote y no del que tocaría por orden de salida.
+
 ### Comprar por caja y vender por unidad
 
 El negocio compra cajas de 24 y despacha gaseosas de a una. Eso no son dos unidades de stock:

@@ -64,6 +64,10 @@ class Menu
                     // propio: es la misma persona, en el mismo momento y con la
                     // mercadería en la mano.
                     ['icon' => 'proveedores', 'name' => 'Compras', 'path' => '/compras'],
+                    // Las devoluciones al proveedor van bajo Compras y no con
+                    // las del cliente: son la mercadería yéndose por donde
+                    // vino, no una venta que se deshace.
+                    ['icon' => 'devoluciones', 'name' => 'Devoluciones a proveedor', 'path' => '/devoluciones-compra'],
                     ['icon' => 'categorias', 'name' => 'Vencimientos', 'path' => '/vencimientos'],
                     ['icon' => 'kardex', 'name' => 'Movimientos', 'path' => '/inventario/movimientos'],
                 ],

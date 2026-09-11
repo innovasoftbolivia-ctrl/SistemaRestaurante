@@ -36,6 +36,15 @@
                     <x-ui.button size="sm" variant="outline"
                         :href="route('inventario.movimientos', ['origen' => 'COMPRA'])">Ver en el kardex</x-ui.button>
                     @puede('inventario.ingresar')
+                        {{-- Se devuelve desde aquí y no desde un menú suelto: la
+                             devolución siempre es «de esta factura», y entrar por
+                             la factura evita devolverle al proveedor equivocado.
+                             El botón desaparece cuando ya no queda nada por
+                             devolver. --}}
+                        @if ($pendienteDeDevolver > 0)
+                            <x-ui.button size="sm" variant="outline"
+                                :href="route('devoluciones-compra.create', $compra)">Devolver al proveedor</x-ui.button>
+                        @endif
                         <x-ui.button size="sm" :href="route('compras.create')">Registrar otra</x-ui.button>
                     @endpuede
                 </div>
@@ -46,11 +55,17 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
             @php
                 $unidades = $compra->detalle->sum(fn ($l) => (float) $l->cantidad);
+                $devueltas = $compra->detalle->sum(fn ($l) => (float) $l->cantidad_devuelta);
                 $cifras = [
                     ['Total de la compra', Config::importe($compra->total), 'text-gray-800 dark:text-white/90', 'sin impuesto'],
                     ['Líneas', number_format($compra->detalle->count()), 'text-gray-800 dark:text-white/90', 'productos distintos'],
                     ['Unidades', Config::cantidad($unidades), 'text-gray-800 dark:text-white/90', 'sumando todas las líneas'],
-                    ['Entró al stock', 'Sí', 'text-success-700 dark:text-success-500', 'cada línea dejó su kardex'],
+                    // La última tarjeta cambia de pregunta cuando hay algo
+                    // devuelto: «¿entró?» ya está contestado y lo que importa
+                    // pasa a ser cuánto de eso se fue de vuelta.
+                    $devueltas > 0
+                        ? ['Devuelto al proveedor', Config::cantidad($devueltas), 'text-warning-600 dark:text-warning-400', 'unidades que volvieron']
+                        : ['Entró al stock', 'Sí', 'text-success-700 dark:text-success-500', 'cada línea dejó su kardex'],
                 ];
             @endphp
 
@@ -106,6 +121,11 @@
                                             {{ $producto->desglosar($linea->cantidad) }}
                                         </span>
                                     @endif
+                                    @if ((float) $linea->cantidad_devuelta > 0)
+                                        <span class="block text-theme-xs text-warning-600 dark:text-warning-400">
+                                            devueltas {{ Config::cantidad($linea->cantidad_devuelta) }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ Config::importe($linea->costo_unitario) }}
@@ -129,6 +149,40 @@
                 </table>
             </div>
         </div>
+
+        @if ($compra->devoluciones->isNotEmpty())
+            <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+                <div class="px-6 py-5">
+                    <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Lo que se devolvió</h2>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Cada devolución es su propio documento y dejó su movimiento en el kardex.
+                    </p>
+                </div>
+
+                <div class="divide-y divide-gray-100 border-t border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+                    @foreach ($compra->devoluciones as $devolucion)
+                        <a href="{{ route('devoluciones-compra.show', $devolucion) }}"
+                            class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 transition hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                            <span>
+                                <span class="block font-medium text-gray-800 text-theme-sm dark:text-white/90">
+                                    {{ $devolucion->documento_externo ?: 'Devolución #'.$devolucion->id }}
+                                </span>
+                                <span class="text-theme-xs text-gray-500 dark:text-gray-400">
+                                    {{ $devolucion->fecha?->format('d/m/Y H:i') }} ·
+                                    {{ $devolucion->etiqueta_motivo }}
+                                    @if ($devolucion->con_reposicion)
+                                        · lo repusieron
+                                    @endif
+                                </span>
+                            </span>
+                            <span class="text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                                {{ Config::importe($devolucion->total) }}
+                            </span>
+                        </a>
+                    @endforeach
+                </div>
+            </div>
+        @endif
 
         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
             Esta compra no se edita ni se borra: ya movió el stock. Si una línea se cargó mal, se corrige con un

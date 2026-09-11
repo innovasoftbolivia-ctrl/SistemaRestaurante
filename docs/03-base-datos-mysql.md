@@ -99,11 +99,12 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | Ventas | `ventas`, `venta_detalle`, `venta_pagos` |
 | Devoluciones | `devoluciones`, `devolucion_detalle` |
 | Compras | `compras`, `compra_detalle` |
+| Devoluciones a proveedor | `devoluciones_compra`, `devolucion_compra_detalle` |
 | Vencimiento | `lotes` |
 | Inventario | `movimientos_inventario` |
 | Sistema | `configuracion`, `auditoria` |
 
-**Total: 26 tablas, 9 vistas, 6 triggers y 6 procedimientos almacenados.**
+**Total: 32 tablas, 9 vistas, 7 triggers y 6 procedimientos almacenados.**
 
 ## 3.4 Auditoría de normalización (1FN → 3FN)
 
@@ -131,14 +132,20 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | 18 | `ventas` | `id` | 3FN — `total` corregido a columna generada |
 | 19 | `venta_detalle` | `id` | 3FN + copias históricas (justificadas) |
 | 20 | `venta_pagos` | `id` | 3FN — `vuelto` corregido a columna generada |
-| 21 | `comprobantes` | `id` | 3FN — se eliminó `tipo_comprobante_id` |
-| 22 | `devoluciones` | `id` | 3FN + `total` agregado (justificado) |
-| 23 | `devolucion_detalle` | `id` | 3FN |
-| 24 | `movimientos_inventario` | `id` | 3FN — referencia polimórfica reemplazada por FK por origen |
-| 25 | `configuracion` | `clave` | 3FN — tabla de parámetros clave/valor |
-| 26 | `auditoria` | `id` | 3FN — bitácora, solo inserción |
+| 21 | `cobros_qr` | `id` | 3FN — el cobro pendiente, con su propio ciclo de vida |
+| 22 | `comprobantes` | `id` | 3FN — se eliminó `tipo_comprobante_id` |
+| 23 | `devoluciones` | `id` | 3FN + `total` agregado (justificado) |
+| 24 | `devolucion_detalle` | `id` | 3FN |
+| 25 | `compras` | `id` | 3FN — la cabecera del documento del proveedor |
+| 26 | `compra_detalle` | `id` | 3FN + `cantidad_devuelta` acumulado (justificado) |
+| 27 | `lotes` | `id` | 3FN — el stock partido por fecha de vencimiento |
+| 28 | `devoluciones_compra` | `id` | 3FN — la mercadería que vuelve al proveedor |
+| 29 | `devolucion_compra_detalle` | `id` | 3FN |
+| 30 | `movimientos_inventario` | `id` | 3FN — referencia polimórfica reemplazada por FK por origen |
+| 31 | `configuracion` | `clave` | 3FN — tabla de parámetros clave/valor |
+| 32 | `auditoria` | `id` | 3FN — bitácora, solo inserción |
 
-**26 tablas.** Ninguna tiene grupos repetitivos ni columnas multivaluadas (1FN), ninguna
+**32 tablas.** Ninguna tiene grupos repetitivos ni columnas multivaluadas (1FN), ninguna
 clave primaria es compuesta salvo la tabla puente `rol_permiso` —cuyos dos atributos son la
 clave completa, sin dependencias parciales (2FN)—, y tras las correcciones de abajo ningún
 atributo no clave depende de otro atributo no clave (3FN).
@@ -209,6 +216,7 @@ Se reemplazó por **una clave foránea por origen**:
 | `VENTA`, `ANULACION` | `venta_id` → `ventas` |
 | `DEVOLUCION` | `devolucion_id` → `devoluciones` |
 | `COMPRA` | `proveedor_id` → `proveedores`, más `documento_externo` (guía o factura del proveedor) |
+| `DEVOLUCION_COMPRA` | `devolucion_compra_id` → `devoluciones_compra` |
 | `AJUSTE`, `INICIAL` | ninguna; el `motivo` pasa a ser obligatorio |
 
 Un `CHECK` de exclusividad garantiza que cada origen traiga **exactamente** la referencia
@@ -217,14 +225,18 @@ que le corresponde y ninguna de las otras:
 ```sql
 CONSTRAINT ck_movinv_origen CHECK (
     (origen IN ('VENTA','ANULACION')
-         AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL)
+         AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
+         AND devolucion_compra_id IS NULL)
  OR (origen = 'DEVOLUCION'
-         AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL)
+         AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL
+         AND devolucion_compra_id IS NULL)
  OR (origen = 'COMPRA'
-         AND venta_id IS NULL AND devolucion_id IS NULL)
+         AND venta_id IS NULL AND devolucion_id IS NULL AND devolucion_compra_id IS NULL)
+ OR (origen = 'DEVOLUCION_COMPRA'
+         AND devolucion_compra_id IS NOT NULL AND venta_id IS NULL AND devolucion_id IS NULL)
  OR (origen IN ('AJUSTE','INICIAL')
          AND venta_id IS NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-         AND documento_externo IS NULL)
+         AND devolucion_compra_id IS NULL AND documento_externo IS NULL)
 ),
 -- un ajuste sin explicación es un descuadre sin responsable
 CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
@@ -587,11 +599,13 @@ precio_estante = ROUND(precio_venta * 1.18, 2)      -- ej: 3.81 → 4.50
 | Columna | Tipo | Descripción |
 |---------|------|-------------|
 | `tipo` | ENUM | `ENTRADA`, `SALIDA`, `AJUSTE` |
-| `origen` | ENUM | `VENTA`, `COMPRA`, `DEVOLUCION`, `ANULACION`, `AJUSTE`, `INICIAL` |
+| `origen` | ENUM | `VENTA`, `COMPRA`, `DEVOLUCION`, `DEVOLUCION_COMPRA`, `ANULACION`, `AJUSTE`, `INICIAL` |
 | `venta_id` | BIGINT FK | Documento de origen para `VENTA` y `ANULACION` |
-| `devolucion_id` | BIGINT FK | Documento de origen para `DEVOLUCION` |
-| `proveedor_id` | INT FK | Proveedor del ingreso, para `COMPRA` |
-| `documento_externo` | VARCHAR(30) | Guía o factura del proveedor, para `COMPRA` |
+| `devolucion_id` | BIGINT FK | Documento de origen para `DEVOLUCION` (la del cliente) |
+| `proveedor_id` | INT FK | Proveedor del ingreso, para `COMPRA` y `DEVOLUCION_COMPRA` |
+| `compra_id` | INT FK | Cabecera de la compra, para `COMPRA` cuando vino de una factura |
+| `devolucion_compra_id` | INT FK | Documento de origen para `DEVOLUCION_COMPRA` (la que va al proveedor) |
+| `documento_externo` | VARCHAR(30) | Guía o factura del proveedor, para `COMPRA`; nota de crédito para `DEVOLUCION_COMPRA` |
 | `cantidad` | DECIMAL(12,3) | Siempre positiva; el signo lo da `tipo` |
 | `stock_anterior` / `stock_resultante` | DECIMAL(12,3) | Saldo antes y después: permite auditar cualquier descuadre |
 

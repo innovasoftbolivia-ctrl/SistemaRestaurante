@@ -17,11 +17,11 @@ class MovimientoInventario extends Model
 
     public const TIPOS = ['ENTRADA', 'SALIDA', 'AJUSTE'];
 
-    public const ORIGENES = ['VENTA', 'COMPRA', 'DEVOLUCION', 'ANULACION', 'AJUSTE', 'INICIAL'];
+    public const ORIGENES = ['VENTA', 'COMPRA', 'DEVOLUCION', 'DEVOLUCION_COMPRA', 'ANULACION', 'AJUSTE', 'INICIAL'];
 
     protected $fillable = [
         'producto_id', 'usuario_id', 'tipo', 'origen',
-        'venta_id', 'devolucion_id', 'proveedor_id', 'compra_id', 'documento_externo',
+        'venta_id', 'devolucion_id', 'proveedor_id', 'compra_id', 'devolucion_compra_id', 'documento_externo',
         'cantidad', 'stock_anterior', 'stock_resultante',
         'costo_unitario', 'motivo', 'fecha',
     ];
@@ -57,6 +57,11 @@ class MovimientoInventario extends Model
         return $this->belongsTo(Compra::class, 'compra_id');
     }
 
+    public function devolucionCompra(): BelongsTo
+    {
+        return $this->belongsTo(DevolucionCompra::class, 'devolucion_compra_id');
+    }
+
     /** Cuánto sumó o restó al stock, con signo. */
     public function getVariacionAttribute(): float
     {
@@ -68,6 +73,7 @@ class MovimientoInventario extends Model
         return match ($this->origen) {
             'VENTA' => 'Venta',
             'COMPRA' => 'Ingreso de mercadería',
+            'DEVOLUCION_COMPRA' => 'Devolución al proveedor',
             'DEVOLUCION' => 'Devolución',
             'ANULACION' => 'Anulación de venta',
             'AJUSTE' => 'Ajuste de inventario',

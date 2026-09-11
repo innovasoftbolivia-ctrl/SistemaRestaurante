@@ -104,6 +104,44 @@ class Lotes
     }
 
     /**
+     * Descuenta de UNA tanda concreta, no de la que toque por orden.
+     *
+     * Es lo que pide la devolución al proveedor: cuando se devuelve algo
+     * vencido se devuelve ESE lote, y no el que saldría primero. Si no se
+     * eligió tanda, se cae al reparto normal (FEFO), que es lo correcto para
+     * un producto que no lleva fechas.
+     *
+     * Si el lote elegido no alcanza, la diferencia se toma del resto por orden
+     * de salida: el stock ya lo validó quien llamó, y la cifra que manda es
+     * `stock_actual`.
+     */
+    public static function consumirDe(Producto $producto, float $cantidad, ?Lote $lote): void
+    {
+        if (! $producto->controla_vencimiento || $cantidad <= 0) {
+            return;
+        }
+
+        if (! $lote) {
+            self::consumir($producto, $cantidad);
+
+            return;
+        }
+
+        $lote->refresh();
+        $sale = min((float) $lote->cantidad_actual, round($cantidad, 3));
+
+        if ($sale > 0) {
+            $lote->forceFill(['cantidad_actual' => round((float) $lote->cantidad_actual - $sale, 3)])->save();
+        }
+
+        $resto = round($cantidad - $sale, 3);
+
+        if ($resto > 0) {
+            self::consumir($producto, $resto);
+        }
+    }
+
+    /**
      * Mercadería que vuelve sin saberse de qué lote salió.
      *
      * Es el caso de la devolución de un cliente y el de la anulación de una

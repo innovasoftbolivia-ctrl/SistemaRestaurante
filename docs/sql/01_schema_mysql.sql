@@ -702,6 +702,11 @@ CREATE TABLE compra_detalle (
     compra_id       INT UNSIGNED NOT NULL,
     producto_id     INT UNSIGNED NOT NULL,
     cantidad        DECIMAL(12,3) NOT NULL,
+    -- Lo que de esta línea se le devolvió al proveedor. Se acumula aquí, y no
+    -- se calcula sumando las devoluciones, por el mismo motivo que en
+    -- `venta_detalle`: un CHECK no puede consultar otra tabla, y hace falta
+    -- para impedir que se devuelvan 30 unidades de una línea que trajo 24.
+    cantidad_devuelta DECIMAL(12,3) NOT NULL DEFAULT 0.000,
     costo_unitario  DECIMAL(12,2) NOT NULL,
     -- derivada de las dos anteriores: columna generada, no se puede desincronizar (3FN)
     importe         DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
@@ -711,7 +716,8 @@ CREATE TABLE compra_detalle (
     CONSTRAINT fk_compradet_compra   FOREIGN KEY (compra_id)   REFERENCES compras (id) ON DELETE CASCADE,
     CONSTRAINT fk_compradet_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
     CONSTRAINT ck_compradet_cantidad CHECK (cantidad > 0),
-    CONSTRAINT ck_compradet_costo    CHECK (costo_unitario >= 0)
+    CONSTRAINT ck_compradet_costo    CHECK (costo_unitario >= 0),
+    CONSTRAINT ck_compradet_devuelta CHECK (cantidad_devuelta >= 0 AND cantidad_devuelta <= cantidad)
 ) ENGINE=InnoDB;
 
 CREATE TABLE lotes (
@@ -742,6 +748,63 @@ CREATE TABLE lotes (
     )
 ) ENGINE=InnoDB;
 
+-- Mercadería que se le devuelve al proveedor, colgada de la compra por la que
+-- entró. No es lo mismo que `devoluciones`, que es del cliente hacia la tienda:
+-- una suma al stock y la otra lo resta, una la firma el cajero y la otra el
+-- almacenero, y los reportes tienen que poder contarlas por separado.
+--
+-- Sin esta tabla la única salida era un ajuste de inventario con el motivo
+-- escrito a mano: bajaba el stock, sí, pero quedaba mezclado con la merma y la
+-- rotura, y nadie podía responder después «cuánto le devolví a este proveedor».
+CREATE TABLE devoluciones_compra (
+    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    compra_id           INT UNSIGNED NOT NULL,
+    usuario_id          INT UNSIGNED NOT NULL,
+    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Por qué se devuelve. Separado del texto libre porque es lo que después
+    -- permite contar «cuánto devolví por vencimiento este trimestre», que es
+    -- justo la cifra que dice si hay que comprar menos o rotar mejor.
+    motivo              ENUM('DEFECTO','VENCIMIENTO','ERROR','OTRO') NOT NULL,
+    -- 1 = el proveedor repone la mercadería (cambio): sale la fallada y entra
+    -- la repuesta, los dos movimientos en este mismo documento, y el stock
+    -- queda igual que antes. 0 = se va y se espera la nota de crédito.
+    -- El cambio no es un módulo aparte; es esta casilla.
+    con_reposicion      TINYINT(1)   NOT NULL DEFAULT 0,
+    documento_externo   VARCHAR(30)  NULL,       -- nota de crédito o guía de devolución
+    observacion         VARCHAR(255) NULL,
+    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_devcompra_compra (compra_id),
+    KEY ix_devcompra_fecha  (fecha),
+    CONSTRAINT fk_devcompra_compra  FOREIGN KEY (compra_id)  REFERENCES compras (id),
+    CONSTRAINT fk_devcompra_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+) ENGINE=InnoDB;
+
+CREATE TABLE devolucion_compra_detalle (
+    id                    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    devolucion_compra_id  INT UNSIGNED    NOT NULL,
+    compra_detalle_id     BIGINT UNSIGNED NOT NULL,
+    producto_id           INT UNSIGNED    NOT NULL,
+    -- La tanda que se devuelve, cuando el producto lleva control de
+    -- vencimiento. Es lo que permite devolver EL lote vencido y no el que
+    -- tocaría por orden de salida.
+    lote_id               BIGINT UNSIGNED NULL,
+    cantidad              DECIMAL(12,3)   NOT NULL,
+    costo_unitario        DECIMAL(12,2)   NOT NULL,
+    importe               DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
+    PRIMARY KEY (id),
+    KEY ix_devcompradet_cabecera (devolucion_compra_id),
+    KEY ix_devcompradet_linea    (compra_detalle_id),
+    KEY ix_devcompradet_producto (producto_id),
+    CONSTRAINT fk_devcompradet_cabecera FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id) ON DELETE CASCADE,
+    CONSTRAINT fk_devcompradet_linea    FOREIGN KEY (compra_detalle_id)    REFERENCES compra_detalle (id),
+    CONSTRAINT fk_devcompradet_producto FOREIGN KEY (producto_id)          REFERENCES productos (id),
+    -- SET NULL y no CASCADE: el lote puede desaparecer del control, pero lo
+    -- que se devolvió pasó y su línea tiene que seguir ahí.
+    CONSTRAINT fk_devcompradet_lote     FOREIGN KEY (lote_id)              REFERENCES lotes (id) ON DELETE SET NULL,
+    CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0)
+) ENGINE=InnoDB;
+
 -- El documento que originó el movimiento se referencia con una FOREIGN KEY por origen,
 -- no con un par (tabla, id) sin integridad referencial. Un CHECK garantiza que cada
 -- origen traiga exactamente la referencia que le corresponde y ninguna otra.
@@ -756,12 +819,13 @@ CREATE TABLE movimientos_inventario (
     producto_id         INT UNSIGNED NOT NULL,
     usuario_id          INT UNSIGNED NULL,
     tipo                ENUM('ENTRADA','SALIDA','AJUSTE') NOT NULL,
-    origen              ENUM('VENTA','COMPRA','DEVOLUCION','ANULACION','AJUSTE','INICIAL') NOT NULL,
+    origen              ENUM('VENTA','COMPRA','DEVOLUCION','DEVOLUCION_COMPRA','ANULACION','AJUSTE','INICIAL') NOT NULL,
     -- referencias al documento de origen (una sola según `origen`)
     venta_id            BIGINT UNSIGNED NULL,   -- VENTA, ANULACION
     devolucion_id       BIGINT UNSIGNED NULL,   -- DEVOLUCION
-    proveedor_id        INT UNSIGNED NULL,      -- COMPRA
+    proveedor_id        INT UNSIGNED NULL,      -- COMPRA, DEVOLUCION_COMPRA
     compra_id           INT UNSIGNED NULL,      -- COMPRA con cabecera (opcional)
+    devolucion_compra_id INT UNSIGNED NULL,     -- DEVOLUCION_COMPRA
     documento_externo   VARCHAR(30)  NULL,      -- COMPRA: guía o factura del proveedor
     cantidad            DECIMAL(12,3) NOT NULL, -- siempre positiva
     stock_anterior      DECIMAL(12,3) NOT NULL,
@@ -775,6 +839,7 @@ CREATE TABLE movimientos_inventario (
     KEY ix_movinv_devolucion (devolucion_id),
     KEY ix_movinv_proveedor  (proveedor_id),
     KEY ix_movinv_compra     (compra_id),
+    KEY ix_movinv_devcompra  (devolucion_compra_id),
     KEY ix_movinv_fecha      (fecha),
     CONSTRAINT fk_movinv_producto   FOREIGN KEY (producto_id)   REFERENCES productos (id),
     CONSTRAINT fk_movinv_usuario    FOREIGN KEY (usuario_id)    REFERENCES usuarios (id),
@@ -782,18 +847,23 @@ CREATE TABLE movimientos_inventario (
     CONSTRAINT fk_movinv_devolucion FOREIGN KEY (devolucion_id) REFERENCES devoluciones (id),
     CONSTRAINT fk_movinv_proveedor  FOREIGN KEY (proveedor_id)  REFERENCES proveedores (id),
     CONSTRAINT fk_movinv_compra     FOREIGN KEY (compra_id)     REFERENCES compras (id),
+    CONSTRAINT fk_movinv_devcompra  FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id),
     CONSTRAINT ck_movinv_cantidad   CHECK (cantidad > 0),
     -- cada origen con su referencia, y sin las ajenas
     CONSTRAINT ck_movinv_origen CHECK (
         (origen IN ('VENTA','ANULACION')
-             AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL)
+             AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
+             AND devolucion_compra_id IS NULL)
      OR (origen = 'DEVOLUCION'
-             AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL)
+             AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL
+             AND devolucion_compra_id IS NULL)
      OR (origen = 'COMPRA'
-             AND venta_id IS NULL AND devolucion_id IS NULL)
+             AND venta_id IS NULL AND devolucion_id IS NULL AND devolucion_compra_id IS NULL)
+     OR (origen = 'DEVOLUCION_COMPRA'
+             AND devolucion_compra_id IS NOT NULL AND venta_id IS NULL AND devolucion_id IS NULL)
      OR (origen IN ('AJUSTE','INICIAL')
              AND venta_id IS NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-             AND documento_externo IS NULL)
+             AND devolucion_compra_id IS NULL AND documento_externo IS NULL)
     ),
     -- un ajuste sin explicación es un descuadre sin responsable
     CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
@@ -1438,9 +1508,14 @@ SELECT m.id, m.fecha, p.codigo, p.nombre AS producto,
             WHEN 'ANULACION'  THEN co.numero_completo
             WHEN 'DEVOLUCION' THEN CONCAT('DEV-', LPAD(m.devolucion_id, 6, '0'))
             WHEN 'COMPRA'     THEN CONCAT_WS(' ', pr.razon_social, m.documento_externo)
+            -- La nota de crédito cuando la hay, y el número del documento
+            -- interno cuando todavía no llegó: un movimiento del kardex sin
+            -- papel que señalar no se puede contrastar contra nada.
+            WHEN 'DEVOLUCION_COMPRA' THEN CONCAT_WS(' ', pr.razon_social,
+                     COALESCE(m.documento_externo, CONCAT('DEVC-', LPAD(m.devolucion_compra_id, 6, '0'))))
             ELSE NULL
        END AS documento,
-       m.venta_id, m.devolucion_id, m.proveedor_id, m.motivo
+       m.venta_id, m.devolucion_id, m.proveedor_id, m.devolucion_compra_id, m.motivo
   FROM movimientos_inventario m
   JOIN productos p ON p.id = m.producto_id
   LEFT JOIN usuarios u     ON u.id  = m.usuario_id

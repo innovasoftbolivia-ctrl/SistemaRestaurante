@@ -48,6 +48,12 @@ class Compra extends Model
         return $this->hasMany(MovimientoInventario::class, 'compra_id');
     }
 
+    /** Lo que de esta factura se le terminó devolviendo al proveedor. */
+    public function devoluciones(): HasMany
+    {
+        return $this->hasMany(DevolucionCompra::class, 'compra_id');
+    }
+
     public function getTotalAttribute(): float
     {
         return round((float) $this->detalle->sum('importe'), 2);

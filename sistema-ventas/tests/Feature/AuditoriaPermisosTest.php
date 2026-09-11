@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Models\Caja;
 use App\Models\MetodoPago;
 use App\Models\Producto;
+use App\Models\Proveedor;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
+use App\Services\Compras;
 use App\Services\Devoluciones;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -66,12 +68,22 @@ class AuditoriaPermisosTest extends TestCase
 
         $cobro = CobrosQr::generar($sesion->fresh(), $cajero, 10.0);
 
+        // La compra también se crea aquí: de ella cuelga la devolución al
+        // proveedor, y sin una factura real esa ruta contestaría 404 antes de
+        // que el portero llegara a opinar.
+        $compra = Compras::registrar(
+            usuario: Usuario::where('usuario', 'almacen')->firstOrFail(),
+            proveedor: Proveedor::activos()->firstOrFail(),
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'costo_unitario' => 1]],
+        );
+
         return [
             'venta' => $venta->id,
             'sesion' => $sesion->id,
             'comprobante' => $venta->comprobante->id,
             'devolucion' => $devolucion->id,
             'cobro' => $cobro->id,
+            'compra' => $compra->id,
             'producto' => DB::table('productos')->max('id'),
             'categoria' => DB::table('categorias')->max('id'),
             'unidad' => DB::table('unidades_medida')->max('id'),

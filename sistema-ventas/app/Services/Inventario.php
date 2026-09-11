@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Lote;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use Illuminate\Support\Facades\Auth;
@@ -81,6 +82,69 @@ class Inventario
         // La mercadería que entra abre su tanda con la fecha que trae la caja.
         // Si el producto no lleva control de vencimiento, esto no hace nada.
         Lotes::ingresar($producto, $cantidad, $vence, $lote, $compraDetalleId);
+
+        return $movimiento;
+    }
+
+    /**
+     * Mercadería que se le devuelve al proveedor.
+     *
+     * Es una SALIDA con origen propio, y no un ajuste: un ajuste explica un
+     * descuadre —merma, rotura, conteo— y esto explica que algo se fue de
+     * vuelta por donde vino. Mezclarlos haría imposible después contar cuánto
+     * se devolvió y por qué.
+     *
+     * `$lote` es la tanda concreta que se devuelve, cuando se eligió una: lo
+     * vencido se devuelve de SU lote y no del que tocaría por orden de salida.
+     */
+    public static function salidaAProveedor(
+        Producto $producto,
+        float $cantidad,
+        int $devolucionCompraId,
+        ?int $proveedorId = null,
+        ?string $documentoExterno = null,
+        ?float $costoUnitario = null,
+        ?string $motivo = null,
+        ?Lote $lote = null,
+    ): MovimientoInventario {
+        $movimiento = self::mover($producto, $cantidad, 'SALIDA', 'DEVOLUCION_COMPRA', [
+            'devolucion_compra_id' => $devolucionCompraId,
+            'proveedor_id' => $proveedorId,
+            'documento_externo' => $documentoExterno,
+            'costo_unitario' => $costoUnitario,
+            'motivo' => $motivo,
+        ]);
+
+        Lotes::consumirDe($producto, $cantidad, $lote);
+
+        return $movimiento;
+    }
+
+    /**
+     * Lo que el proveedor repone a cambio de lo devuelto.
+     *
+     * Entra con el mismo documento que la salida —es el otro lado del cambio—
+     * y abre su propia tanda: el reemplazo de algo vencido viene, por
+     * definición, con una fecha distinta.
+     */
+    public static function entradaPorReposicion(
+        Producto $producto,
+        float $cantidad,
+        int $devolucionCompraId,
+        ?int $proveedorId = null,
+        ?string $documentoExterno = null,
+        ?float $costoUnitario = null,
+        ?string $vence = null,
+    ): MovimientoInventario {
+        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'DEVOLUCION_COMPRA', [
+            'devolucion_compra_id' => $devolucionCompraId,
+            'proveedor_id' => $proveedorId,
+            'documento_externo' => $documentoExterno,
+            'costo_unitario' => $costoUnitario,
+            'motivo' => 'Reposición del proveedor',
+        ]);
+
+        Lotes::ingresar($producto, $cantidad, $vence);
 
         return $movimiento;
     }
