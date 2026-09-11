@@ -118,8 +118,15 @@ class DevolucionCompraController extends Controller
         ]);
     }
 
-    /** El formulario, partiendo de la compra por la que entró la mercadería. */
-    public function create(Compra $compra): View
+    /**
+     * El formulario, partiendo de la compra por la que entró la mercadería.
+     *
+     * `?lote=` es el atajo desde la pantalla de vencimientos: se llega con la
+     * tanda vencida ya elegida, su cantidad puesta y el motivo en
+     * «vencimiento». Quien ve el problema no tiene que acordarse de con qué
+     * factura entró ni volver a teclear lo que la pantalla anterior ya sabía.
+     */
+    public function create(Request $request, Compra $compra): View
     {
         $compra->load([
             'proveedor',
@@ -144,6 +151,10 @@ class DevolucionCompraController extends Controller
             'compra' => $compra,
             'lotes' => $lotes,
             'motivos' => $this->motivos(),
+            // La tanda con la que se llegó, si se llegó con una. Se comprueba
+            // que sea de un producto de ESTA compra: un id de la barra de
+            // direcciones no puede prellenar una línea que no corresponde.
+            'loteElegido' => $this->loteDelAtajo($request, $compra),
         ]);
     }
 
@@ -210,6 +221,35 @@ class DevolucionCompraController extends Controller
             ],
             'devolucion' => $devolucionCompra,
         ]);
+    }
+
+    /**
+     * La tanda que llega en la URL, si es de esta compra.
+     *
+     * @return array{lote_id: int, producto_id: int, cantidad: float}|null
+     */
+    private function loteDelAtajo(Request $request, Compra $compra): ?array
+    {
+        $id = $request->integer('lote');
+
+        if (! $id) {
+            return null;
+        }
+
+        $lote = Lote::whereKey($id)
+            ->whereIn('producto_id', $compra->detalle->pluck('producto_id'))
+            ->abiertos()
+            ->first();
+
+        if (! $lote) {
+            return null;
+        }
+
+        return [
+            'lote_id' => $lote->id,
+            'producto_id' => $lote->producto_id,
+            'cantidad' => (float) $lote->cantidad_actual,
+        ];
     }
 
     /** @return array<string, string> */

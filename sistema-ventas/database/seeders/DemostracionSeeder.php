@@ -236,8 +236,14 @@ class DemostracionSeeder extends Seeder
                 'costo_unitario' => (float) $producto->precio_compra,
                 // La fecha que trae la caja. Para lo que no vence, `Lotes` la
                 // ignora, así que se puede pasar siempre.
+                //
+                // Una de cada cinco viene corta o directamente pasada: el
+                // proveedor que despacha lo que tenía más viejo es el caso que
+                // origina media devolución por vencimiento, y si todas las
+                // compras trajeran fechas lejanas la pantalla de vencimientos
+                // nunca podría ofrecer el atajo de devolver contra su factura.
                 'vence' => $producto->controla_vencimiento
-                    ? now()->addDays(mt_rand(20, 300))->toDateString()
+                    ? now()->addDays(mt_rand(1, 5) === 1 ? mt_rand(-12, 25) : mt_rand(20, 300))->toDateString()
                     : null,
                 'lote' => $producto->controla_vencimiento ? $this->codigoDeLote() : null,
             ];

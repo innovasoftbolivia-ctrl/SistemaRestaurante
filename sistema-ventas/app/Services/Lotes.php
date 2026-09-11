@@ -226,6 +226,12 @@ class Lotes
         return DB::table('lotes as l')
             ->join('productos as p', 'p.id', '=', 'l.producto_id')
             ->leftJoin('unidades_medida as u', 'u.id', '=', 'p.unidad_medida_id')
+            // De qué factura vino esta tanda, si vino de alguna. Es lo que
+            // permite ofrecer «devolver al proveedor» desde aquí en vez de
+            // obligar a recordar con qué papel entró: el dato ya estaba
+            // guardado y no servía para nada.
+            ->leftJoin('compra_detalle as cd', 'cd.id', '=', 'l.compra_detalle_id')
+            ->leftJoin('compras as c', 'c.id', '=', 'cd.compra_id')
             ->where('p.activo', 1)
             ->where('l.cantidad_actual', '>', 0)
             ->whereNotNull('l.fecha_vencimiento')
@@ -235,6 +241,11 @@ class Lotes
             ->selectRaw('u.codigo AS unidad')
             ->selectRaw('DATEDIFF(l.fecha_vencimiento, CURDATE()) AS dias')
             ->selectRaw('ROUND(l.cantidad_actual * p.precio_compra, 2) AS valor')
+            ->selectRaw('c.id AS compra_id, c.documento_externo AS compra_documento')
+            // Solo se ofrece devolver si a esa línea le queda algo sin
+            // devolver: si ya se devolvió entera, el formulario saldría topado
+            // en cero.
+            ->selectRaw('COALESCE(cd.cantidad - cd.cantidad_devuelta, 0) AS pendiente_devolucion')
             ->orderBy('l.fecha_vencimiento')
             ->orderBy('p.nombre');
     }

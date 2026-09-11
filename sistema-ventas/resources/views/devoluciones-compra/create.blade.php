@@ -10,6 +10,7 @@
     // recalcular nada que el servidor ya sabe.
     $filas = $compra->detalle->map(fn ($l) => [
         'id' => $l->id,
+        'producto_id' => $l->producto_id,
         'producto' => $l->producto?->nombre,
         'codigo' => $l->producto?->codigo,
         'unidad' => $l->producto?->unidadMedida?->codigo,
@@ -32,7 +33,7 @@
 
 @section('content')
     <form method="POST" action="{{ route('devoluciones-compra.store', $compra) }}" class="space-y-6"
-        x-data="devolucionNueva(@js($filas))"
+        x-data="devolucionNueva(@js($filas), @js($loteElegido))"
         @submit="if (!hayLineas) { $event.preventDefault(); avisoSinLineas = true; }">
         @csrf
 
@@ -56,7 +57,9 @@
 
                 <x-form.campo label="¿Por qué se devuelve?" for="motivo" name="motivo" required
                     help="Es lo que después permite contar cuánto se devolvió por vencimiento y cuánto por fallas.">
-                    <x-form.select id="motivo" name="motivo" :value="old('motivo')"
+                    {{-- Si se llegó desde vencimientos, el motivo ya se sabe. --}}
+                    <x-form.select id="motivo" name="motivo"
+                        :value="old('motivo', $loteElegido ? 'VENCIMIENTO' : null)"
                         placeholder="Elige el motivo" :opciones="$motivos" required />
                 </x-form.campo>
             </div>
@@ -202,14 +205,27 @@
 
 @push('scripts')
     <script>
-        function devolucionNueva(filas) {
+        function devolucionNueva(filas, elegido) {
             return {
                 conReposicion: false,
                 avisoSinLineas: false,
 
                 /* Cada fila arranca en cero: se devuelve lo que se marca, no
-                   todo lo que trajo la factura. */
-                filas: filas.map((f) => ({ ...f, cantidad: null, loteId: '', venceRepuesto: '' })),
+                   todo lo que trajo la factura.
+
+                   Salvo que se haya llegado desde vencimientos con una tanda
+                   señalada: esa línea viene con su cantidad y su lote puestos,
+                   topada en lo que la factura todavía permite devolver. */
+                filas: filas.map((f) => {
+                    const suya = elegido && elegido.producto_id === f.producto_id;
+
+                    return {
+                        ...f,
+                        cantidad: suya ? Math.min(elegido.cantidad, f.pendiente) : null,
+                        loteId: suya ? String(elegido.lote_id) : '',
+                        venceRepuesto: '',
+                    };
+                }),
 
                 importe(l) {
                     const cantidad = Math.min(Number(l.cantidad) || 0, l.pendiente);

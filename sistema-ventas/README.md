@@ -430,6 +430,16 @@ explica un descuadre —merma, rotura, conteo— y esto explica que algo se fue 
 vino. Cuando el producto lleva vencimiento se puede elegir **de qué tanda** sale: lo vencido se
 devuelve de SU lote y no del que tocaría por orden de salida.
 
+Se llega por tres caminos, todos al mismo formulario: «Registrar devolución» en el listado —que
+empieza preguntando de qué factura, y solo ofrece las que tienen algo pendiente—, el botón dentro
+de la propia compra, y **el atajo desde vencimientos**. Ese último usa `lotes.compra_detalle_id`
+para saltar de la tanda caducada a la factura por la que entró, con la cantidad y el motivo ya
+puestos: ver el problema y resolverlo sin tener que acordarse del papel.
+
+La tanda que no vino de ninguna compra —el stock que ya estaba cuando se encendió el control— no
+ofrece devolver sino **ajustar**, que es lo honesto: no hay factura contra la que reclamarle a
+nadie.
+
 ### Comprar por caja y vender por unidad
 
 El negocio compra cajas de 24 y despacha gaseosas de a una. Eso no son dos unidades de stock:

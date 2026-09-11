@@ -58,7 +58,7 @@
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
-                            @foreach (['Producto', 'Vence', 'Faltan', 'Quedan', 'Valor'] as $i => $columna)
+                            @foreach (['Producto', 'Vence', 'Faltan', 'Quedan', 'Valor', ''] as $i => $columna)
                                 <th class="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 {{ $i >= 2 ? 'text-right' : 'text-left' }}">
                                     {{ $columna }}
                                 </th>
@@ -96,10 +96,36 @@
                                 <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ Config::importe($lote->valor) }}
                                 </td>
+                                {{-- Ver el problema y poder resolverlo desde el
+                                     mismo sitio. Cuál de las dos salidas se
+                                     ofrece no es cosmético: al proveedor solo se
+                                     le puede devolver lo que él trajo, y solo si
+                                     esa línea todavía tiene algo sin devolver.
+                                     Lo demás —el stock que ya estaba cuando se
+                                     encendió el control— sale por un ajuste,
+                                     que es lo honesto: no hay factura contra la
+                                     que reclamar. --}}
+                                <td class="px-5 py-4 text-right whitespace-nowrap">
+                                    @if ($lote->compra_id && $lote->pendiente_devolucion > 0)
+                                        @puede('inventario.ingresar')
+                                            <x-ui.button size="sm" variant="outline"
+                                                :href="route('devoluciones-compra.create', ['compra' => $lote->compra_id, 'lote' => $lote->id])">
+                                                Devolver
+                                            </x-ui.button>
+                                        @endpuede
+                                    @else
+                                        @puede('inventario.ajustar')
+                                            <x-ui.button size="sm" variant="outline"
+                                                :href="route('inventario.index', ['buscar' => $lote->producto_codigo])">
+                                                Ajustar
+                                            </x-ui.button>
+                                        @endpuede
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="6" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
                                     Nada vence en los próximos {{ $dias }} días.
                                 </td>
                             </tr>
@@ -113,8 +139,10 @@
 
         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
             El mostrador despacha siempre del lote que vence antes, así que lo que aparece aquí es lo que de verdad
-            queda de esa tanda. Para sacar del inventario algo vencido, usa un ajuste con su motivo: queda explicado
-            y con responsable, y no se confunde con una venta.
+            queda de esa tanda. <strong>Devolver</strong> lleva a la factura por la que entró esa tanda, con la
+            cantidad y el motivo ya puestos. Sale solo cuando hay una compra detrás a la que todavía le queda algo
+            por devolver; lo demás se saca con un <strong>ajuste</strong>, que deja la merma explicada y con
+            responsable, y no se confunde con una venta.
         </p>
     </div>
 @endsection

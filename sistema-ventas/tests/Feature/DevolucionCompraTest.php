@@ -12,6 +12,7 @@ use App\Models\Usuario;
 use App\Services\Compras;
 use App\Services\DevolucionesCompra;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Js;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -512,6 +513,127 @@ class DevolucionCompraTest extends TestCase
         $this->actingAs($this->cajero())
             ->get(route('devoluciones-compra.elegir'))
             ->assertForbidden();
+    }
+
+    // --------------------------------------------- el atajo desde vencimientos
+
+    /**
+     * Ver lo vencido y poder devolverlo sin salir de la pantalla.
+     *
+     * `lotes.compra_detalle_id` ya guardaba de qué línea de qué factura vino
+     * cada tanda, y no servía para nada: quien veía el problema tenía que
+     * acordarse del papel e ir a buscarlo. Esto lo usa.
+     */
+    public function test_lo_vencido_que_vino_de_una_compra_ofrece_devolverlo(): void
+    {
+        $producto = $this->perecedero();
+
+        $compra = $this->compra(lineas: [[
+            'producto_id' => $producto->id,
+            'cantidad' => 10,
+            'costo_unitario' => '2.00',
+            'vence' => now()->subDays(3)->toDateString(),
+        ]], producto: $producto);
+
+        $lote = Lote::where('producto_id', $producto->id)->sole();
+
+        $this->actingAs($this->almacenero())
+            ->get(route('vencimientos.index'))
+            ->assertOk()
+            ->assertSee(
+                route('devoluciones-compra.create', ['compra' => $compra->id, 'lote' => $lote->id]),
+                escape: false,
+            );
+    }
+
+    /**
+     * Lo que no vino de una factura se saca con un ajuste, no devolviéndolo.
+     *
+     * Es el stock que ya estaba cuando se encendió el control: no hay papel
+     * contra el que reclamarle a nadie, y ofrecer «devolver» sería mentir.
+     */
+    public function test_lo_vencido_sin_compra_detras_manda_al_ajuste(): void
+    {
+        $producto = $this->perecedero();
+
+        Lote::create([
+            'producto_id' => $producto->id,
+            'fecha_vencimiento' => now()->subDays(5)->toDateString(),
+            'cantidad_inicial' => 6,
+            'cantidad_actual' => 6,
+        ]);
+
+        $producto->forceFill(['stock_actual' => 6])->save();
+
+        $this->actingAs($this->almacenero())
+            ->get(route('vencimientos.index'))
+            ->assertOk()
+            ->assertSee(route('inventario.index', ['buscar' => $producto->codigo]), escape: false);
+    }
+
+    /** El atajo llega con la tanda, su cantidad y el motivo ya puestos. */
+    public function test_el_atajo_prellena_la_linea_vencida(): void
+    {
+        $producto = $this->perecedero();
+
+        $compra = $this->compra(lineas: [[
+            'producto_id' => $producto->id,
+            'cantidad' => 10,
+            'costo_unitario' => '2.00',
+            'vence' => now()->subDays(3)->toDateString(),
+        ]], producto: $producto);
+
+        $lote = Lote::where('producto_id', $producto->id)->sole();
+
+        $respuesta = $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.create', ['compra' => $compra->id, 'lote' => $lote->id]))
+            ->assertOk();
+
+        // El motivo viene elegido…
+        $respuesta->assertSee('value="VENCIMIENTO" selected', escape: false);
+        // …y la tanda viaja a la pantalla para que Alpine llene esa línea.
+        $respuesta->assertSee($this->enElPayload('lote_id', $lote->id), escape: false);
+        $respuesta->assertSee($this->enElPayload('producto_id', $producto->id), escape: false);
+    }
+
+    /**
+     * Una tanda que no es de esta compra no prellena nada.
+     *
+     * El id viaja en la barra de direcciones, así que no alcanza con que el
+     * formulario lo mande bien: hay que comprobarlo al recibirlo.
+     */
+    public function test_una_tanda_ajena_no_prellena_el_formulario(): void
+    {
+        $compra = $this->compra();
+        $otro = $this->perecedero();
+
+        $ajeno = Lote::create([
+            'producto_id' => $otro->id,
+            'fecha_vencimiento' => now()->addDays(10)->toDateString(),
+            'cantidad_inicial' => 5,
+            'cantidad_actual' => 5,
+        ]);
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.create', ['compra' => $compra->id, 'lote' => $ajeno->id]))
+            ->assertOk()
+            ->assertDontSee($this->enElPayload('lote_id', $ajeno->id), escape: false);
+    }
+
+    /**
+     * Un trozo del JSON tal como `@js` lo deja en el atributo de Alpine.
+     *
+     * Se arma con el mismo `Js::from()` que usa la plantilla y no a mano: ese
+     * ayudante escapa las comillas como `\u0022`, y una prueba que copiara ese
+     * detalle se rompería el día que Laravel lo cambie sin que nada esté mal.
+     */
+    private function enElPayload(string $clave, int $valor): string
+    {
+        // `Js::from()` devuelve la expresión entera —`JSON.parse('{...}')`—, y
+        // lo que aparece dentro del payload grande es solo el trozo de dentro.
+        preg_match('/\{(.*)\}/', Js::from([$clave => $valor])->toHtml(), $trozo);
+
+        return $trozo[1];
     }
 
     /** Si ya no queda nada por devolver, no se ofrece el botón. */
