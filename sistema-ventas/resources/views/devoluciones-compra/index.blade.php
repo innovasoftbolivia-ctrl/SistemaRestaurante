@@ -46,6 +46,15 @@
                 <div class="flex flex-wrap items-end gap-2 pb-1">
                     <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
                     <x-ui.button variant="outline" size="sm" :href="route('devoluciones-compra.index')">Limpiar</x-ui.button>
+
+                    {{-- La puerta de entrada. Sin esto el listado solo deja
+                         mirar, y quien viene a devolver algo se queda sin
+                         saber qué hacer: pasó, y por eso está. --}}
+                    @puede('inventario.ingresar')
+                        <x-ui.button size="sm" :href="route('devoluciones-compra.elegir')">
+                            Registrar devolución
+                        </x-ui.button>
+                    @endpuede
                 </div>
             </form>
         </div>
@@ -105,8 +114,9 @@
         </div>
 
         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-            Una devolución se registra desde la compra por la que entró la mercadería: entra a Almacén → Compras,
-            abre la factura y usa «Devolver al proveedor». Así nunca se devuelve contra el proveedor equivocado.
+            Toda devolución sale de la factura por la que entró esa mercadería —así nunca se devuelve contra el
+            proveedor equivocado—, y se llega por dos caminos: «Registrar devolución» aquí arriba, que empieza
+            preguntando de qué factura, o abriendo la compra en Almacén → Compras y usando «Devolver al proveedor».
         </p>
     </div>
 @endsection

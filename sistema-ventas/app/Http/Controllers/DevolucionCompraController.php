@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Compra;
 use App\Models\DevolucionCompra;
 use App\Models\Lote;
+use App\Models\Proveedor;
 use App\Services\DevolucionesCompra;
 use App\Support\Config;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -18,10 +20,17 @@ use RuntimeException;
 /**
  * Lo que se le devuelve al proveedor, y lo que él repone a cambio.
  *
- * Se entra desde la compra y no desde un menú suelto, a propósito: una
- * devolución siempre es «de esta factura», y arrancar eligiendo la factura
- * evita el error de devolver contra el proveedor equivocado. El listado general
- * existe para lo otro — mirar cuánto se devolvió y por qué.
+ * Toda devolución arranca eligiendo la factura, a propósito: una devolución
+ * siempre es «de esta compra», y empezar por el papel evita devolverle a un
+ * proveedor lo que trajo otro.
+ *
+ * Ahora bien, eso NO significa que la única puerta sea abrir la compra y
+ * buscar el botón dentro. Esa fue la primera versión y no se encontraba: quien
+ * necesita devolver algo entra por el menú, ve el listado y se queda sin saber
+ * qué hacer. `elegirCompra()` es la otra puerta —del listado al formulario,
+ * pasando por «¿de qué factura?»—, y solo ofrece las compras a las que todavía
+ * les queda algo por devolver, porque llevar a un formulario con todas las
+ * líneas en cero es peor que no ofrecerlo.
  *
  * Mismo permiso que las compras (`inventario.ingresar`): es la misma persona,
  * el mismo día y la misma mercadería, solo que yéndose en vez de llegando.
@@ -59,6 +68,53 @@ class DevolucionCompraController extends Controller
                 $filtros['desde']?->copy()->startOfDay()->toDateTimeString(),
                 $filtros['hasta']?->copy()->endOfDay()->toDateTimeString(),
             )->get()->keyBy('motivo'),
+        ]);
+    }
+
+    /**
+     * «¿De qué factura?»: el paso que faltaba entre el menú y el formulario.
+     *
+     * Solo las compras con algo pendiente. Una factura ya devuelta del todo no
+     * se ofrece: el formulario saldría con todas las líneas topadas en cero y
+     * el error se descubriría al final, que es el peor momento.
+     */
+    public function elegirCompra(Request $request): View
+    {
+        $filtros = [
+            'buscar' => $request->string('buscar')->toString(),
+            'proveedor' => $request->integer('proveedor') ?: null,
+        ];
+
+        $compras = Compra::with(['proveedor:id,razon_social'])
+            ->withCount('detalle')
+            // Cuántas LÍNEAS quedan con algo por devolver, y no la suma de las
+            // cantidades: una factura mezcla unidades, kilos y litros, y
+            // sumarlos da un número que no significa nada. Contar líneas sí.
+            ->addSelect(['lineas_pendientes' => DB::table('compra_detalle')
+                ->selectRaw('COUNT(*)')
+                ->whereColumn('compra_id', 'compras.id')
+                ->whereColumn('cantidad_devuelta', '<', 'cantidad'),
+            ])
+            ->addSelect(['total_documento' => DB::table('compra_detalle')
+                ->selectRaw('COALESCE(SUM(importe), 0)')
+                ->whereColumn('compra_id', 'compras.id'),
+            ])
+            ->whereHas('detalle', fn ($q) => $q->whereColumn('cantidad_devuelta', '<', 'cantidad'))
+            ->when($filtros['buscar'] !== '', fn ($q) => $q->where('documento_externo', 'like', "%{$filtros['buscar']}%"))
+            ->when($filtros['proveedor'], fn ($q, $id) => $q->where('proveedor_id', $id))
+            ->orderByDesc('fecha')
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('devoluciones-compra.elegir', [
+            'title' => 'Devolver: ¿de qué factura?',
+            'trail' => [
+                'Almacén' => route('inventario.index'),
+                'Devoluciones a proveedor' => route('devoluciones-compra.index'),
+            ],
+            'compras' => $compras,
+            'filtros' => $filtros,
+            'proveedores' => Proveedor::activos()->orderBy('razon_social')->pluck('razon_social', 'id'),
         ]);
     }
 

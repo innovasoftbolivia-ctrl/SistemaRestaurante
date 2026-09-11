@@ -444,6 +444,76 @@ class DevolucionCompraTest extends TestCase
             ->assertSee('NC-0042');
     }
 
+    /**
+     * La otra puerta: del menú al formulario, pasando por «¿de qué factura?».
+     *
+     * La primera versión solo se entraba abriendo la compra, y no se
+     * encontraba: quien venía a devolver algo llegaba al listado por el menú y
+     * se quedaba mirando. Esta prueba fija que el listado ofrezca la operación,
+     * no solo el historial.
+     */
+    public function test_desde_el_listado_se_llega_a_registrar_una_devolucion(): void
+    {
+        $compra = $this->compra();
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.index'))
+            ->assertOk()
+            ->assertSee(route('devoluciones-compra.elegir'), escape: false);
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.elegir'))
+            ->assertOk()
+            ->assertSee('F001-00999')
+            ->assertSee(route('devoluciones-compra.create', $compra), escape: false);
+    }
+
+    /**
+     * Una factura ya devuelta del todo no se ofrece.
+     *
+     * Llevar a un formulario con todas las líneas topadas en cero deja
+     * descubrir el error al final, que es el peor momento para descubrirlo.
+     */
+    public function test_el_paso_previo_solo_ofrece_lo_que_queda_por_devolver(): void
+    {
+        $compra = $this->compra();
+
+        DevolucionesCompra::registrar(
+            usuario: $this->almacenero(),
+            compra: $compra,
+            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 24]],
+            motivo: 'DEFECTO',
+        );
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.elegir'))
+            ->assertOk()
+            ->assertDontSee(route('devoluciones-compra.create', $compra), escape: false);
+    }
+
+    public function test_el_paso_previo_busca_por_documento_y_proveedor(): void
+    {
+        $compra = $this->compra();
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.elegir', ['buscar' => 'NO-EXISTE']))
+            ->assertOk()
+            ->assertDontSee(route('devoluciones-compra.create', $compra), escape: false);
+
+        $this->actingAs($this->almacenero())
+            ->get(route('devoluciones-compra.elegir', ['proveedor' => $this->proveedor()->id]))
+            ->assertOk()
+            ->assertSee(route('devoluciones-compra.create', $compra), escape: false);
+    }
+
+    /** El cajero no devuelve, tampoco por este camino. */
+    public function test_el_cajero_no_entra_al_paso_previo(): void
+    {
+        $this->actingAs($this->cajero())
+            ->get(route('devoluciones-compra.elegir'))
+            ->assertForbidden();
+    }
+
     /** Si ya no queda nada por devolver, no se ofrece el botón. */
     public function test_el_boton_desaparece_cuando_no_queda_nada_por_devolver(): void
     {

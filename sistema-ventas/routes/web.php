@@ -284,6 +284,12 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
         ->middleware('permiso:inventario.ingresar,reportes.ver')
         ->name('devoluciones-compra.index');
 
+    // Antes del comodín de abajo: `devoluciones-compra/{devolucionCompra}` se
+    // tragaría `nueva` y contestaría 404 buscando una devolución con ese id.
+    Route::get('devoluciones-compra/nueva', [DevolucionCompraController::class, 'elegirCompra'])
+        ->middleware('permiso:inventario.ingresar')
+        ->name('devoluciones-compra.elegir');
+
     Route::get('devoluciones-compra/{devolucionCompra}', [DevolucionCompraController::class, 'show'])
         ->middleware('permiso:inventario.ingresar,reportes.ver')
         ->name('devoluciones-compra.show');
