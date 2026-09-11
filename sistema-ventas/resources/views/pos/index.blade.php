@@ -144,6 +144,12 @@
                                         :class="p.stock > 0 && p.stock <= 5 ? 'text-warning-700 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'"
                                         x-text="p.stock <= 0 ? '' : (cantidadTexto(p.stock) + ' ' + p.unidad)"></span>
                                 </span>
+
+                                {{-- Cuántas cajas quedan, para el que mira el estante
+                                     y quiere saber si ya hay que pedir. --}}
+                                <span x-show="p.stock > 0 && p.desglose" x-cloak
+                                    class="block truncate text-[10px] text-gray-400 dark:text-gray-500"
+                                    x-text="p.desglose"></span>
                             </span>
                         </button>
                     </template>

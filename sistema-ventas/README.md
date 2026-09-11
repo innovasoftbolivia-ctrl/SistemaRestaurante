@@ -376,7 +376,31 @@ porque la factura del proveedor está expresada en cajas y el número solo no se
 con ella. Por el mismo motivo el costo se puede escribir **por caja**: el sistema divide entre el
 contenido y guarda siempre el costo por unidad, que es como lo lee el resto del sistema.
 
-Nada de esto llega al mostrador: el punto de venta sigue vendiendo y descontando en unidades de
+#### El precio, que se escribe en cajas y se guarda en unidades
+
+`precio_compra` y `precio_venta` son **siempre por unidad de venta**: de ahí salen el margen, el
+valor del inventario y los reportes. Pero la factura del proveedor viene en cajas, así que las dos
+pantallas donde se escribe un costo aceptan un selector **«por unidad / por caja»** y dividen entre
+`contenido_empaque` antes de guardar. Escribir 96 por una caja de 24 guarda 4.00.
+
+Y el costo que se carga al recibir mercadería puede **actualizar el del producto**, con una casilla
+marcada por defecto que solo aparece cuando el número cambió. No se hace solo, a propósito: una
+compra puntual más cara —una urgencia, un flete— no siempre debe volverse el costo de referencia.
+Cuando se hace, se audita como `CAMBIO_COSTO`, porque mueve el margen de todos los reportes.
+
+Sin esto el costo se quedaba solo en el kardex: el proveedor subía la caja de 96 a 108, el
+almacenero lo cargaba bien, y el sistema seguía diciendo que se ganaba Bs 2.00 por unidad cuando
+se ganaban 1.50.
+
+#### Las cajas bajan solas
+
+El desglose —«3 cajas y 5 sueltas»— **se calcula del stock, no se guarda**. Por eso no hace falta
+tocar nada cuando se vende: despachar 24 unidades de un producto que viene de 24 descuenta una caja
+entera sola. Se muestra en las cuatro pantallas donde se mira stock —catálogo, inventario, ficha y
+mostrador— y por debajo de un empaque completo dice solo las sueltas, porque «0 cajas y 5 sueltas»
+es la misma información con una cifra de más.
+
+Nada de esto llega al cobro: el punto de venta sigue vendiendo y descontando en unidades de
 venta, sin enterarse de que el producto vino en caja. Un producto a granel —el arroz por kilo—
 deja las dos columnas en NULL y su pantalla de ingreso es la de siempre, con una sola casilla.
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Models\Producto;
+use App\Services\Auditor;
 use App\Support\Config;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -150,6 +151,48 @@ trait IngresaPorEmpaque
     }
 
     /**
+     * Deja el costo del producto igual al de esta compra, si se pidió.
+     *
+     * Hasta aquí, `costo_unitario` se guardaba solo en el movimiento y el
+     * `precio_compra` del producto se quedaba con lo que se escribió el día del
+     * alta. El resultado era silencioso y feo: el proveedor sube la caja de 96
+     * a 108, el almacenero lo carga bien, y el sistema sigue diciendo que se
+     * gana Bs 2.00 por unidad cuando se ganan 1.50. El valor del inventario
+     * también quedaba corto.
+     *
+     * No se hace solo: lo decide una casilla del formulario, porque una compra
+     * puntual más cara —una urgencia, un flete— no siempre debe convertirse en
+     * el costo de referencia del producto. Y cuando se hace, se audita: cambiar
+     * el costo mueve el margen de todos los reportes.
+     *
+     * @return array{anterior: float, nuevo: float}|null  null si no cambió nada
+     */
+    protected function actualizarCosto(Request $request, Producto $producto, ?float $costo): ?array
+    {
+        if ($costo === null || ! $request->boolean('actualizar_costo')) {
+            return null;
+        }
+
+        $anterior = round((float) $producto->precio_compra, 2);
+        $nuevo = round($costo, 2);
+
+        if ($anterior === $nuevo) {
+            return null;
+        }
+
+        $producto->forceFill(['precio_compra' => $nuevo])->save();
+
+        Auditor::registrar('CAMBIO_COSTO', 'productos', $producto->id, [
+            'codigo' => $producto->codigo,
+            'anterior' => $anterior,
+            'nuevo' => $nuevo,
+            'origen' => 'ingreso de mercadería',
+        ]);
+
+        return ['anterior' => $anterior, 'nuevo' => $nuevo];
+    }
+
+    /**
      * Lo que queda escrito en el kardex.
      *
      * El desglose va delante y la observación de quien recibió, detrás. Si se
@@ -167,15 +210,35 @@ trait IngresaPorEmpaque
         return mb_substr($motivo !== '' ? "{$detalle} · {$motivo}" : $detalle, 0, 255);
     }
 
-    /** El mensaje de vuelta, contado como lo diría quien recibió la mercadería. */
-    protected function avisoDeIngreso(Producto $producto, float $cantidad, ?string $detalle, mixed $stock): string
-    {
+    /**
+     * El mensaje de vuelta, contado como lo diría quien recibió la mercadería.
+     *
+     * Si de paso cambió el costo del producto se dice aquí y no en un aviso
+     * aparte: es una consecuencia de lo que se acaba de hacer, y enterarse
+     * después —al ver el margen distinto— sería peor.
+     *
+     * @param  array{anterior: float, nuevo: float}|null  $cambioCosto
+     */
+    protected function avisoDeIngreso(
+        Producto $producto,
+        float $cantidad,
+        ?string $detalle,
+        mixed $stock,
+        ?array $cambioCosto = null,
+    ): string {
         $unidad = $producto->unidadMedida?->codigo;
         $entraron = $detalle !== null
             ? "{$detalle} = ".Config::cantidad($cantidad)." {$unidad}"
             : Config::cantidad($cantidad)." {$unidad}";
 
-        return "Ingresaron {$entraron} de «{$producto->nombre}». Stock: ".Config::cantidad($stock).'.';
+        $aviso = "Ingresaron {$entraron} de «{$producto->nombre}». Stock: ".Config::cantidad($stock).'.';
+
+        if ($cambioCosto) {
+            $aviso .= ' El costo pasó de '.Config::importe($cambioCosto['anterior'])
+                .' a '.Config::importe($cambioCosto['nuevo']).' por '.$unidad.'.';
+        }
+
+        return $aviso;
     }
 
     private function exigirPositivo(float $cantidad, string $campo): void

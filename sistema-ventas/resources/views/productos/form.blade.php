@@ -57,15 +57,26 @@
                 return (this.nombreEmpaque || 'empaque').trim().toLowerCase();
             },
 
+            /* El costo se puede escribir por caja, pero todo lo que se calcula
+               —margen, ganancia, comparación con el precio de venta— trabaja
+               con el de UNA unidad, que es lo que se guarda. */
+            compraPor: @js(old('precio_compra_por', 'UNIDAD')),
+            get compraPorCaja() {
+                return this.compraPor === 'EMPAQUE' && this.hayEmpaque;
+            },
+            get compraUnidad() {
+                return this.compraPorCaja ? this.compra / this.contenido : this.compra;
+            },
+
             get estante() {
                 const base = this.afecto ? this.venta * (1 + this.tasa) : this.venta;
                 return base.toFixed(2);
             },
             get margen() {
-                return (this.venta - this.compra).toFixed(2);
+                return (this.venta - this.compraUnidad).toFixed(2);
             },
             get margenPorcentaje() {
-                return this.venta > 0 ? ((this.venta - this.compra) / this.venta * 100).toFixed(1) : '0.0';
+                return this.venta > 0 ? ((this.venta - this.compraUnidad) / this.venta * 100).toFixed(1) : '0.0';
             },
             /* Al revés: se escribe el precio de estante deseado y sale la base. */
             desdeEstante(valor) {
@@ -178,9 +189,32 @@
                     : 'El precio de venta es el que paga el cliente: el sistema no le agrega nada encima.'">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <x-form.campo label="Precio de compra" for="precio_compra" name="precio_compra" required
-                        help="Lo que cuesta al negocio UNA unidad de venta, sin impuesto.">
-                        <x-form.input id="precio_compra" name="precio_compra" type="number" step="0.01" min="0"
-                            :value="$producto->precio_compra ?? '0.00'" x-model.number="compra" required />
+                        help="Sin impuesto. Se guarda siempre por unidad de venta.">
+                        {{-- El ancho va en un envoltorio y no en el propio control:
+                             los componentes traen `w-full` y una clase de ancho
+                             puesta encima pierde por orden de la hoja de estilos. --}}
+                        <div class="flex gap-2">
+                            <div class="min-w-0 flex-1">
+                                <x-form.input id="precio_compra" name="precio_compra" type="number" step="0.01"
+                                    min="0" :value="$producto->precio_compra ?? '0.00'" x-model.number="compra"
+                                    required />
+                            </div>
+
+                            {{-- La factura del proveedor viene por caja. Se
+                                 escribe como viene y el sistema divide. --}}
+                            <div class="w-32 shrink-0" x-show="hayEmpaque" x-cloak>
+                                <x-form.select name="precio_compra_por" x-model="compraPor">
+                                    <option value="UNIDAD" x-text="'por ' + unidadNombre"></option>
+                                    <option value="EMPAQUE" x-text="'por ' + empaque"></option>
+                                </x-form.select>
+                            </div>
+                        </div>
+
+                        <p x-show="compraPorCaja && compra > 0" x-cloak
+                            class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            = {{ $moneda }} <b x-text="compraUnidad.toFixed(2)"></b> por
+                            <span x-text="unidadCodigo"></span>, que es lo que se guarda
+                        </p>
                     </x-form.campo>
 
                     <x-form.campo :label="$tasa > 0 ? 'Precio de venta (base)' : 'Precio de venta'"
@@ -248,16 +282,18 @@
                 {{-- Lo que cuesta la caja entera: es la cifra que aparece en la
                      factura del proveedor, y sirve para comprobar de un vistazo
                      que el costo por unidad se escribió bien. --}}
-                <div x-show="hayEmpaque && compra > 0" x-cloak
+                <div x-show="hayEmpaque && compra > 0 && !compraPorCaja" x-cloak
                     class="rounded-xl border border-gray-200 px-4 py-3 text-theme-sm dark:border-gray-800">
                     <span class="text-gray-500 dark:text-gray-400">Una
                         <span x-text="empaque"></span> de <span x-text="contenido"></span>
                         te cuesta</span>
                     <b class="text-gray-800 dark:text-white/90">{{ $moneda }}
-                        <span x-text="(compra * contenido).toFixed(2)"></span></b>
+                        <span x-text="(compraUnidad * contenido).toFixed(2)"></span></b>
+                    <span class="text-gray-500 dark:text-gray-400">— si no es lo que dice tu factura,
+                        cámbialo a «por <span x-text="empaque"></span>»</span>
                 </div>
 
-                <template x-if="venta > 0 && compra > venta">
+                <template x-if="venta > 0 && compraUnidad > venta">
                     <x-ui.alert variant="warning" title="El precio de venta está por debajo del costo"
                         message="Tal como está, cada unidad vendida deja pérdida." />
                 </template>

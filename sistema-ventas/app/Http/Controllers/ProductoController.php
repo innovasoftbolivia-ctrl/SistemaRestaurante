@@ -216,6 +216,7 @@ class ProductoController extends Controller
             'documento_externo' => ['nullable', 'string', 'max:30'],
             'costo_unitario' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
             'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
+            'actualizar_costo' => ['boolean'],
             'motivo' => ['nullable', 'string', 'max:255'],
         ], [], [
             'cantidad' => 'cantidad',
@@ -227,14 +228,20 @@ class ProductoController extends Controller
 
         ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
 
+        $costo = $this->costoPorUnidad($request, $producto);
+
         $movimiento = Inventario::ingreso(
             producto: $producto,
             cantidad: $cantidad,
             proveedorId: $datos['proveedor_id'] ?? null,
             documentoExterno: $datos['documento_externo'] ?? null,
-            costoUnitario: $this->costoPorUnidad($request, $producto),
+            costoUnitario: $costo,
             motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
         );
+
+        // Después del movimiento: si el costo cambia, que cambie sobre una
+        // entrada que ya quedó registrada, no sobre una que podría fallar.
+        $cambioCosto = $this->actualizarCosto($request, $producto, $costo);
 
         Auditor::registrar('INVENTARIO_INGRESO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,
@@ -243,7 +250,10 @@ class ProductoController extends Controller
             'stock_resultante' => $movimiento->stock_resultante,
         ]);
 
-        return back()->with('exito', $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante));
+        return back()->with(
+            'exito',
+            $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante, $cambioCosto)
+        );
     }
 
     /** Ajuste por conteo físico. */
@@ -415,6 +425,9 @@ class ProductoController extends Controller
             'nombre' => ['required', 'string', 'max:120'],
             'descripcion' => ['nullable', 'string', 'max:255'],
             'precio_compra' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            // Quien da de alta el producto tiene delante la factura, y ahí el
+            // costo está por caja. Se acepta como viene y el sistema divide.
+            'precio_compra_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'precio_venta' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'afecto_impuesto' => ['boolean'],
             'stock_minimo' => ['required', 'numeric', 'min:0', 'max:999999'],
@@ -468,6 +481,17 @@ class ProductoController extends Controller
         $datos['nombre_empaque'] = $enEmpaque ? trim((string) $datos['nombre_empaque']) : null;
 
         unset($datos['viene_en_empaque']);
+
+        // El costo se guarda SIEMPRE por unidad de venta: es lo que leen el
+        // margen, el valor del inventario y los reportes. Si se escribió por
+        // caja, la división se hace aquí y una sola vez. Va después de resolver
+        // el empaque a propósito: sin `contenido_empaque` no hay entre qué
+        // dividir, y una casilla desmarcada tiene que dejar el número como está.
+        if ($request->input('precio_compra_por') === 'EMPAQUE' && $datos['contenido_empaque']) {
+            $datos['precio_compra'] = round((float) $datos['precio_compra'] / $datos['contenido_empaque'], 2);
+        }
+
+        unset($datos['precio_compra_por']);
 
         return $datos;
     }

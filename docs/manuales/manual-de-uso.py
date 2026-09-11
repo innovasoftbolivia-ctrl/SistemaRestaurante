@@ -440,10 +440,20 @@ rico([('Qué comprobar: ', True),
       ('el stock dice 77 y, debajo, «3 cajas y 5 sueltas». Y en el kardex el movimiento no anota '
        'solo el 77: anota «3 cajas de 24 + 5 sueltas», que es como viene escrita la factura del '
        'proveedor y lo único con lo que se puede contrastar el mes que viene.', False)])
-p('El precio de compra y el de venta se escriben siempre POR UNIDAD. Si lo que tienes delante es '
-  'el precio de la caja, al ingresar mercadería hay un selector al lado del costo que dice «por '
-  'unidad / por caja»: elige «por caja», escribe lo que costó la caja entera y el sistema divide.',
-  cursiva=True)
+p('Esas cajas no están guardadas en ningún lado: se calculan del stock. Por eso bajan solas a '
+  'medida que vendes, sin que tengas que tocar nada. Si despachas 24 unidades de un producto que '
+  'viene de 24, verás una caja menos. Lo mismo aparece en el catálogo, en el almacén y en el '
+  'mostrador, para que puedas mirar el estante y comprobar que cuadra.')
+numerada('En «Precio de compra», mira el selector que tiene al lado: dice «por unidad / por caja».')
+rico([('Qué comprobar: ', True),
+      ('elige «por caja», escribe 96 —lo que te costó la caja entera— y debajo te sale «= Bs 4.00 '
+       'por UND, que es lo que se guarda». No tienes que dividir nada: el sistema guarda siempre el '
+       'costo por unidad, porque de ahí salen la ganancia y el valor del inventario.', False)])
+p('Lo mismo vale al recibir mercadería: si la caja te sube de precio, lo escribes por caja y, '
+  'cuando el número cambia, aparece una casilla ya marcada que dice «Actualizar el costo de este '
+  'producto (4.00 → 4.50)». Si la dejas marcada, la ganancia deja de mentirte desde ese momento. '
+  'Si fue una compra cara por una urgencia y no quieres que cambie el precio de siempre, la '
+  'desmarcas: la entrada queda registrada igual con lo que costó de verdad.')
 p('Un producto a granel —el arroz por kilo— no marca esa casilla, y su pantalla de ingreso sigue '
   'siendo la de siempre: una sola cantidad.', cursiva=True)
 

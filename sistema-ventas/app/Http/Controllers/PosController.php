@@ -86,6 +86,9 @@ class PosController extends Controller
                 'precio_estante' => $p->precio_estante,
                 'afecto' => (bool) $p->afecto_impuesto,
                 'stock' => (float) $p->stock_actual,
+                // Cuántas cajas quedan. El mostrador vende y descuenta en
+                // unidades; esto es solo para que se vea bajar el empaque.
+                'desglose' => $p->stock_desglosado,
                 'unidad' => $p->unidadMedida?->codigo,
                 'decimal' => (bool) $p->unidadMedida?->permite_decimal,
                 'imagen' => $p->imagen_url,

@@ -18,8 +18,27 @@
                caja», y es lo que decide qué casillas muestra el modal. */
             contenido: 0, empaque: '', desglose: null,
         },
+        /* Lo que se escribió en «Costo», y a cuánto equivale por unidad: es lo
+           único que decide si tiene sentido ofrecer actualizar el producto. */
+        costo: '',
+        costoPor: 'UNIDAD',
+        actualizarCosto: true,
+        get costoEscrito() {
+            return this.costo !== '' && this.costo !== null && Number(this.costo) >= 0;
+        },
+        get costoNuevo() {
+            const c = Number(this.costo) || 0;
+            return this.costoPor === 'EMPAQUE' && this.sel.contenido > 0
+                ? Math.round((c / this.sel.contenido) * 100) / 100
+                : c;
+        },
         abrir(modal, producto) {
             this.sel = producto;
+            /* El costo arranca en el del producto: lo más común es que la
+               compra llegue al mismo precio de siempre. */
+            this.costo = producto.compra;
+            this.costoPor = 'UNIDAD';
+            this.actualizarCosto = true;
             this[modal] = true;
         },
         get diferencia() {
@@ -159,16 +178,20 @@
                                         class="font-medium text-theme-sm {{ $producto->sin_stock ? 'text-error-600 dark:text-error-400' : ($producto->bajo_minimo ? 'text-warning-700 dark:text-orange-400' : 'text-gray-800 dark:text-white/90') }}">
                                         {{ Config::cantidad($producto->stock_actual) }} {{ $unidad?->codigo }}
                                     </span>
+                                    {{-- Cuántas cajas es eso: el número que se puede
+                                         contrastar mirando el depósito. Va antes del
+                                         estado y no en su lugar — justo cuando queda
+                                         poco es cuando más se quiere saber si es
+                                         media caja o tres. --}}
+                                    @if ($producto->stock_desglosado)
+                                        <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                            {{ $producto->stock_desglosado }}
+                                        </span>
+                                    @endif
                                     @if ($producto->sin_stock)
                                         <span class="block text-theme-xs text-error-600 dark:text-error-400">agotado</span>
                                     @elseif ($producto->bajo_minimo)
                                         <span class="block text-theme-xs text-warning-700 dark:text-orange-400">bajo el mínimo</span>
-                                    @elseif ($producto->stock_desglosado)
-                                        {{-- Cuántas cajas es eso: el número que se puede
-                                             contrastar mirando el depósito. --}}
-                                        <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
-                                            {{ $producto->stock_desglosado }}
-                                        </span>
                                     @endif
                                 </td>
 
@@ -322,17 +345,29 @@
                                 <div class="flex gap-2">
                                     <div class="min-w-0 flex-1">
                                         <x-form.input id="ing_costo" name="costo_unitario" type="number"
-                                            step="0.01" min="0" x-bind:value="sel.compra" />
+                                            step="0.01" min="0" x-model="costo" />
                                     </div>
 
                                     {{-- La factura del proveedor está en cajas. Se acepta
                                          así y el sistema divide. --}}
                                     <div class="w-36 shrink-0" x-show="sel.contenido > 0" x-cloak>
-                                        <x-form.select name="costo_por">
+                                        <x-form.select name="costo_por" x-model="costoPor">
                                             <option value="UNIDAD" x-text="'por ' + sel.unidadNombre"></option>
                                             <option value="EMPAQUE" x-text="'por ' + sel.empaque"></option>
                                         </x-form.select>
                                     </div>
+                                </div>
+
+                                {{-- Sin esto, el costo se quedaba solo en el kardex y
+                                     el producto seguía con el precio del alta: el
+                                     margen y el valor del inventario mentían en
+                                     silencio desde la primera subida del proveedor. --}}
+                                <div x-show="costoEscrito && costoNuevo !== sel.compra" x-cloak class="mt-3">
+                                    <x-form.check name="actualizar_costo" :checked="true" model="actualizarCosto">
+                                        Actualizar el costo de este producto
+                                        (<span x-text="sel.compra.toFixed(2)"></span> →
+                                        <b x-text="costoNuevo.toFixed(2)"></b>)
+                                    </x-form.check>
                                 </div>
                             </x-form.campo>
 

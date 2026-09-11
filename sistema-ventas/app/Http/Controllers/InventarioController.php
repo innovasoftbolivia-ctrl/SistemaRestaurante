@@ -147,6 +147,7 @@ class InventarioController extends Controller
             'documento_externo' => ['nullable', 'string', 'max:30'],
             'costo_unitario' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
             'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
+            'actualizar_costo' => ['boolean'],
             'motivo' => ['nullable', 'string', 'max:255'],
         ], [
             'producto_id.exists' => 'Ese producto no existe o está descatalogado.',
@@ -162,14 +163,20 @@ class InventarioController extends Controller
         $producto = Producto::with('unidadMedida')->findOrFail($datos['producto_id']);
         ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
 
+        $costo = $this->costoPorUnidad($request, $producto);
+
         $movimiento = Inventario::ingreso(
             producto: $producto,
             cantidad: $cantidad,
             proveedorId: $datos['proveedor_id'] ?? null,
             documentoExterno: $datos['documento_externo'] ?? null,
-            costoUnitario: $this->costoPorUnidad($request, $producto),
+            costoUnitario: $costo,
             motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
         );
+
+        // Después del movimiento: si el costo cambia, que cambie sobre una
+        // entrada que ya quedó registrada, no sobre una que podría fallar.
+        $cambioCosto = $this->actualizarCosto($request, $producto, $costo);
 
         Auditor::registrar('INVENTARIO_INGRESO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,
@@ -178,7 +185,10 @@ class InventarioController extends Controller
             'stock_resultante' => $movimiento->stock_resultante,
         ]);
 
-        return back()->with('exito', $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante));
+        return back()->with(
+            'exito',
+            $this->avisoDeIngreso($producto, $cantidad, $detalle, $movimiento->stock_resultante, $cambioCosto)
+        );
     }
 
     /** Ajuste por conteo físico, con el producto elegido en la pantalla. */

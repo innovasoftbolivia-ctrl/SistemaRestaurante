@@ -208,6 +208,55 @@ class EmpaqueDelProductoTest extends TestCase
         $this->assertFalse($producto->tieneEmpaque());
     }
 
+    /**
+     * Quien da de alta el producto tiene delante la factura del proveedor, y
+     * ahí el costo está por caja. Lo que se guarda sigue siendo por unidad:
+     * es lo que leen el margen, el valor del inventario y los reportes.
+     */
+    public function test_el_costo_del_alta_se_puede_escribir_por_caja(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'viene_en_empaque' => '1',
+                'nombre_empaque' => 'Caja',
+                'contenido_empaque' => '24',
+                'precio_compra' => '96.00',
+                'precio_compra_por' => 'EMPAQUE',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('4.00', Producto::where('codigo', 'P-9101')->firstOrFail()->precio_compra);
+    }
+
+    public function test_el_costo_del_alta_por_unidad_no_se_divide(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'viene_en_empaque' => '1',
+                'nombre_empaque' => 'Caja',
+                'contenido_empaque' => '24',
+                'precio_compra' => '4.00',
+                'precio_compra_por' => 'UNIDAD',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('4.00', Producto::where('codigo', 'P-9101')->firstOrFail()->precio_compra);
+    }
+
+    /** Sin empaque no hay entre qué dividir: el número se guarda como vino. */
+    public function test_un_producto_a_granel_ignora_el_costo_por_caja(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'viene_en_empaque' => '0',
+                'precio_compra' => '96.00',
+                'precio_compra_por' => 'EMPAQUE',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame('96.00', Producto::where('codigo', 'P-9101')->firstOrFail()->precio_compra);
+    }
+
     // ------------------------------------------------- ingreso de mercadería
 
     public function test_el_almacen_ingresa_cajas_y_sueltas(): void
@@ -370,6 +419,96 @@ class EmpaqueDelProductoTest extends TestCase
             ->assertSessionHasErrors('sueltas');
     }
 
+    /**
+     * El proveedor sube la caja de 96 a 108. Si el costo se quedara solo en el
+     * kardex, el sistema seguiría diciendo que se gana Bs 2.00 por unidad
+     * cuando se ganan 1.50, y el valor del inventario quedaría corto.
+     */
+    public function test_el_ingreso_puede_actualizar_el_costo_del_producto(): void
+    {
+        $producto = $this->productoEnCajas();
+        $producto->forceFill(['precio_compra' => '4.00'])->save();
+
+        $this->actingAs($this->almacenero())
+            ->post(route('inventario.ingreso'), [
+                'producto_id' => $producto->id,
+                'empaques' => 1,
+                'costo_unitario' => '108.00',
+                'costo_por' => 'EMPAQUE',
+                'actualizar_costo' => '1',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('4.50', $producto->fresh()->precio_compra);
+    }
+
+    /** Cambiar el costo mueve el margen de todos los reportes: queda auditado. */
+    public function test_el_cambio_de_costo_queda_en_la_bitacora(): void
+    {
+        $producto = $this->productoEnCajas();
+        $producto->forceFill(['precio_compra' => '4.00'])->save();
+
+        $this->actingAs($this->almacenero())
+            ->post(route('inventario.ingreso'), [
+                'producto_id' => $producto->id,
+                'empaques' => 1,
+                'costo_unitario' => '5.00',
+                'actualizar_costo' => '1',
+            ]);
+
+        $this->assertDatabaseHas('auditoria', [
+            'usuario_id' => $this->almacenero()->id,
+            'accion' => 'CAMBIO_COSTO',
+            'entidad' => 'productos',
+            'entidad_id' => $producto->id,
+        ]);
+    }
+
+    /**
+     * Una compra puntual más cara —una urgencia, un flete— no tiene por qué
+     * volverse el costo de referencia. Lo decide la casilla, no el sistema.
+     */
+    public function test_sin_marcar_la_casilla_el_costo_del_producto_no_se_toca(): void
+    {
+        $producto = $this->productoEnCajas();
+        $producto->forceFill(['precio_compra' => '4.00'])->save();
+
+        $this->actingAs($this->almacenero())
+            ->post(route('inventario.ingreso'), [
+                'producto_id' => $producto->id,
+                'empaques' => 1,
+                'costo_unitario' => '9.00',
+                'actualizar_costo' => '0',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('4.00', $producto->fresh()->precio_compra);
+
+        // Pero el kardex sí guarda lo que costó ESA entrada.
+        $movimiento = MovimientoInventario::where('producto_id', $producto->id)
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        $this->assertSame('9.00', $movimiento->costo_unitario);
+    }
+
+    /** La ficha del producto ofrece lo mismo que el almacén. */
+    public function test_la_ficha_tambien_actualiza_el_costo(): void
+    {
+        $producto = $this->productoEnCajas();
+        $producto->forceFill(['precio_compra' => '4.00'])->save();
+
+        $this->actingAs($this->almacenero())
+            ->post(route('productos.ingreso', $producto), [
+                'empaques' => 1,
+                'costo_unitario' => '4.75',
+                'actualizar_costo' => '1',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('4.75', $producto->fresh()->precio_compra);
+    }
+
     // ---------------------------------------------------------- cómo se lee
 
     public function test_el_stock_se_lee_en_cajas_y_sueltas(): void
@@ -380,9 +519,25 @@ class EmpaqueDelProductoTest extends TestCase
         $this->assertSame('3 cajas', $producto->desglosar(72));
         $this->assertSame('1 caja y 1 suelta', $producto->desglosar(25));
 
-        // Por debajo de una caja el número solo ya se entiende: decir
-        // «0 cajas y 5 sueltas» sería ruido.
-        $this->assertNull($producto->desglosar(5));
+        // Por debajo de una caja se dicen solo las sueltas: «0 cajas y 5
+        // sueltas» es la misma información con una cifra de más.
+        $this->assertSame('5 sueltas', $producto->desglosar(5));
+
+        // De un agotado no hay nada que desglosar.
+        $this->assertNull($producto->desglosar(0));
+    }
+
+    /**
+     * Las cajas no se guardan: se calculan del stock. Por eso bajan solas
+     * cuando el mostrador despacha, sin que nadie toque nada.
+     */
+    public function test_las_cajas_bajan_solas_cuando_se_vende(): void
+    {
+        $producto = $this->productoEnCajas();
+
+        $this->assertSame('4 cajas', $producto->desglosar(96));
+        $this->assertSame('3 cajas y 23 sueltas', $producto->desglosar(95));
+        $this->assertSame('3 cajas', $producto->desglosar(72));
     }
 
     public function test_un_producto_a_granel_no_tiene_desglose(): void

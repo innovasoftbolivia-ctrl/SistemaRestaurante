@@ -67,12 +67,13 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
             @php
                 $cifras = [
-                    // El desglose gana a la línea del mínimo cuando existe: al
-                    // almacenero le sirve más «son 3 cajas y 5» que el mínimo,
-                    // que ya está avisado con el color y con la etiqueta.
+                    // Las dos líneas, no una u otra: cuántas cajas es eso y
+                    // cuál era el mínimo. Son las dos cosas que se miran para
+                    // decidir si hay que llamar al proveedor.
                     ['Stock actual', Config::cantidad($producto->stock_actual).' '.$unidad?->codigo,
                         $producto->bajo_minimo ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90',
-                        $producto->stock_desglosado ?? 'mínimo '.Config::cantidad($producto->stock_minimo)],
+                        collect([$producto->stock_desglosado, 'mínimo '.Config::cantidad($producto->stock_minimo)])
+                            ->filter()->implode(' · ')],
                     // Sin impuesto el precio de estante y el de venta son el mismo
                     // numero: no tiene sentido anunciarlo como si fueran dos cosas.
                     [Config::tasaImpuesto() > 0 ? 'Precio de estante' : 'Precio de venta',
@@ -268,7 +269,26 @@
                         @endif.
                     </p>
 
-                    <form method="POST" action="{{ route('productos.ingreso', $producto) }}" class="space-y-5">
+                    {{-- El estado del costo vive en el formulario y no en el modal
+                         entero: solo sirve para decidir si ofrecer actualizar el
+                         costo del producto. --}}
+                    <form method="POST" action="{{ route('productos.ingreso', $producto) }}" class="space-y-5"
+                        x-data="{
+                            costo: @js((float) $producto->precio_compra),
+                            costoPor: 'UNIDAD',
+                            actualizarCosto: true,
+                            contenido: {{ (int) $producto->contenido_empaque }},
+                            actual: {{ (float) $producto->precio_compra }},
+                            get costoEscrito() {
+                                return this.costo !== '' && this.costo !== null && Number(this.costo) >= 0;
+                            },
+                            get costoNuevo() {
+                                const c = Number(this.costo) || 0;
+                                return this.costoPor === 'EMPAQUE' && this.contenido > 0
+                                    ? Math.round((c / this.contenido) * 100) / 100
+                                    : c;
+                            },
+                        }">
                         @csrf
 
                         <x-form.cantidad-empaque :help="$unidad?->permite_decimal ? 'Admite decimales.' : 'Solo números enteros.'"
@@ -289,7 +309,8 @@
                                 <div class="flex gap-2">
                                     <div class="min-w-0 flex-1">
                                         <x-form.input id="costo_unitario" name="costo_unitario" type="number"
-                                            step="0.01" min="0" :value="$producto->precio_compra" />
+                                            step="0.01" min="0" :value="$producto->precio_compra"
+                                            x-model="costo" />
                                     </div>
 
                                     {{-- La factura del proveedor viene por caja, no por
@@ -297,12 +318,24 @@
                                          el sistema. --}}
                                     @if ($producto->tieneEmpaque())
                                         <div class="w-36 shrink-0">
-                                            <x-form.select name="costo_por" :opciones="[
+                                            <x-form.select name="costo_por" x-model="costoPor" :opciones="[
                                                 'UNIDAD' => 'por '.mb_strtolower($unidad?->nombre ?? 'unidad'),
                                                 'EMPAQUE' => 'por '.mb_strtolower($producto->nombre_empaque),
                                             ]" />
                                         </div>
                                     @endif
+                                </div>
+
+                                {{-- Sin esto, el costo se quedaba solo en el kardex y el
+                                     producto seguía con el precio del alta: el margen y
+                                     el valor del inventario mentían en silencio desde la
+                                     primera subida del proveedor. --}}
+                                <div x-show="costoEscrito && costoNuevo !== actual" x-cloak class="mt-3">
+                                    <x-form.check name="actualizar_costo" :checked="true" model="actualizarCosto">
+                                        Actualizar el costo de este producto
+                                        (<span x-text="actual.toFixed(2)"></span> →
+                                        <b x-text="costoNuevo.toFixed(2)"></b>)
+                                    </x-form.check>
                                 </div>
                             </x-form.campo>
 

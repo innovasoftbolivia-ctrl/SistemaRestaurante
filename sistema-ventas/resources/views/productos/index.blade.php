@@ -150,7 +150,15 @@
                                         {{ Config::cantidad($producto->stock_actual) }}
                                         {{ $producto->unidadMedida?->codigo }}
                                     </span>
-                                    <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                    {{-- Cuántas cajas es eso. Se calcula del stock, así
+                                         que baja solo a medida que el mostrador
+                                         despacha unidades. --}}
+                                    @if ($producto->stock_desglosado)
+                                        <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                            {{ $producto->stock_desglosado }}
+                                        </span>
+                                    @endif
+                                    <span class="block text-theme-xs text-gray-400 dark:text-gray-500">
                                         mín. {{ Config::cantidad($producto->stock_minimo) }}
                                     </span>
                                 </td>

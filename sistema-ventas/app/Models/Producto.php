@@ -169,9 +169,14 @@ class Producto extends Model
      * Cómo se dice una cantidad en el almacén: 77 unidades de un producto que
      * viene en cajas de 24 son «3 cajas y 5 sueltas».
      *
-     * Devuelve null si el producto no viene en empaque o si no llega ni a un
-     * empaque completo: ahí el número suelto ya se entiende solo, y añadir
-     * «0 cajas y 5 sueltas» sería ruido.
+     * Se calcula del stock, no se guarda: por eso las cajas bajan solas a
+     * medida que el mostrador despacha unidades. Vender 24 de un producto que
+     * viene de 24 descuenta una caja entera sin que nadie haga nada.
+     *
+     * Por debajo de un empaque completo dice solo las sueltas —«5 sueltas»—,
+     * porque «0 cajas y 5 sueltas» es la misma información con una cifra de
+     * más. Devuelve null si el producto no viene en empaque o si no queda
+     * stock: de un agotado no hay nada que desglosar.
      */
     public function desglosar(int|float|string|null $cantidad): ?string
     {
@@ -180,18 +185,23 @@ class Producto extends Model
         }
 
         $cantidad = (float) $cantidad;
-        $enteros = (int) floor($cantidad / $this->contenido_empaque);
 
-        if ($enteros < 1) {
+        if ($cantidad <= 0) {
             return null;
         }
 
+        $enteros = (int) floor($cantidad / $this->contenido_empaque);
         $sueltas = round($cantidad - $enteros * $this->contenido_empaque, 3);
-        $texto = $enteros.' '.($enteros === 1 ? mb_strtolower($this->nombre_empaque) : $this->empaque_plural);
 
-        return $sueltas > 0
-            ? $texto.' y '.Config::cantidad($sueltas).' '.($sueltas === 1.0 ? 'suelta' : 'sueltas')
-            : $texto;
+        $texto = $enteros > 0
+            ? $enteros.' '.($enteros === 1 ? mb_strtolower($this->nombre_empaque) : $this->empaque_plural)
+            : null;
+
+        $resto = $sueltas > 0
+            ? Config::cantidad($sueltas).' '.($sueltas === 1.0 ? 'suelta' : 'sueltas')
+            : null;
+
+        return $texto && $resto ? "{$texto} y {$resto}" : ($texto ?? $resto);
     }
 
     /** El desglose del stock que hay ahora mismo. */
