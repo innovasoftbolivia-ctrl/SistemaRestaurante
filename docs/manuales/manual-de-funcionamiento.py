@@ -566,13 +566,20 @@ aviso('El stock no está en esta lista, y es a propósito:',
       'sumarle unidades a un producto que ya existe se usa el módulo de Inventario, no se '
       'vuelve a dar de alta: el sistema rechaza el código repetido y ofrece el atajo.')
 
-doc.add_heading('Las cuatro formas de mover el stock', level=3)
+doc.add_heading('Las formas de mover el stock', level=3)
 tabla(['Movimiento', 'Origen', 'Efecto', 'Quién'],
       [['Venta', 'El cobro en el mostrador', 'Baja', 'Cajero o administrador'],
        ['Devolución o anulación', 'La corrección de una venta', 'Sube', 'Administrador'],
-       ['Ingreso de mercadería', 'La compra al proveedor', 'Sube', 'Almacenero o administrador'],
-       ['Ajuste', 'El conteo físico, la merma, la rotura', 'Sube o baja', 'Almacenero o administrador']],
+       ['Ingreso de mercadería', 'La compra al proveedor, de a un producto', 'Sube', 'Almacenero o administrador'],
+       ['Compra', 'La factura del proveedor, con todas sus líneas', 'Sube', 'Almacenero o administrador'],
+       ['Devolución al proveedor', 'Lo fallado, vencido o equivocado que se va de vuelta', 'Baja', 'Almacenero o administrador'],
+       ['Reposición del proveedor', 'El reemplazo que trae contra esa devolución', 'Sube', 'Almacenero o administrador'],
+       ['Ajuste', 'El conteo físico, la merma, la rotura, la baja por vencimiento', 'Sube o baja', 'Almacenero o administrador']],
       anchos=[3.8, 4.4, 3.2, 4.1])
+
+p('Cada uno tiene su propio origen en el kardex, y eso no es burocracia: un ajuste explica un '
+  'descuadre —merma, rotura, conteo— y una devolución al proveedor explica que algo se fue de '
+  'vuelta por donde vino. Mezclarlos haría imposible contar después cuánto se devolvió y por qué.')
 
 p('El ingreso de mercadería pide cantidad y, opcionalmente, proveedor, número de guía o factura y '
   'costo unitario. El ajuste pide el stock realmente contado y un motivo obligatorio: el sistema '
@@ -623,7 +630,93 @@ aviso('Dos puertas, una sola regla:',
       'entera, ni cantidades en cero, ni productos descatalogados, y el motivo del ajuste sigue '
       'siendo obligatorio.')
 
-doc.add_heading('4.11 Categorías, unidades y proveedores', level=2)
+doc.add_heading('4.11 Compras', level=2)
+p('La factura del proveedor, entera. Convive con «Ingresar mercadería» y no lo reemplaza: aquella '
+  'es la vía de una línea —llegó una caja suelta, no hay papel que archivar— y esta es la del '
+  'documento completo, cuando el distribuidor deja una factura de treinta líneas.')
+p('Se elige el proveedor y se anota el número del papel. Cada producto se busca por nombre, código '
+  'interno o código de barras, y se agrega como una línea con su cantidad y su costo. Si el '
+  'producto todavía no existe, o es la primera vez que se le compra a ese proveedor, los dos se '
+  'dan de alta sin salir de la pantalla y sin perder las líneas ya cargadas.')
+aviso('Cuadrar contra el papel:',
+      'antes de guardar se puede escribir el total que dice la factura. Si no coincide con lo que '
+      'suma el sistema, lo avisa y dice por cuánto. Es el momento de encontrar un cero de más — no '
+      'el mes siguiente, cuando el stock ya no cuadra y nadie sabe por qué.')
+p('Al guardar, cada línea entra al stock por el mismo camino que un ingreso suelto y deja su '
+  'movimiento en el kardex. La compra queda como documento consultable, con sus líneas y su total. '
+  'No se edita ni se borra: ya movió el stock, y una corrección es un ajuste de inventario.')
+p('No tiene permiso propio: quien puede ingresar mercadería puede registrar la compra, porque es '
+  'el mismo acto.')
+
+doc.add_heading('4.12 Devoluciones a proveedor', level=2)
+p('Mercadería que vuelve al distribuidor: vino fallada, vino equivocada o se venció en el estante. '
+  'No es lo mismo que el módulo de Devoluciones, que es del cliente hacia la tienda: una suma al '
+  'stock y la otra lo resta, una la firma el cajero y la otra el almacenero.')
+p('Toda devolución sale de la factura por la que entró esa mercadería. Se llega por tres caminos '
+  'al mismo formulario: «Registrar devolución» en el listado, que empieza preguntando de qué '
+  'factura; el botón dentro de la propia compra; y el atajo desde Vencimientos, que salta a la '
+  'factura de la tanda caducada con la cantidad y el motivo ya puestos.')
+
+doc.add_heading('El motivo', level=3)
+p('Cuatro valores y no texto libre: vino fallado, vencido o por vencer, no es lo que se pidió, u '
+  'otro. Es lo que después permite contar. «Este trimestre devolví Bs 900 por vencimiento» es una '
+  'conversación con el proveedor distinta de «devolví Bs 900 porque vino fallado», y un campo de '
+  'texto las volvería incontables a las dos.')
+
+doc.add_heading('En qué se quedó con el proveedor', level=3)
+tabla(['Acuerdo', 'Qué pasa con el stock', 'Qué queda pendiente'],
+      [['Ya lo repuso', 'Sale lo fallado y entra lo repuesto en el mismo documento: queda igual que antes', 'Nada'],
+       ['Lo va a reponer', 'Baja hoy, y vuelve a subir cuando llegue el reemplazo', 'El proveedor debe mercadería, y el sistema lo dice'],
+       ['Nota de crédito', 'Baja y no vuelve nada', 'Queda a cuenta con el proveedor']],
+      anchos=[3.2, 7.3, 5.0])
+p('El estado de en medio es el que hacía falta. Con un sí o un no, «me lo trae la semana que '
+  'viene» era indistinguible de «no me trae nada»: la mercadería salía, el reemplazo terminaba '
+  'cargado como un ingreso suelto, y nadie podía responder qué le debían todavía.')
+
+doc.add_heading('La reposición', level=3)
+p('El listado avisa cuántas devoluciones esperan mercadería, y desde cada una se anota lo que el '
+  'proveedor va trayendo. Puede llegar en partes —trae 6 de las 10 que debe— porque así llega. La '
+  'devolución deja de esperar cuando el saldo llega a cero, no cuando alguien lo declara.')
+
+aviso('Los topes los lleva el sistema:',
+      'no se puede devolver más de lo que trajo esa línea de la factura, ni reponer más de lo que '
+      'se devolvió. El acumulado vive en la propia línea, y lo comprueban tanto el servicio como '
+      'una restricción de la base de datos.')
+
+doc.add_heading('4.13 Vencimientos', level=2)
+p('El stock es un solo número por producto, y con un solo número no hay forma de saber qué caduca: '
+  'las 245 unidades pueden ser 120 que vencen el 15/10 y 125 que vencen el 30/11. Este módulo '
+  'parte ese saldo por fecha, en tandas.')
+p('El control es producto por producto y no un interruptor general: los comestibles lo llevan, el '
+  'detergente no. Pedirle una fecha a algo que no caduca cada vez que llega es la forma más rápida '
+  'de que alguien escriba cualquier cosa con tal de seguir.')
+
+doc.add_heading('Primero sale lo que vence antes', level=3)
+p('El mostrador despacha siempre de la tanda que caduca primero. Es lo que hace que la alerta sirva '
+  'para algo: si descontara de cualquier tanda, «me quedan 40 por vencer» no querría decir nada. '
+  'Las tandas sin fecha conocida van al final, porque algo que no se sabe cuándo vence no puede '
+  'pasar delante de algo que sí.')
+p('Las tandas NO son una segunda contabilidad. El stock del producto sigue mandando —es el que '
+  'valida la venta y el que sale en los reportes— y la suma de las tandas tiene que dar esa misma '
+  'cifra.')
+
+doc.add_heading('Qué se puede hacer desde la pantalla', level=3)
+tabla(['Acción', 'Cuándo aparece', 'Qué hace'],
+      [['Devolver', 'La tanda entró por una factura a la que le queda algo por devolver', 'Salta a esa compra con la cantidad, la tanda y el motivo puestos'],
+       ['Dar de baja', 'La tanda ya venció', 'Descuenta esa tanda del inventario con un ajuste, y escribe el motivo solo'],
+       ['Nada', 'Todavía no venció y no hay factura detrás', 'Esa mercadería aún se vende: no hay nada que hacer']],
+      anchos=[2.6, 6.4, 6.5])
+p('«Dar de baja» descuenta esa tanda y no la que tocaría por orden de salida: se está tirando un '
+  'lote concreto porque venció. Y el ajuste normal pide el stock contado —«24 en total menos 4 '
+  'vencidas = 20»—, que es justo donde alguien escribe 0 y se lleva por delante las 20 buenas; aquí '
+  'la cantidad sale de la propia tanda.')
+
+aviso('Mientras no se saque, se puede vender:',
+      'lo vencido sigue contando como stock hasta que alguien lo dice. El mostrador lo deja cobrar '
+      'y el reporte de inventario lo sigue valorando. Darlo de baja no es borrar un número: es '
+      'dejar escrito qué se tiró, cuándo y quién.')
+
+doc.add_heading('4.14 Categorías, unidades y proveedores', level=2)
 tabla(['Módulo', 'Qué define', 'Nota'],
       [['Categorías', 'Cómo se agrupan los productos.', 'Ordena el catálogo y los filtros del mostrador.'],
        ['Unidades de medida', 'Unidad, paquete, kilo, litro.', 'Define si el producto admite cantidades con decimales.'],
@@ -632,7 +725,7 @@ tabla(['Módulo', 'Qué define', 'Nota'],
 p('En los tres casos, un registro que ya está en uso no se borra: se desactiva.')
 
 # ---- Reportes
-doc.add_heading('4.12 Reportes', level=2)
+doc.add_heading('4.15 Reportes', level=2)
 
 doc.add_heading('Reporte de ventas', level=3)
 p('Se pide un rango de fechas, con períodos rápidos para hoy, los últimos 7 días, los últimos 30, '
@@ -651,7 +744,7 @@ vineta('qué productos llegaron al mínimo y conviene reponer.')
 p('Los dos reportes se descargan en Excel y en PDF, con el mismo rango que esté en pantalla.')
 
 # ---- Personal
-doc.add_heading('4.13 Empleados y cargos', level=2)
+doc.add_heading('4.16 Empleados y cargos', level=2)
 p('El empleado es la persona; el usuario es su llave para entrar. Son cosas distintas: puede haber '
   'un empleado sin cuenta —alguien que trabaja pero no usa el sistema— y no al revés.')
 tabla(['Campo', 'Regla'],
@@ -666,7 +759,7 @@ tabla(['Campo', 'Regla'],
 p('Al cesar a un empleado, su cuenta de acceso se desactiva sola. Un empleado cesado se puede '
   'reactivar más adelante sin perder su historial.')
 
-doc.add_heading('4.14 Usuarios y roles', level=2)
+doc.add_heading('4.17 Usuarios y roles', level=2)
 tabla(['Campo', 'Regla'],
       [['Empleado', 'Obligatorio, tiene que estar activo, y no puede tener ya otra cuenta.'],
        ['Nombre de usuario', 'De 3 a 40 caracteres, en minúsculas, único en el sistema.'],
@@ -676,7 +769,7 @@ tabla(['Campo', 'Regla'],
       anchos=[5.0, 10.5])
 p('En Roles se marcan los permisos uno por uno. Un rol que ya tiene cuentas asignadas no se borra.')
 
-doc.add_heading('4.15 Mi perfil', level=2)
+doc.add_heading('4.18 Mi perfil', level=2)
 p('Donde cada persona cambia su propia contraseña. Pide la contraseña actual antes de aceptar la '
   'nueva.')
 

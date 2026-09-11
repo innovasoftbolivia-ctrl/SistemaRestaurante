@@ -490,9 +490,75 @@ p('Una compra registrada no se edita ni se borra: ya movió el stock. Si una lí
 p('«Ingresar mercadería» no desaparece: sigue siendo el camino corto cuando llega una caja suelta '
   'y no hay factura que archivar.', cursiva=True)
 
-doc.add_heading('Ejercicio 10 — Los reportes', level=2)
+doc.add_heading('Ejercicio 10 — Ver qué se te vence', level=2)
+p('El stock es un solo número por producto, y con un solo número no hay forma de saber qué caduca: '
+  'los 262 chizitos pueden ser 200 que vencen en noviembre y 62 que vencieron la semana pasada. El '
+  'sistema parte ese saldo por fecha.')
+rico([('Entra como ', False), ('almacen / almacen123', True), (' y ve a Almacén → Vencimientos.', False)])
+p('Arriba, cuatro cifras: lo ya vencido y cuánta plata tienes parada ahí, lo que caduca en los '
+  'próximos 30 días, las unidades que nadie fechó, y cuántos productos llevan control.')
+numerada('Cambia la ventana: 7, 15, 30, 60 o 90 días. Lo ya vencido sale siempre, elijas lo que elijas.')
+numerada('Mira la última columna de cada fila. No todas ofrecen lo mismo, y eso es a propósito.')
+rico([('«Devolver» ', True),
+      ('aparece cuando esa tanda entró por una factura a la que todavía le queda algo por devolver. '
+       'Te lleva al formulario de esa compra con la cantidad y el motivo ya puestos: no tienes que '
+       'acordarte de con qué papel llegó.', False)])
+rico([('«Dar de baja» ', True),
+      ('aparece en lo ya vencido. Saca esas unidades del inventario de un clic, sin que tengas que '
+       'calcular cuánto queda: el sistema descuenta esa tanda y nada más.', False)])
+p('Si una fila no ofrece nada es porque todavía no venció y no hay factura contra la que reclamar: '
+  'esa mercadería aún se vende.', cursiva=True)
+numerada('Pulsa «Dar de baja» en algo vencido. Lee lo que dice el aviso antes de confirmar: qué producto, qué tanda, cuántas unidades y cuánto cuesta al costo.')
+rico([('Qué comprobar: ', True),
+      ('la fila desaparece de la lista, el stock del producto baja exactamente esa cantidad, y en '
+       'Almacén → Movimientos queda un ajuste con el motivo escrito solo: «Baja por vencimiento, '
+       'lote L06452, venció el 22/07/2026». No lo tecleas tú.', False)])
+aviso('Por qué importa que se dé de baja',
+      'Mientras no lo hagas, el sistema cree que esas unidades se pueden vender: el mostrador te '
+      'las deja cobrar y el reporte de inventario las sigue valorando. Darlas de baja no es borrar '
+      'un número, es dejar escrito qué se tiró, cuándo y quién.')
+p('El mostrador despacha siempre del lote que vence antes. Por eso lo que ves aquí es lo que de '
+  'verdad queda de esa tanda, y no una lista que se va quedando vieja.', cursiva=True)
+
+doc.add_heading('Ejercicio 11 — Devolverle mercadería al proveedor', level=2)
+p('Vino fallado, vino equivocado o se venció en el estante. Antes la única salida era un ajuste con '
+  'el motivo a mano, que se mezclaba con la merma y no decía de qué factura salió.')
+rico([('Como ', False), ('almacen', True),
+      (', ve a Almacén → Devoluciones a proveedor y pulsa «Registrar devolución».', False)])
+numerada('Primero te pregunta de qué factura. Busca por número o por proveedor: solo salen las compras a las que todavía les queda algo por devolver.')
+numerada('Elige el motivo: vino fallado, vencido, no es lo que se pidió, u otro.')
+numerada('Contesta «¿En qué quedaron con el proveedor?». Son tres respuestas distintas y conviene entenderlas.')
+tabla(['En qué quedaron', 'Qué hace el sistema'],
+      [['Ya lo repuso', 'Sale lo fallado y entra lo repuesto en el mismo documento. El stock queda como estaba, pero el problema queda registrado.'],
+       ['Lo va a reponer', 'El stock baja hoy, y la devolución queda DEBIENDO hasta que llegue el reemplazo.'],
+       ['Nota de crédito', 'El stock baja y no vuelve nada: queda a cuenta con el proveedor.']],
+      anchos=[4.0, 11.5])
+numerada('Pon cuánto vuelve de cada producto. Lo que no marques se queda como está.')
+p('Si el producto lleva control de vencimiento, puedes elegir DE QUÉ TANDA sale. Es lo que hace que '
+  'devolver lo vencido devuelva ese lote y no el que tocaría por orden de salida.', cursiva=True)
+numerada('Guarda.')
+rico([('Qué comprobar: ', True),
+      ('el stock baja, y en Almacén → Movimientos aparece una salida con origen «Devolución al '
+       'proveedor» — no un ajuste. Es lo que después permite contar cuánto devolviste y por qué.', False)])
+
+doc.add_heading('Ejercicio 11 bis — Cuando el proveedor trae el cambio', level=2)
+p('Si elegiste «Lo va a reponer», el listado de devoluciones te avisa arriba: «2 devoluciones '
+  'esperan que el proveedor reponga la mercadería», con un botón para ver solo esas.')
+numerada('Abre una de ellas. Verás «El proveedor debe» y, en cada línea, cuánto falta.')
+numerada('Abajo hay un formulario: «El proveedor trajo el reemplazo». Pon lo que llegó y el número de la guía.')
+rico([('Puede venir en partes: ', True),
+      ('si debía 10 y trajo 6, pones 6. La devolución sigue esperando las 4 que faltan, y lo dice.', False)])
+numerada('Guarda.')
+rico([('Qué comprobar: ', True),
+      ('la mercadería entra al stock contra esa misma devolución, y la línea pasa a decir '
+       '«completo» cuando ya no falta nada. En el kardex quedan la salida con la nota de crédito y '
+       'las entradas con sus guías, todas colgando del mismo documento.', False)])
+p('La devolución deja de esperar sola, cuando el saldo llega a cero. No hay un botón de «marcar '
+  'como repuesta» que permita cerrarla con mercadería todavía en la calle.', cursiva=True)
+
+doc.add_heading('Ejercicio 12 — Los reportes', level=2)
 rico([('Con ', False), ('admin', True), (' o ', False), ('almacen', True), (', ve a Reportes.', False)])
-p('En «Ventas», pon el rango del 01/06/2026 al 09/09/2026 y aplica. Verás los cuatro meses de '
+p('En «Ventas», pon el rango del 01/06/2026 a hoy y aplica. Verás los tres meses y medio de '
   'operación cargados en la demo:')
 vineta('cuánto se vendió y cuánto se ganó aproximadamente;')
 vineta('operaciones, ticket promedio, devoluciones y anulaciones;')
@@ -505,7 +571,7 @@ rico([('Qué comprobar: ', True),
       ('los botones Excel y PDF de arriba a la derecha. Descargan el reporte del rango que tengas '
        'puesto en pantalla, listo para pasar al contador.', False)])
 
-doc.add_heading('Ejercicio 11 — Cerrar la caja y hacer el arqueo', level=2)
+doc.add_heading('Ejercicio 13 — Cerrar la caja y hacer el arqueo', level=2)
 rico([('Esto solo lo puede hacer ', False), ('admin', True), ('.', False)])
 numerada('Ve a Caja y entra al turno abierto.')
 numerada('Mira «Efectivo esperado»: es el monto inicial, más las ventas en efectivo, menos las devoluciones, más o menos los movimientos de caja.')
@@ -518,7 +584,7 @@ p('Prueba también «Registrar movimiento» antes de cerrar: sirve para el diner
   'del cajón sin ser una venta, como pagarle al del agua o retirar efectivo a mitad del turno.',
   cursiva=True)
 
-doc.add_heading('Ejercicio 12 — Probar que los permisos funcionan', level=2)
+doc.add_heading('Ejercicio 14 — Probar que los permisos funcionan', level=2)
 p('Este es el ejercicio que más tranquiliza a un dueño.')
 rico([('Entra como ', False), ('cajero1 / cajero123', True), (' e intenta:', False)])
 vineta('ver los reportes → no aparecen en el menú;')
@@ -560,6 +626,8 @@ doc.add_heading('4.4 Almacén', level=2)
 tabla(['Módulo', 'Para qué sirve'],
       [['Inventario', 'La pantalla del depósito: qué hay, qué falta y qué se agotó. Desde cada fila se ingresa mercadería o se ajusta el stock por conteo, sin tener que entrar al producto.'],
        ['Compras', 'La factura del proveedor, entera: todas sus líneas de una vez, con el total para cuadrar contra el papel antes de guardar. Queda como documento y cada línea deja su kardex.'],
+       ['Devoluciones a proveedor', 'Lo que se va de vuelta: fallado, vencido o equivocado. Guarda el motivo, la tanda que salió y en qué se quedó con el proveedor, incluido lo que todavía le debe reponer.'],
+       ['Vencimientos', 'Qué caduca y cuándo, con el valor parado ahí. Desde cada fila se devuelve la tanda contra su factura o se da de baja lo ya vencido.'],
        ['Movimientos', 'El historial completo del almacén: cada entrada, salida y ajuste, con su responsable. Filtra por producto, tipo, responsable y fechas.']],
       anchos=[3.6, 11.9])
 
@@ -615,6 +683,12 @@ vineta('todo movimiento guarda el stock anterior y el resultante, así que la cu
        'rehacer desde el principio.',
        'El kardex es la verdad. ')
 vineta('un ajuste sin explicación no se puede guardar.', 'Un ajuste exige motivo. ')
+vineta('en los productos que llevan fecha, el stock está repartido en tandas y siempre se despacha '
+       'la que vence antes. Por eso «me quedan 40 por vencer» quiere decir algo.',
+       'Sale primero lo que caduca antes. ')
+vineta('no se puede devolver más de lo que trajo esa factura, ni reponer más de lo que se devolvió. '
+       'El sistema lleva la cuenta y te frena.',
+       'Las devoluciones tienen tope. ')
 
 doc.add_heading('5.3 Sobre los documentos', level=2)
 vineta('un comprobante se anula o se sustituye, y la cadena queda visible. Nunca desaparece.',
@@ -639,44 +713,53 @@ salto()
 doc.add_heading('6. Los datos que ya trae la demo', level=1)
 
 p('Para que el sistema se pueda recorrer con contenido y no con pantallas vacías, viene cargado '
-  'con cuatro meses de operación simulada, del 1 de junio al 9 de septiembre de 2026.')
+  'con más de tres meses de operación, desde principios de junio hasta hoy.')
 
 tabla(['Qué', 'Cuánto'],
-      [['Ventas registradas', '1.085, repartidas en cuatro meses'],
-       ['Comprobantes emitidos', '1.085 (recibos y facturas)'],
+      [['Ventas registradas', '1.089, repartidas en tres meses y medio'],
+       ['Comprobantes emitidos', '1.089 (recibos y facturas)'],
        ['Turnos de caja cerrados', '87, con su arqueo y su diferencia'],
-       ['Devoluciones', '25'],
-       ['Movimientos de inventario', '2.418'],
-       ['Registros de auditoría', '1.301'],
-       ['Productos con foto', '14'],
-       ['Clientes', '6 (4 personas y 2 empresas)'],
+       ['Devoluciones de cliente', '25'],
+       ['Compras al proveedor', '8 facturas, repartidas en las últimas seis semanas'],
+       ['Devoluciones al proveedor', '5 — una por cada motivo, y dos esperando reposición'],
+       ['Tandas con fecha de vencimiento', '34, algunas ya vencidas y otras por vencer'],
+       ['Movimientos de inventario', '2.617'],
+       ['Productos', '14, todos con foto real'],
+       ['Clientes con historial', '6 (4 personas y 2 empresas)'],
        ['Empleados', '3'],
        ['Proveedores', '2'],
        ['Cajas del local', '1']],
       anchos=[6.0, 9.5])
 
+p('El catálogo trae además cientos de productos bolivianos reales —arroz, aceites, gaseosas, '
+  'cervezas— que están descatalogados en esta demostración porque todavía no tienen foto. Se ven '
+  'poniendo el filtro «Estado» en «Descatalogados», dentro de Catálogo → Productos.', cursiva=True)
+
 doc.add_heading('6.1 El catálogo cargado', level=2)
-p('Todos con marcas bolivianas y foto real:')
+p('Todos con marcas bolivianas y foto real. La columna «Vence» dice cuáles llevan control por '
+  'tandas: los comestibles sí, la limpieza y la higiene no, porque el detergente no caduca y '
+  'pedirle una fecha cada vez que llega es la forma más rápida de que alguien escriba cualquier '
+  'cosa con tal de seguir.')
 
-tabla(['Código', 'Producto', 'Precio', 'Stock', 'Mínimo'],
-      [['P-1001', 'Chocolate Breick Azúcar 0% con Leche 100 g', 'Bs 12,00', '12', '6'],
-       ['P-1002', 'Chocolate El Ceibo con Pasas de Uva 100 g', 'Bs 18,00', '22', '6'],
-       ['P-1003', 'Chocolate Sublime Clásico con Maní 26 g', 'Bs 3,50', '52', '12'],
-       ['P-1004', 'Bombones Para Ti con Crema 150 g', 'Bs 35,00', '23', '3'],
-       ['P-1005', 'Chizitos La Estrella Queso 65 g', 'Bs 3,50', '55', '12'],
-       ['P-1006', 'Jabón Lux Rosas Francesas 125 g', 'Bs 5,50', '29', '9'],
-       ['P-1007', 'Papel Higiénico Elite Dúo x4 rollos', 'Bs 14,00', '25', '6'],
-       ['P-1008', 'Shampoo Sedal Rizos Definidos 340 ml', 'Bs 28,00', '15', '4'],
-       ['P-1009', 'Pasta Dental Colgate Triple Acción 90 g', 'Bs 14,50', '19', '6'],
-       ['P-1010', 'Detergente Patito Limón 1600 g', 'Bs 22,00', '24', '4'],
-       ['P-1011', 'Lavavajillas OLA Limón 800 ml', 'Bs 14,00', '23', '6'],
-       ['P-1012', 'Crema Lavavajilla Sapolio Limón 360 g', 'Bs 11,00', '27', '6'],
-       ['P-1013', 'Papaya Salvietti 2 L', 'Bs 12,00', '39', '9'],
-       ['P-1014', 'Papaya Salvietti 500 ml', 'Bs 5,00', '53', '12']],
-      anchos=[2.0, 7.6, 2.1, 1.9, 1.9])
+tabla(['Código', 'Producto', 'Precio', 'Stock', 'Mínimo', 'Vence'],
+      [['P-1001', 'Chocolate Breick Azúcar 0% con Leche 100 g', 'Bs 12,00', '137', '6', 'Sí'],
+       ['P-1002', 'Chocolate El Ceibo con Pasas de Uva 100 g', 'Bs 18,00', '62', '6', 'Sí'],
+       ['P-1003', 'Chocolate Sublime Clásico con Maní 26 g', 'Bs 3,50', '147', '12', 'Sí'],
+       ['P-1004', 'Bombones Para Ti con Crema 150 g', 'Bs 35,00', '107', '3', 'Sí'],
+       ['P-1005', 'Chizitos La Estrella Queso 65 g', 'Bs 3,50', '262', '12', 'Sí'],
+       ['P-1006', 'Jabón Lux Rosas Francesas 125 g', 'Bs 5,50', '66', '9', 'No'],
+       ['P-1007', 'Papel Higiénico Elite Dúo x4 rollos', 'Bs 14,00', '70', '6', 'No'],
+       ['P-1008', 'Shampoo Sedal Rizos Definidos 340 ml', 'Bs 28,00', '153', '4', 'No'],
+       ['P-1009', 'Pasta Dental Colgate Triple Acción 90 g', 'Bs 14,50', '19', '6', 'No'],
+       ['P-1010', 'Detergente Patito Limón 1600 g', 'Bs 22,00', '122', '4', 'No'],
+       ['P-1011', 'Lavavajillas OLA Limón 800 ml', 'Bs 14,00', '72', '6', 'No'],
+       ['P-1012', 'Crema Lavavajilla Sapolio Limón 360 g', 'Bs 11,00', '169', '6', 'No'],
+       ['P-1013', 'Papaya Salvietti 2 L', 'Bs 12,00', '128', '9', 'Sí'],
+       ['P-1014', 'Papaya Salvietti 500 ml', 'Bs 5,00', '114', '12', 'Sí']],
+      anchos=[1.8, 7.0, 2.0, 1.6, 1.6, 1.5])
 
-p('Las categorías Abarrotes y Cigarrillos están creadas pero vacías: sirven para probar la carga '
-  'de un producto nuevo.', cursiva=True)
+p('El stock que ves aquí es el del día en que se armó esta demostración: al recorrer los '
+  'ejercicios lo vas a mover, y eso está bien.', cursiva=True)
 
 doc.add_heading('6.2 Los clientes de prueba', level=2)
 tabla(['Cliente', 'Tipo', 'Documento', 'Recibe'],
@@ -688,7 +771,9 @@ tabla(['Cliente', 'Tipo', 'Documento', 'Recibe'],
        ['Comedor Popular El Sabor Ltda.', 'Empresa', 'NIT 1098765432', 'Factura']],
       anchos=[6.2, 2.4, 3.9, 3.0])
 
-p('Quien no se identifica se cobra como «Cliente varios» y recibe recibo.', cursiva=True)
+p('Quien no se identifica se cobra como «Cliente varios» y recibe recibo. Estos seis son los que '
+  'tienen historial; el catálogo de clientes trae además cinco fichas de la instalación base, sin '
+  'ventas todavía.', cursiva=True)
 
 doc.add_heading('6.3 Medios de pago', level=2)
 tabla(['Medio de pago', '¿Entra al arqueo de caja?'],

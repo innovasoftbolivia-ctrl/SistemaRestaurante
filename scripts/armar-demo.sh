@@ -85,6 +85,23 @@ app/Models/CobroQr.php
 config/qr.php
 resources/js/qr.js
 resources/views/inventario/index.blade.php
+app/Http/Controllers/CompraController.php
+app/Http/Controllers/DevolucionCompraController.php
+app/Http/Controllers/VencimientoController.php
+app/Services/Compras.php
+app/Services/DevolucionesCompra.php
+app/Services/Lotes.php
+app/Services/Costos.php
+app/Models/Compra.php
+app/Models/DevolucionCompra.php
+app/Models/Lote.php
+app/Support/Palabras.php
+app/Http/Controllers/Concerns/IngresaPorEmpaque.php
+resources/views/compras/create.blade.php
+resources/views/devoluciones-compra/create.blade.php
+resources/views/devoluciones-compra/elegir.blade.php
+resources/views/vencimientos/index.blade.php
+resources/views/components/form/cantidad-empaque.blade.php
 LISTA
 
 # Estar en el disco no alcanza: la clase tiene que estar en el MAPA, porque
@@ -100,7 +117,7 @@ foreach (array_slice($argv, 2) as $clase) {
 "; $faltan++; }
 }
 exit($faltan > 0 ? 1 : 0);
-' "$BUILD"     'App\Http\Controllers\InventarioController'     'App\Http\Controllers\CobroQrController'     'App\Services\CobrosQr'     'App\Services\Qr\QrSimulado'     'App\Models\CobroQr' || FALTA=1
+' "$BUILD"     'App\Http\Controllers\InventarioController'     'App\Http\Controllers\CobroQrController'     'App\Services\CobrosQr'     'App\Services\Qr\QrSimulado'     'App\Models\CobroQr'     'App\Http\Controllers\CompraController'     'App\Http\Controllers\DevolucionCompraController'     'App\Http\Controllers\VencimientoController'     'App\Services\Compras'     'App\Services\DevolucionesCompra'     'App\Services\Lotes'     'App\Services\Costos'     'App\Models\DevolucionCompra'     'App\Models\Lote'     'App\Support\Palabras' || FALTA=1
 
 [ -e "$BUILD/public/hot" ] && {
     echo "   VIAJA public/hot — la demo cargaría el JavaScript de localhost"
