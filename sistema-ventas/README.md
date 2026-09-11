@@ -180,6 +180,21 @@ php artisan storage:link
 
 Ese enlace es el que hace visibles las fotos de los productos. Se crea una sola vez.
 
+Y, **solo para una base de demostración**, la historia del almacén:
+
+```bash
+php artisan db:seed --class=DemostracionSeeder
+```
+
+El catálogo de `02_datos_iniciales.sql` deja los productos con stock pero sin pasado: cero
+compras, cero devoluciones y ningún lote, con lo que las tres pantallas del almacén se ven
+vacías. Este seeder enciende el control de vencimiento en las categorías que vencen —no en
+limpieza ni higiene—, reparte el stock que ya existe en tandas con fechas escalonadas (incluidas
+algunas ya vencidas y algunas sin fecha), y registra ocho facturas de proveedor del último mes y
+medio con cinco devoluciones, una por cada motivo. Todo pasa por los servicios, así que el kardex
+y los lotes cuadran. No va en `DatabaseSeeder` a propósito: una instalación real no quiere
+inventario inventado.
+
 #### 3. Levantar
 
 En dos terminales:
