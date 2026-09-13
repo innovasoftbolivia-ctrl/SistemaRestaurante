@@ -583,7 +583,7 @@ CREATE TABLE comprobantes (
     impuesto                DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     total                   DECIMAL(12,2) GENERATED ALWAYS AS
                             (ROUND(subtotal - descuento + impuesto, 2)) STORED,
-    moneda                  VARCHAR(3)   NOT NULL DEFAULT 'PEN',
+    moneda                  VARCHAR(3)   NOT NULL DEFAULT 'BOB',
     -- estado del documento
     estado                  ENUM('EMITIDO','ANULADO','SUSTITUIDO') NOT NULL DEFAULT 'EMITIDO',
     anulado_en              DATETIME     NULL,
@@ -1214,7 +1214,7 @@ BEGIN
     -- correlativo con bloqueo de fila
     CALL sp_siguiente_comprobante(p_serie_id, v_numero, p_numero_completo);
 
-    SET v_moneda = IFNULL((SELECT valor FROM configuracion WHERE clave = 'moneda_codigo'), 'PEN');
+    SET v_moneda = IFNULL((SELECT valor FROM configuracion WHERE clave = 'moneda_codigo'), 'BOB');
 
     -- Venta al paso: sin cliente registrado el documento sale a nombre genérico.
     SET v_generico = IFNULL((SELECT valor FROM configuracion

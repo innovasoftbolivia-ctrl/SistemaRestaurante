@@ -329,7 +329,7 @@ class ReglasEnPhp
             'subtotal' => $venta->subtotal,
             'descuento' => $venta->descuento,
             'impuesto' => $venta->impuesto,
-            'moneda' => self::config('moneda_codigo', 'PEN'),
+            'moneda' => self::config('moneda_codigo', 'BOB'),
             'emitido_por' => $venta->usuario_id,
             'fecha_emision' => now(),
         ];
