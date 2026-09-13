@@ -61,6 +61,7 @@
                 <x-common.page-breadcrumb :page-title="$title ?? ''" :trail="$trail ?? []" />
 
                 <x-common.flash />
+                <x-common.caja-olvidada />
 
                 @yield('content')
             </main>
