@@ -23,7 +23,7 @@ class Costos
      * Deja el costo del producto en `$costo`, si de verdad cambia.
      *
      * @param  string  $origen  De dónde viene el cambio, para la bitácora.
-     * @return array{anterior: float, nuevo: float}|null  null si no hubo cambio
+     * @return array{anterior: float, nuevo: float}|null null si no hubo cambio
      */
     public static function aplicar(Producto $producto, ?float $costo, string $origen): ?array
     {

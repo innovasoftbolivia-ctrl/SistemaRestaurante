@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Lote;
 use App\Models\Producto;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -221,7 +222,7 @@ class Lotes
      * `Producto::alertasDeStock()`: es una consulta de reporte y no necesita
      * hidratar modelos.
      */
-    public static function alertas(int $dias = self::DIAS_DE_AVISO): \Illuminate\Database\Query\Builder
+    public static function alertas(int $dias = self::DIAS_DE_AVISO): Builder
     {
         return DB::table('lotes as l')
             ->join('productos as p', 'p.id', '=', 'l.producto_id')

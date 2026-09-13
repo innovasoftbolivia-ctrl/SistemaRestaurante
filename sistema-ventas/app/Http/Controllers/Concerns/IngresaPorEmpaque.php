@@ -190,7 +190,7 @@ trait IngresaPorEmpaque
      * Lo decide una casilla y no el sistema, porque una compra puntual más cara
      * —una urgencia, un flete— no siempre debe volverse el costo de referencia.
      *
-     * @return array{anterior: float, nuevo: float}|null  null si no cambió nada
+     * @return array{anterior: float, nuevo: float}|null null si no cambió nada
      */
     protected function actualizarCosto(Request $request, Producto $producto, ?float $costo): ?array
     {

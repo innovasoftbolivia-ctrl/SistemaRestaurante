@@ -60,7 +60,7 @@ class DemostracionSeeder extends Seeder
      * con peso suficiente en los primeros para que la alerta tenga qué mostrar
      * el día de la demostración. `null` es el stock sin fecha conocida.
      *
-     * @var array<int, array{0: ?int, 1: ?int, 2: int}>  [desde, hasta, peso]
+     * @var array<int, array{0: ?int, 1: ?int, 2: int}> [desde, hasta, peso]
      */
     private const TRAMOS = [
         [-60, -2, 6],     // ya vencido: lo que hay que sacar del estante hoy
