@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\BitacoraController;
 use App\Http\Controllers\CajaController;
 use App\Http\Controllers\CajaFisicaController;
 use App\Http\Controllers\CargoController;
@@ -197,6 +198,12 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
         Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
         Route::put('configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
     });
+
+    // La bitácora, solo para leer. Permiso propio: quién hizo qué es
+    // información sensible y no tiene por qué ir con administrar el local.
+    Route::get('bitacora', [BitacoraController::class, 'index'])
+        ->middleware('permiso:bitacora.ver')
+        ->name('bitacora.index');
 
     // ---- Catálogo: productos y sus tablas de apoyo ----
     Route::middleware('permiso:productos.gestionar')->group(function () {
