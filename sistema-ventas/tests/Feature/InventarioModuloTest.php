@@ -222,6 +222,30 @@ class InventarioModuloTest extends TestCase
         $this->assertSame($antes, MovimientoInventario::where('producto_id', $producto->id)->count());
     }
 
+    /**
+     * Y quien contó se entera de que no había nada que ajustar.
+     *
+     * El controlador ya mandaba el mensaje, pero como «aviso», y ninguna vista
+     * mostraba ese tipo: el almacenero apretaba Guardar y no veía respuesta.
+     * Por eso se sigue la redirección y se exige el texto en la página, que es
+     * lo único que prueba que la persona lo ve.
+     */
+    public function test_un_conteo_que_coincide_se_lo_dice_a_quien_conto(): void
+    {
+        $producto = $this->producto();
+
+        $this->actingAs($this->almacenero())
+            ->from(route('inventario.index'))
+            ->followingRedirects()
+            ->post(route('inventario.ajuste'), [
+                'producto_id' => $producto->id,
+                'stock_contado' => (float) $producto->stock_actual,
+                'motivo' => 'Conteo sin diferencia',
+            ])
+            ->assertOk()
+            ->assertSee('El conteo coincide con el sistema');
+    }
+
     // ---------------------------------------------------------- movimientos
 
     public function test_el_listado_filtra_por_producto(): void
