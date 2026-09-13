@@ -74,10 +74,12 @@ class TomaInventarioController extends Controller
 
         $lineas = $toma->lineas()
             ->join('productos', 'productos.id', '=', 'toma_inventario_detalle.producto_id')
+            ->leftJoin('categorias', 'categorias.id', '=', 'productos.categoria_id')
             ->select('toma_inventario_detalle.*')
             ->with([
                 'producto:id,codigo,codigo_barras,nombre,categoria_id,unidad_medida_id,contenido_empaque,nombre_empaque,imagen',
                 'producto.unidadMedida:id,codigo,nombre,permite_decimal',
+                'producto.categoria:id,nombre',
                 'usuario:id,usuario',
             ])
             ->when($filtros['buscar'] !== '', fn ($q) => $q->where(function ($sub) use ($filtros) {
@@ -92,7 +94,7 @@ class TomaInventarioController extends Controller
             ->when($filtros['estado'] === 'DIFERENCIAS', fn ($q) => $q->where('toma_inventario_detalle.diferencia', '<>', 0))
             // Por categoría y nombre: es el orden en que se recorre el local,
             // góndola por góndola.
-            ->orderBy('productos.categoria_id')
+            ->orderBy('categorias.nombre')
             ->orderBy('productos.nombre')
             ->paginate(50)
             ->withQueryString();

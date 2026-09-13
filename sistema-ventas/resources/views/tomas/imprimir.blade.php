@@ -195,7 +195,7 @@
                                     {{ $diferencia === 0.0 ? 'cuadra' : ($diferencia > 0 ? '+' : '').Config::cantidad($diferencia) }}
                                 </td>
                                 <td class="derecha {{ $diferencia < 0 ? 'falta' : ($diferencia > 0 ? 'sobra' : 'tenue') }}">
-                                    {{ $diferencia === 0.0 ? '—' : number_format($linea->valor_diferencia, 2) }}
+                                    {{ $diferencia === 0.0 ? '—' : ($diferencia < 0 ? '− ' : '+ ').number_format(abs($linea->valor_diferencia), 2) }}
                                 </td>
                             @endif
                         </tr>

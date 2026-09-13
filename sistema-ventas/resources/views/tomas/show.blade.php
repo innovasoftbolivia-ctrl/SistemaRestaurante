@@ -141,6 +141,9 @@
                                 <td class="px-5 py-3">
                                     <span class="block text-theme-sm font-medium text-gray-800 dark:text-white/90">{{ $producto->nombre }}</span>
                                     <span class="text-theme-xs text-gray-500 dark:text-gray-400">
+                                        @if (! $toma->categoria_id)
+                                            {{ $producto->categoria?->nombre }} ·
+                                        @endif
                                         {{ $producto->codigo }}@if ($producto->codigo_barras) · {{ $producto->codigo_barras }}@endif
                                         · {{ $producto->unidadMedida?->codigo }}
                                         @if ($producto->tieneEmpaque())
@@ -173,7 +176,7 @@
                                     :class="diferencia === null || diferencia === 0 ? 'text-gray-500 dark:text-gray-400' : (diferencia < 0 ? 'text-error-600 dark:text-error-400' : 'text-success-700 dark:text-success-500')"
                                     x-text="diferencia === null ? '—' : (diferencia === 0 ? 'cuadra' : (diferencia > 0 ? '+' : '') + cantidad(diferencia))"></td>
                                 <td class="hidden px-5 py-3 text-right text-theme-sm tabular-nums text-gray-500 md:table-cell dark:text-gray-400"
-                                    x-text="!diferencia ? '—' : '{{ $moneda }} ' + dinero(valorDiferencia)"></td>
+                                    x-text="!diferencia ? '—' : (valorDiferencia < 0 ? '− ' : '+ ') + '{{ $moneda }} ' + dinero(Math.abs(valorDiferencia))"></td>
                             </tr>
                         @empty
                             <tr>
@@ -238,8 +241,9 @@
     </div>
 
     <script>
-        const formatoCantidad = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 3 });
-        const formatoDinero = new Intl.NumberFormat('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // Punto decimal, igual que Config::importe y Config::cantidad en el resto del sistema.
+        const formatoCantidad = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3, useGrouping: false });
+        const formatoDinero = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         function tomaInventario(resumen) {
             return {
