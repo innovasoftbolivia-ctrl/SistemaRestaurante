@@ -16,6 +16,7 @@ use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\DevolucionController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\InventarioController;
+use App\Http\Controllers\LibroVentasController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductoController;
@@ -166,6 +167,11 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
         Route::get('reportes/productos/excel', [ReporteController::class, 'productosExcel'])->name('reportes.productos.excel');
         Route::get('reportes/ventas/pdf', [ReporteController::class, 'ventasPdf'])->name('reportes.ventas.pdf');
         Route::get('reportes/productos/pdf', [ReporteController::class, 'productosPdf'])->name('reportes.productos.pdf');
+
+        // Libro de Ventas IVA: borrador para el contador (ver App\Services\LibroDeVentas).
+        Route::get('reportes/libro-ventas', [LibroVentasController::class, 'index'])->name('reportes.libro-ventas');
+        Route::get('reportes/libro-ventas/excel', [LibroVentasController::class, 'excel'])->name('reportes.libro-ventas.excel');
+        Route::get('reportes/libro-ventas/pdf', [LibroVentasController::class, 'pdf'])->name('reportes.libro-ventas.pdf');
     });
 
     // ---- Caja ----
