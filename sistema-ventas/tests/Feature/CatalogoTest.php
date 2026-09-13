@@ -650,10 +650,18 @@ class CatalogoTest extends TestCase
 
     public function test_un_producto_sin_foto_no_rompe_el_mostrador(): void
     {
+        // El código se lee de la base y no se escribe acá. Esta prueba tenía
+        // uno fijo; cuando los códigos sembrados cambiaron, la búsqueda empezó
+        // a devolver una lista vacía, `json('0.imagen')` daba null y la prueba
+        // seguía en verde sin haber mirado ningún producto.
+        $producto = $this->producto();
+
         $respuesta = $this->actingAs($this->admin())
-            ->getJson('/pos/productos?q=7750001000011')
+            ->getJson('/pos/productos?q='.$producto->codigo_barras)
             ->assertOk();
 
+        $this->assertSame($producto->id, $respuesta->json('0.id'),
+            'la búsqueda no devolvió el producto: la prueba no estaría midiendo nada');
         $this->assertNull($respuesta->json('0.imagen'));
     }
 

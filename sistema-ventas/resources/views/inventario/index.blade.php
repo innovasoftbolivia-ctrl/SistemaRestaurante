@@ -80,7 +80,7 @@
                 <div class="sm:col-span-2">
                     <x-form.campo label="Buscar" for="buscar" help="Nombre, código interno o código de barras.">
                         <x-form.input id="buscar" name="buscar" :value="$filtros['buscar']"
-                            placeholder="Arroz, P-0001 o 7750001000011" autofocus />
+                            placeholder="Arroz, P-0001 o 7790001000019" autofocus />
                     </x-form.campo>
                 </div>
 

@@ -65,7 +65,7 @@
                     help="Nombre, código interno o código de barras. Enter agrega el primero de la lista.">
                     <x-form.input id="busqueda" x-model="busqueda" @input.debounce.250ms="buscar()"
                         @keydown.enter.prevent="agregarPrimero()" @keydown.escape="resultados = []"
-                        placeholder="Arroz, P-0001 o 7750001000011" autocomplete="off" autofocus />
+                        placeholder="Arroz, P-0001 o 7790001000019" autocomplete="off" autofocus />
                 </x-form.campo>
 
                 @puede('productos.gestionar')
