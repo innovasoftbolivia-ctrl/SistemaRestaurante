@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Support\Config;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -26,6 +27,12 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // `Config` guarda los valores en memoria por petición, y en las pruebas
+        // esa memoria dura todo el proceso. Desde que la configuración se
+        // cambia por pantalla, una prueba que guarda un nombre dejaría ese
+        // nombre para la siguiente, aunque su transacción ya se haya revertido.
+        Config::olvidar();
 
         $base = DB::connection()->getDatabaseName();
 

@@ -9,6 +9,7 @@ use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\CobroQrController;
 use App\Http\Controllers\CompraController;
 use App\Http\Controllers\ComprobanteController;
+use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\DevolucionController;
@@ -190,6 +191,11 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
         Route::post('cajas', [CajaFisicaController::class, 'store'])->name('cajas.store');
         Route::put('cajas/{caja}', [CajaFisicaController::class, 'update'])->name('cajas.update');
         Route::delete('cajas/{caja}', [CajaFisicaController::class, 'destroy'])->name('cajas.destroy');
+
+        // Los datos del negocio y los parámetros del sistema. Hasta que hubo
+        // pantalla se cambiaban por SQL.
+        Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
+        Route::put('configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
     });
 
     // ---- Catálogo: productos y sus tablas de apoyo ----
