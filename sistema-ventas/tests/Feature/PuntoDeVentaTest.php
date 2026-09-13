@@ -12,6 +12,7 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use RuntimeException;
 use Tests\TestCase;
@@ -658,6 +659,38 @@ class PuntoDeVentaTest extends TestCase
         $venta = Venta::where('sesion_caja_id', $sesion->id)->firstOrFail();
 
         $this->assertSame('0.50', $venta->descuento);
+    }
+
+    /**
+     * Exactamente el máximo sí se permite. 10,89 sobre 108,90 es 10 % justo,
+     * pero en coma flotante da 10,000000000000002 % y se rechazaba: justo el
+     * importe que pone el botón «10 %» del mostrador.
+     */
+    public function test_el_cajero_puede_descontar_exactamente_el_maximo(): void
+    {
+        $sesion = $this->turno();
+        $this->assertSame('10', Config::get('descuento_max_cajero'));
+
+        $this->actingAs($this->cajero())->post('/pos', [
+            'lineas' => [['producto_id' => $this->producto('P-0002')->id, 'cantidad' => 15]],   // 15 × 7,26 = 108,90
+            'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
+            'descuento' => 10.89,
+        ])->assertSessionHasNoErrors()->assertSessionMissing('error');
+
+        $this->assertSame('10.89', Venta::where('sesion_caja_id', $sesion->id)->firstOrFail()->descuento);
+    }
+
+    /** El mostrador ofrece el descuento en monto o en porcentaje, con atajos. */
+    public function test_el_mostrador_ofrece_descuento_en_monto_o_porcentaje(): void
+    {
+        $this->turno();
+
+        $this->actingAs($this->cajero())->get('/pos')
+            ->assertOk()
+            ->assertSee('aria-label="Descontar en"', false)
+            ->assertSee('descontarPorcentaje(5)', false)
+            ->assertSee('descontarPorcentaje(10)', false)
+            ->assertSee("descuentoModo: 'monto'", false);
     }
 
     // ---------------------------------------------------------------- clientes

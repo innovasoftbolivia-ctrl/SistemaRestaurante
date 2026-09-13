@@ -323,10 +323,44 @@
                             <span x-text="'{{ $moneda }} ' + subtotal.toFixed(2)"></span>
                         </div>
 
+                        {{-- El descuento se teclea en {{ $moneda }} o en %, pero a la venta
+                             y al ticket siempre llega el monto: el porcentaje solo es
+                             una forma de calcularlo. --}}
                         <div class="flex items-center justify-between gap-3">
                             <label for="descuento" class="text-theme-sm text-gray-500 dark:text-gray-400">Descuento</label>
-                            <input id="descuento" type="number" inputmode="decimal" step="0.01" min="0" x-model.number="descuento"
-                                class="dark:bg-dark-900 h-11 w-28 rounded-lg border border-gray-300 bg-transparent px-2 text-right text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                            <div class="flex items-center gap-2">
+                                <div role="group" aria-label="Descontar en" class="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-white/[0.05]">
+                                    <button type="button" @click="descuentoModo = 'monto'" :aria-pressed="descuentoModo === 'monto'"
+                                        :class="descuentoModo === 'monto' ? 'bg-white text-gray-800 shadow-theme-xs dark:bg-gray-800 dark:text-white/90' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'"
+                                        class="h-10 min-w-10 rounded-md px-2 text-theme-xs font-medium transition">{{ $moneda }}</button>
+                                    <button type="button" @click="descuentoModo = 'porcentaje'" :aria-pressed="descuentoModo === 'porcentaje'"
+                                        :class="descuentoModo === 'porcentaje' ? 'bg-white text-gray-800 shadow-theme-xs dark:bg-gray-800 dark:text-white/90' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'"
+                                        class="h-10 min-w-10 rounded-md px-2 text-theme-xs font-medium transition">%</button>
+                                </div>
+                                <input id="descuento" type="number" inputmode="decimal" min="0" x-model.number="descuento"
+                                    :step="descuentoModo === 'porcentaje' ? '0.5' : '0.01'"
+                                    :max="descuentoModo === 'porcentaje' ? 100 : null"
+                                    :aria-label="descuentoModo === 'porcentaje' ? 'Descuento en porcentaje' : 'Descuento en {{ $moneda }}'"
+                                    class="dark:bg-dark-900 h-11 w-24 rounded-lg border border-gray-300 bg-transparent px-2 text-right text-sm text-gray-800 focus:ring-2 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach ([5, 10] as $rapido)
+                                    <button type="button" @click="descontarPorcentaje({{ $rapido }})"
+                                        :aria-pressed="descuentoModo === 'porcentaje' && Number(descuento) === {{ $rapido }}"
+                                        :class="descuentoModo === 'porcentaje' && Number(descuento) === {{ $rapido }}
+                                            ? 'bg-brand-500 text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10'"
+                                        class="min-h-10 rounded-lg px-3 text-theme-xs font-medium transition">{{ $rapido }} %</button>
+                                @endforeach
+                                <button type="button" x-show="descuentoValido > 0" @click="descuento = 0"
+                                    class="min-h-10 rounded-lg px-2 text-theme-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Quitar</button>
+                            </div>
+                            <span x-show="descuentoModo === 'porcentaje' && descuentoValido > 0"
+                                class="text-theme-sm text-gray-500 tabular-nums dark:text-gray-400"
+                                x-text="'− {{ $moneda }} ' + descuentoValido.toFixed(2)"></span>
                         </div>
 
                         <p x-show="excedeDescuento" class="text-theme-xs text-warning-700 dark:text-orange-400">
@@ -708,6 +742,7 @@
                         carrito: [],
                         clienteId: {{ (int) request('cliente') ?: 'null' }},
                         descuento: 0,
+                        descuentoModo: 'monto', // 'monto' o 'porcentaje': cómo se lee `descuento`
                         /* Formas de pago de esta venta. El cliente puede pagar una
                            parte en efectivo y otra por QR o tarjeta, así que esto es
                            una lista y no un método suelto.
@@ -992,9 +1027,24 @@
                             return this.redondear(bruto * factor);
                         },
 
+                        /* Siempre el monto, aunque se haya tecleado en %. El
+                           porcentaje se redondea hacia ABAJO al céntimo: 10 % de
+                           7,95 es 0,79 y no 0,80, que ya sería 10,06 % y el servidor
+                           se lo rechazaría a un cajero con tope de 10 %. */
                         get descuentoValido() {
-                            const d = Number(this.descuento) || 0;
-                            return Math.min(Math.max(d, 0), this.subtotal);
+                            const d = Math.max(Number(this.descuento) || 0, 0);
+
+                            if (this.descuentoModo === 'porcentaje') {
+                                const centavos = Math.round(this.subtotal * 100);
+                                return Math.floor(centavos * Math.min(d, 100) / 100 + 1e-9) / 100;
+                            }
+
+                            return Math.min(d, this.subtotal);
+                        },
+
+                        descontarPorcentaje(porcentaje) {
+                            this.descuentoModo = 'porcentaje';
+                            this.descuento = porcentaje;
                         },
 
                         get total() {
@@ -1003,7 +1053,8 @@
 
                         get excedeDescuento() {
                             if (this.descuentoValido <= 0 || this.subtotal <= 0) return false;
-                            return (this.descuentoValido / this.subtotal * 100) > this.maxDescuento;
+                            // En centavos, igual que el servidor: 10,89 de 108,90 es 10 % justo.
+                            return Math.round(this.descuentoValido * 100) * 100 > this.maxDescuento * Math.round(this.subtotal * 100);
                         },
 
                         /* ---------------------------------------- formas de pago */

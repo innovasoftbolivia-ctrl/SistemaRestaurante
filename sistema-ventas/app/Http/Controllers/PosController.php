@@ -286,15 +286,21 @@ class PosController extends Controller
         $precios = Producto::whereIn('id', array_column($lineas, 'producto_id'))
             ->pluck('precio_venta', 'id');
 
+        // En centavos enteros y con cada línea redondeada, igual que el subtotal
+        // del mostrador. En coma flotante, 10,89 sobre 108,90 da
+        // 10,000000000000002 %, y el descuento de exactamente el máximo —el que
+        // pone el botón «10 %»— se rechazaba.
         $base = array_sum(array_map(
-            fn ($l) => (float) $l['cantidad'] * (float) ($precios[$l['producto_id']] ?? 0),
+            fn ($l) => (int) round((float) $l['cantidad'] * (float) ($precios[$l['producto_id']] ?? 0) * 100),
             $lineas,
         ));
 
-        $umbral = (float) Config::get('descuento_max_cajero', '0');
-        $porcentaje = $base > 0 ? $descuento / $base * 100 : 0;
+        $umbral = (int) Config::get('descuento_max_cajero', '0');
+        $centavos = (int) round($descuento * 100);
 
-        if ($porcentaje > $umbral) {
+        if ($centavos * 100 > $umbral * $base) {
+            $porcentaje = $base > 0 ? $centavos / $base * 100 : 0;
+
             return 'Un descuento del '.round($porcentaje, 1).'% supera el máximo de '.$umbral.
                 '% permitido sin autorización. Pide a un administrador que registre la venta.';
         }
