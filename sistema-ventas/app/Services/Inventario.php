@@ -201,8 +201,38 @@ class Inventario
      */
     public static function ajuste(Producto $producto, float $stockContado, string $motivo): ?MovimientoInventario
     {
-        return DB::transaction(function () use ($producto, $stockContado, $motivo) {
+        return self::ajustarA($producto, fn () => $stockContado, $motivo);
+    }
+
+    /**
+     * Corrección por una toma de inventario: se aplica la DIFERENCIA que se
+     * contó sobre el stock de ahora, no un stock absoluto.
+     *
+     * Entre que se contó el estante y se cerró la toma el local siguió
+     * vendiendo. Si se contaron 10 cuando el sistema decía 12 y después se
+     * vendieron 3, lo que hay es 7: 12 − 3 − 2. Escribir el 10 contado
+     * borraría esas tres ventas del stock.
+     *
+     * Nunca deja stock negativo: si lo vendido después del conteo ya se llevó
+     * más de lo que había, el producto queda en cero.
+     * Ver {@see TomasInventario}.
+     */
+    public static function corregir(Producto $producto, float $diferencia, string $motivo): ?MovimientoInventario
+    {
+        return self::ajustarA($producto, fn (float $actual) => max(round($actual + $diferencia, 3), 0.0), $motivo);
+    }
+
+    /**
+     * El ajuste en sí: bloquea el producto, calcula el stock al que tiene que
+     * quedar a partir del de AHORA y registra la diferencia.
+     *
+     * @param  callable(float): float  $destino
+     */
+    private static function ajustarA(Producto $producto, callable $destino, string $motivo): ?MovimientoInventario
+    {
+        return DB::transaction(function () use ($producto, $destino, $motivo) {
             $actual = (float) Producto::whereKey($producto->id)->lockForUpdate()->value('stock_actual');
+            $stockContado = (float) $destino($actual);
             $diferencia = round($stockContado - $actual, 3);
 
             if ($diferencia === 0.0) {

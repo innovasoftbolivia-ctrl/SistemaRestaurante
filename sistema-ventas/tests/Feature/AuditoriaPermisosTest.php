@@ -13,6 +13,7 @@ use App\Services\CobrosQr;
 use App\Services\Compras;
 use App\Services\Devoluciones;
 use App\Services\DevolucionesCompra;
+use App\Services\TomasInventario;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -97,8 +98,14 @@ class AuditoriaPermisosTest extends TestCase
             espera: 'PENDIENTE',
         );
 
+        // Y una toma de inventario abierta: de ella cuelgan contar, cerrar y
+        // cancelar, y de ella sale la línea que se cuenta.
+        $toma = TomasInventario::abrir(Usuario::where('usuario', 'almacen')->firstOrFail());
+
         return [
             'venta' => $venta->id,
+            'toma' => $toma->id,
+            'linea' => $toma->lineas()->value('id'),
             'sesion' => $sesion->id,
             'comprobante' => $venta->comprobante->id,
             'devolucion' => $devolucion->id,

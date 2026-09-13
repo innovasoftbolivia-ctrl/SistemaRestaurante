@@ -45,6 +45,9 @@ class DashboardController extends Controller
             'hoy' => $gestion ? $this->comparativaDelDia() : null,
             'serie' => $gestion ? $this->serie() : null,
             'alertas' => ($gestion || $catalogo) ? $this->alertas() : null,
+            // El total aparte: la lista está recortada a seis y la insignia
+            // contaba esas seis aunque hubiera cuarenta por reponer.
+            'alertasTotal' => ($gestion || $catalogo) ? Producto::alertasDeStock()->count() : null,
             'ultimas' => $gestion ? $this->ultimasVentas() : null,
             'gestion' => $gestion,
         ]);

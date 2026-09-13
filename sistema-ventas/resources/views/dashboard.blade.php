@@ -234,7 +234,7 @@
                             </p>
                         </div>
                         @if ($alertas->isNotEmpty())
-                            <x-ui.estado estado="SUSPENDIDO" :texto="$alertas->count()" />
+                            <x-ui.estado estado="SUSPENDIDO" :texto="$alertasTotal" />
                         @endif
                     </div>
 

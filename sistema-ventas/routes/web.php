@@ -24,6 +24,7 @@ use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\RespaldoController;
 use App\Http\Controllers\RolController;
+use App\Http\Controllers\TomaInventarioController;
 use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\VencimientoController;
@@ -279,6 +280,26 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
         ->middleware('permiso:inventario.ajustar')
         ->name('inventario.ajuste');
+
+    // ---- Toma de inventario: contar el local entero ----
+    // La mira quien mira el inventario; contar y cerrar es ajustar stock, así
+    // que pide el mismo permiso que el ajuste de a un producto.
+    Route::middleware('permiso:inventario.ajustar,reportes.ver')->group(function () {
+        Route::get('tomas-inventario', [TomaInventarioController::class, 'index'])->name('tomas.index');
+        Route::get('tomas-inventario/{toma}', [TomaInventarioController::class, 'show'])->name('tomas.show');
+        Route::get('tomas-inventario/{toma}/imprimir', [TomaInventarioController::class, 'imprimir'])->name('tomas.imprimir');
+    });
+
+    Route::middleware('permiso:inventario.ajustar')->group(function () {
+        Route::post('tomas-inventario', [TomaInventarioController::class, 'store'])->name('tomas.store');
+        // `scopeBindings`: la línea tiene que ser de ESA toma. Sin esto, con el
+        // id de una línea de una toma cancelada se escribiría en ella.
+        Route::post('tomas-inventario/{toma}/lineas/{linea}', [TomaInventarioController::class, 'contar'])
+            ->scopeBindings()
+            ->name('tomas.contar');
+        Route::post('tomas-inventario/{toma}/cerrar', [TomaInventarioController::class, 'cerrar'])->name('tomas.cerrar');
+        Route::post('tomas-inventario/{toma}/cancelar', [TomaInventarioController::class, 'cancelar'])->name('tomas.cancelar');
+    });
 
     // ---- Vencimientos: qué caduca y cuándo ----
     // Se mira con los mismos permisos que el inventario: es la misma pregunta

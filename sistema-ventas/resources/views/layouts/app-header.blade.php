@@ -103,6 +103,7 @@
                             fill="currentColor" />
                     </svg>
                 </button>
+                <x-header.alertas-stock />
             </div>
 
             <x-header.user-dropdown />

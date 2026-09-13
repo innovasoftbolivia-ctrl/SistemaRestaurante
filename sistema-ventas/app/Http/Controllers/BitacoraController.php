@@ -30,6 +30,7 @@ class BitacoraController extends Controller
         'usuarios' => 'usuarios.edit',
         'sesiones_caja' => 'caja.show',
         'comprobantes' => 'comprobantes.imprimir',
+        'tomas_inventario' => 'tomas.show',
     ];
 
     /** El nombre de cada entidad en singular, para leer «Venta #12». */
@@ -52,6 +53,7 @@ class BitacoraController extends Controller
         'unidades_medida' => 'Unidad de medida',
         'cobros_qr' => 'Cobro QR',
         'configuracion' => 'Configuración',
+        'tomas_inventario' => 'Toma de inventario',
     ];
 
     /**
@@ -68,6 +70,7 @@ class BitacoraController extends Controller
         'anular venta' => 'venta anulada',
         'sustituir comprobante' => 'comprobante sustituido',
         'configuracion' => 'configuración',
+        'toma inventario' => 'toma de inventario',
         'devolucion' => 'devolución',
         'categoria' => 'categoría',
         'fisica' => 'física',
