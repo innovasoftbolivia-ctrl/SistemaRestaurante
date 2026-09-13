@@ -33,4 +33,20 @@ return [
 
     'logica_en_php' => env('LOGICA_EN_PHP', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Respaldos
+    |--------------------------------------------------------------------------
+    |
+    | Dónde se guardan los respaldos que hace App\Services\Respaldos. Por
+    | omisión, storage/app/respaldos: fuera de public/ y fuera de git. En
+    | Docker de producción esa carpeta es un volumen, para que sobreviva a
+    | reconstruir la imagen.
+    |
+    */
+
+    'respaldos' => [
+        'ruta' => env('RESPALDOS_RUTA'),
+    ],
+
 ];

@@ -21,6 +21,7 @@ use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductoController;
 use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ReporteController;
+use App\Http\Controllers\RespaldoController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
@@ -204,6 +205,16 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
     Route::get('bitacora', [BitacoraController::class, 'index'])
         ->middleware('permiso:bitacora.ver')
         ->name('bitacora.index');
+
+    // Respaldos: la base entera, con los hashes de las contraseñas. Permiso
+    // propio y nada de nombres de archivo libres (ver Respaldos::ruta()).
+    Route::middleware('permiso:respaldos.gestionar')->group(function () {
+        Route::get('respaldos', [RespaldoController::class, 'index'])->name('respaldos.index');
+        Route::post('respaldos', [RespaldoController::class, 'store'])->name('respaldos.store');
+        Route::get('respaldos/{nombre}/descargar', [RespaldoController::class, 'descargar'])
+            ->where('nombre', '[^/]+')
+            ->name('respaldos.descargar');
+    });
 
     // ---- Catálogo: productos y sus tablas de apoyo ----
     Route::middleware('permiso:productos.gestionar')->group(function () {

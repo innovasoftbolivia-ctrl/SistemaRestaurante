@@ -37,7 +37,8 @@ INSERT INTO permisos (codigo, modulo, descripcion) VALUES
     ('caja.cerrar',          'Caja',       'Cerrar sesión de caja'),
     ('reportes.ver',         'Reportes',   'Consultar reportes y dashboard'),
     ('configuracion.editar', 'Sistema',    'Editar parámetros del sistema'),
-    ('bitacora.ver',         'Sistema',    'Consultar la bitácora de operaciones');
+    ('bitacora.ver',         'Sistema',    'Consultar la bitácora de operaciones'),
+    ('respaldos.gestionar',  'Sistema',    'Hacer y descargar respaldos de la base');
 
 -- Administrador: todos los permisos
 INSERT INTO rol_permiso (rol_id, permiso_id) SELECT 1, id FROM permisos;

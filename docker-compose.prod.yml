@@ -38,6 +38,8 @@ services:
     build:
       context: ./sistema-ventas
       dockerfile: Dockerfile.prod
+    # Nombre fijo para que el programador de tareas use la MISMA imagen.
+    image: ventas-app:prod
     container_name: ventas_app_prod
     restart: unless-stopped
     env_file: ./sistema-ventas/.env.docker
@@ -48,6 +50,9 @@ services:
       # se construyó.
       - ventas_storage:/var/www/html/storage/app/public
       - ventas_logs:/var/www/html/storage/logs
+      # Los respaldos, en un volumen: dentro de la imagen se perderían al
+      # reconstruirla, que es justo cuando más falta pueden hacer.
+      - ventas_respaldos:/var/www/html/storage/app/respaldos
     depends_on:
       mysql:
         condition: service_healthy
@@ -60,6 +65,30 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+    networks: [ventas]
+
+  # ---------------------------------------------------------------------------
+  # Programador de tareas: el respaldo de todas las noches (routes/console.php)
+  # ---------------------------------------------------------------------------
+  # Misma imagen y mismos volúmenes que la aplicación, con otro proceso. Sin
+  # esto `respaldo:crear` existe pero nadie lo corre: el script de respaldo
+  # que había también decía «pensado para cron» y nadie lo había agendado.
+  # Arranca cuando la aplicación está sana, así no siembran credenciales los
+  # dos contenedores a la vez.
+  programador:
+    image: ventas-app:prod
+    pull_policy: never
+    container_name: ventas_programador_prod
+    restart: unless-stopped
+    env_file: ./sistema-ventas/.env.docker
+    command: ["su-exec", "www-data", "php", "artisan", "schedule:work"]
+    volumes:
+      - ventas_storage:/var/www/html/storage/app/public
+      - ventas_logs:/var/www/html/storage/logs
+      - ventas_respaldos:/var/www/html/storage/app/respaldos
+    depends_on:
+      app:
+        condition: service_healthy
     networks: [ventas]
 
   # ---------------------------------------------------------------------------
@@ -135,6 +164,7 @@ volumes:
   ventas_data:
   ventas_storage:
   ventas_logs:
+  ventas_respaldos:
 
 networks:
   ventas:
