@@ -48,8 +48,8 @@ class DevolucionesTest extends TestCase
             sesion: $sesion,
             usuario: $sesion->usuarioApertura,
             lineas: [
-                ['producto_id' => $this->producto('P-0004')->id, 'cantidad' => 3, 'precio_unitario' => 3.39],
-                ['producto_id' => $this->producto('P-0009')->id, 'cantidad' => 2, 'precio_unitario' => 2.37],
+                ['producto_id' => $this->producto('P-0004')->id, 'cantidad' => 3, 'precio_unitario' => 3.54],
+                ['producto_id' => $this->producto('P-0009')->id, 'cantidad' => 2, 'precio_unitario' => 2.48],
             ],
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
         );
@@ -110,7 +110,7 @@ class DevolucionesTest extends TestCase
         $this->assertSame($stockAntes - 1, (float) $producto->fresh()->stock_actual);
 
         $this->assertSame('PARCIAL', $devolucion->tipo);
-        // 2 × 3.39 = 6.78 de base, más 1.22 de impuesto
+        // 2 × 3.54 = 7.08 de base, más 0.92 de impuesto
         $this->assertSame('8.00', $devolucion->total);
         $this->assertSame('DEVUELTA_PARCIAL', $venta->fresh()->estado);
         $this->assertSame('8.00', $venta->fresh()->total_devuelto);
@@ -136,8 +136,8 @@ class DevolucionesTest extends TestCase
         $sesion = $this->turno();
 
         // 2 × 10 = 20 de base, 2 de descuento (10%): factor 0.9.
-        // Impuesto bruto 20 × 0.18 = 3.60, neto 3.60 × 0.9 = 3.24.
-        // Total pagado: 20 − 2 + 3.24 = 21.24.
+        // Impuesto bruto 20 × 0.13 = 2.60, neto 2.60 × 0.9 = 2.34.
+        // Total pagado: 20 − 2 + 2.34 = 20.34.
         $venta = Ventas::registrar(
             sesion: $sesion,
             usuario: $sesion->usuarioApertura,
@@ -146,7 +146,7 @@ class DevolucionesTest extends TestCase
             descuento: 2,
         );
 
-        $this->assertSame('21.24', $venta->total);
+        $this->assertSame('20.34', $venta->total);
 
         $devolucion = Devoluciones::registrar(
             venta: $venta,
@@ -157,9 +157,9 @@ class DevolucionesTest extends TestCase
         );
 
         // Devolución total: se reembolsa exactamente lo que se cobró, ni un
-        // céntimo más —el precio de catálogo sin descontar hubiera dado 23.60.
+        // céntimo más —el precio de catálogo sin descontar hubiera dado 22.60.
         $this->assertSame($venta->fresh()->total, $devolucion->total);
-        $this->assertSame('21.24', $devolucion->total);
+        $this->assertSame('20.34', $devolucion->total);
         $this->assertSame('9.00', (string) $devolucion->detalle->first()->precio_unitario);
     }
 
@@ -463,21 +463,22 @@ class DevolucionesTest extends TestCase
     {
         $sesion = $this->turno();
         $venta = $this->ventaConDosLineas($sesion);
-        $linea = $venta->detalle->first(); // 3 × 3.39, afecta al 18%
+        $linea = $venta->detalle->first(); // 3 × 3.54, afecta al 13%
 
         $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
             [['venta_detalle_id' => $linea->id, 'cantidad' => 3]], 'Producto vencido');
 
-        // Base 10.17 + impuesto 1.83 = lo que el cliente pagó por esas 3 unidades.
+        // Base 10.62 + impuesto 1.38 (ROUND(10.62 × 0.13, 2)) = lo que el cliente
+        // pagó por esas 3 unidades.
         $this->assertSame('12.00', $devolucion->total);
-        $this->assertSame(10.17, $devolucion->base);
-        $this->assertSame(1.83, $devolucion->impuesto_devuelto);
+        $this->assertSame(10.62, $devolucion->base);
+        $this->assertSame(1.38, $devolucion->impuesto_devuelto);
 
         // Coincide con lo que la venta cobró por esa línea.
         $this->assertSame($linea->fresh()->total_linea, $devolucion->total);
     }
 
-    /** La tasa se congela al devolver: si cambia el IGV, lo ya devuelto no. */
+    /** La tasa se congela al devolver: si cambia el IVA, lo ya devuelto no. */
     public function test_la_tasa_se_copia_de_la_linea_de_venta(): void
     {
         $sesion = $this->turno();
@@ -503,14 +504,14 @@ class DevolucionesTest extends TestCase
         $venta = Ventas::registrar(
             sesion: $sesion,
             usuario: $this->admin(),
-            lineas: [['producto_id' => $producto->id, 'cantidad' => 4, 'precio_unitario' => 1.02]],
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 4, 'precio_unitario' => 1.06]],
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
         );
 
         $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
             [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 4]], 'Galletas rotas');
 
-        $this->assertSame('4.08', $devolucion->total); // 4 × 1.02, sin impuesto
+        $this->assertSame('4.24', $devolucion->total); // 4 × 1.06, sin impuesto
         $this->assertSame(0.0, $devolucion->impuesto_devuelto);
     }
 

@@ -565,31 +565,36 @@ Notas:
 base derivada de un precio de estante redondo:
 
 ```
-precio_venta = ROUND(precio_estante / 1.18, 2)      -- ej: 4.50 → 3.81
-precio_estante = ROUND(precio_venta * 1.18, 2)      -- ej: 3.81 → 4.50
+precio_venta = ROUND(precio_estante / 1.13, 2)      -- ej: 4.50 → 3.98
+precio_estante = ROUND(precio_venta * 1.13, 2)      -- ej: 3.98 → 4.50
 ```
+
+La tasa es la del IVA boliviano, 13 %. Hasta septiembre de 2026 la semilla traía el 18 % del
+IGV peruano y las bases estaban calculadas para esa tasa; se recalcularon para que los
+precios de estante sigan siendo los mismos.
 
 | Producto | Base (`precio_venta`) | Estante (c/imp.) |
 |----------|----------------------:|-----------------:|
-| Arroz extra 1 kg | 3.81 | 4.50 |
-| Aceite vegetal 1 L | 6.95 | 8.20 |
-| Azúcar rubia 1 kg | 3.56 | 4.20 |
-| Leche evaporada 400 g | 3.39 | 4.00 |
-| Gaseosa 1.5 L | 5.51 | 6.50 |
-| Agua mineral 625 ml | 1.27 | 1.50 |
-| Detergente 1 kg | 9.24 | 10.90 |
-| Lejía 1 L | 2.97 | 3.50 |
-| Jabón de tocador | 2.37 | 2.80 |
-| Papel higiénico x4 | 5.51 | 6.50 |
-| Galletas surtidas | 1.02 | 1.20 |
-| Chocolate barra 40 g | 2.12 | 2.50 |
+| Arroz extra 1 kg | 3.98 | 4.50 |
+| Aceite vegetal 1 L | 7.26 | 8.20 |
+| Azúcar rubia 1 kg | 3.72 | 4.20 |
+| Leche evaporada 400 g | 3.54 | 4.00 |
+| Gaseosa 1.5 L | 5.75 | 6.50 |
+| Agua mineral 625 ml | 1.33 | 1.50 |
+| Detergente 1 kg | 9.65 | 10.90 |
+| Lejía 1 L | 3.10 | 3.50 |
+| Jabón de tocador | 2.48 | 2.80 |
+| Papel higiénico x4 | 5.75 | 6.50 |
+| Galletas surtidas | 1.06 | 1.20 |
+| Chocolate barra 40 g | 2.21 | 2.50 |
 
 > **Límite del redondeo.** No todo precio de estante es alcanzable con una base de dos
-> decimales: 6.00 y 2.00 no lo son con tasa 18% (`6.00/1.18 = 5.0847…`, y ni 5.08 ni 5.09
-> vuelven a 6.00), por eso la gaseosa quedó en 6.50 y el chocolate en 2.50. Además, como el
+> decimales: 3.00 y 5.00 no lo son con tasa 13% (`5.00/1.13 = 4.4247…`, y 4.42 da 4.99
+> mientras 4.43 da 5.01). Cada céntimo de base mueve el precio final 1,13 céntimos, así que
+> algunos precios quedan salteados. Además, como el
 > impuesto se calcula sobre el importe de la línea y no sobre el precio unitario, en
 > cantidades altas aparece una diferencia de céntimos frente a `cantidad × precio_estante`
-> (3 arroz + 2 gaseosas = 26.49 en vez de 26.50). Es inherente a operar con precios netos,
+> (3 arroz + 2 gaseosas: base 23.44 + impuesto 3.05 = 26.49 en vez de 26.50). Es inherente a operar con precios netos,
 > no un defecto del cálculo. Si el negocio exige que el ticket coincida exactamente con la
 > suma de los precios de estante, la alternativa es volver al esquema de precio con
 > impuesto incluido.

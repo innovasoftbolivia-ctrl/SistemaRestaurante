@@ -94,7 +94,7 @@ class PuntoDeVentaTest extends TestCase
 
         $this->actingAs($this->almacenero())
             ->post('/pos', [
-                'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => 3.81]],
+                'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => 3.98]],
                 'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
             ])
             ->assertForbidden();
@@ -112,7 +112,7 @@ class PuntoDeVentaTest extends TestCase
     {
         $this->actingAs($this->cajero())
             ->post('/pos', [
-                'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => '3.81']],
+                'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => '3.98']],
                 'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
             ])
             ->assertRedirect('/caja');
@@ -206,13 +206,13 @@ class PuntoDeVentaTest extends TestCase
     public function test_los_totales_salen_del_detalle(): void
     {
         $sesion = $this->turno();
-        $producto = $this->producto(); // base 3.81, afecto al 18%
+        $producto = $this->producto(); // base 3.98, afecto al 13%
 
         $venta = $this->vender($sesion, $producto, 2)->fresh();
 
-        $this->assertSame('7.62', $venta->subtotal);   // 3.81 × 2
-        $this->assertSame('1.37', $venta->impuesto);   // ROUND(7.62 × 0.18, 2)
-        $this->assertSame('8.99', $venta->total);
+        $this->assertSame('7.96', $venta->subtotal);   // 3.98 × 2
+        $this->assertSame('1.03', $venta->impuesto);   // ROUND(7.96 × 0.13, 2)
+        $this->assertSame('8.99', $venta->total);      // 4.50 de estante × 2, igual que con el 18%
     }
 
     public function test_el_descuento_reduce_el_impuesto_en_proporcion(): void
@@ -221,11 +221,11 @@ class PuntoDeVentaTest extends TestCase
 
         $venta = $this->vender($sesion, $this->producto(), 2, ['descuento' => 1.62])->fresh();
 
-        $this->assertSame('7.62', $venta->subtotal);
+        $this->assertSame('7.96', $venta->subtotal);
         $this->assertSame('1.62', $venta->descuento);
-        // impuesto bruto 1.37 × (7.62 − 1.62) / 7.62
-        $this->assertSame('1.08', $venta->impuesto);
-        $this->assertSame('7.08', $venta->total);
+        // impuesto bruto 1.03 × (7.96 − 1.62) / 7.96 = 0.8204
+        $this->assertSame('0.82', $venta->impuesto);
+        $this->assertSame('7.16', $venta->total);      // 7.96 − 1.62 + 0.82
     }
 
     public function test_no_se_vende_mas_de_lo_que_hay_en_stock(): void
@@ -254,8 +254,8 @@ class PuntoDeVentaTest extends TestCase
                 sesion: $sesion,
                 usuario: $this->cajero(),
                 lineas: [
-                    ['producto_id' => $bueno->id, 'cantidad' => 1, 'precio_unitario' => 3.81],
-                    ['producto_id' => $malo->id, 'cantidad' => (float) $malo->stock_actual + 50, 'precio_unitario' => 1.27],
+                    ['producto_id' => $bueno->id, 'cantidad' => 1, 'precio_unitario' => 3.98],
+                    ['producto_id' => $malo->id, 'cantidad' => (float) $malo->stock_actual + 50, 'precio_unitario' => 1.33],
                 ],
                 pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null]],
             );
@@ -286,7 +286,7 @@ class PuntoDeVentaTest extends TestCase
         Ventas::registrar(
             sesion: $sesion,
             usuario: $this->cajero(),
-            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.81]],
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.98]],
             pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => 5.00]],
         );
     }
@@ -298,7 +298,7 @@ class PuntoDeVentaTest extends TestCase
         $venta = Ventas::registrar(
             sesion: $sesion,
             usuario: $this->cajero(),
-            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.81]],
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.98]],
             pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null, 'monto_recibido' => 10.00]],
         )->fresh(['pagos']);
 
@@ -627,7 +627,7 @@ class PuntoDeVentaTest extends TestCase
 
         $respuesta->assertRedirect(route('ventas.show', $venta));
         $this->assertSame('8.99', $venta->total);
-        $this->assertSame('3.81', (string) $venta->detalle->first()->precio_unitario);
+        $this->assertSame((string) $producto->precio_venta, (string) $venta->detalle->first()->precio_unitario);
     }
 
     /** Un descuento por encima del umbral necesita el permiso `ventas.descuento`. */
@@ -637,9 +637,9 @@ class PuntoDeVentaTest extends TestCase
         $producto = $this->producto();
 
         $this->actingAs($this->cajero())->post('/pos', [
-            'lineas' => [['producto_id' => $producto->id, 'cantidad' => 2, 'precio_unitario' => 3.81]],
+            'lineas' => [['producto_id' => $producto->id, 'cantidad' => 2, 'precio_unitario' => 3.98]],
             'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
-            'descuento' => 3.00, // ~39% sobre 7.62, muy por encima del 10%
+            'descuento' => 3.00, // ~38% sobre 7.96, muy por encima del 10%
         ])->assertSessionHas('error');
 
         $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
@@ -650,9 +650,9 @@ class PuntoDeVentaTest extends TestCase
         $sesion = $this->turno();
 
         $this->actingAs($this->cajero())->post('/pos', [
-            'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.81]],
+            'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 2, 'precio_unitario' => 3.98]],
             'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
-            'descuento' => 0.50, // 6.6%
+            'descuento' => 0.50, // 6.3% sobre 7.96
         ])->assertSessionHasNoErrors();
 
         $venta = Venta::where('sesion_caja_id', $sesion->id)->firstOrFail();

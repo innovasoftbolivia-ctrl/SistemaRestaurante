@@ -20,7 +20,7 @@ class Config
         return self::$valores[$clave] ?? $porDefecto;
     }
 
-    /** Tasa del impuesto a las ventas como fracción: 0.18 para un IGV del 18%. */
+    /** Tasa del impuesto a las ventas como fracción: 0.13 para el IVA boliviano del 13 %. */
     public static function tasaImpuesto(): float
     {
         return (float) self::get('tasa_impuesto', '0');

@@ -157,6 +157,12 @@ docker compose down -v
 
 El esquema **se ejecutó y se probó** en este entorno (MySQL 8.0.46). Resultado:
 
+> Es el registro de aquella verificación, con los números que dio ENTONCES: el esquema tenía
+> 26 tablas y la tasa sembrada era el 18 % del IGV peruano. Hoy son más tablas y la semilla
+> usa el IVA boliviano del 13 %; con las bases recalculadas, la misma venta da subtotal
+> 23.44 + IVA 3.05 = 26.49. No se reescribieron los resultados de abajo porque no se volvió a
+> correr esa verificación a mano: la batería de pruebas es la que la reemplaza.
+
 | Comprobación | Resultado |
 |--------------|-----------|
 | Carga de ambos scripts desde cero | Sin errores |

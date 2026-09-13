@@ -236,10 +236,10 @@ class CatalogoTest extends TestCase
     /** El precio de estante sale de la base más el impuesto vigente. */
     public function test_el_precio_de_estante_agrega_el_impuesto(): void
     {
-        $producto = $this->producto(); // base 3.81, tasa 0.18
+        $producto = $this->producto(); // costo 3.20, base 3.98, tasa 0.13
 
         $this->assertSame(4.50, $producto->precio_estante);
-        $this->assertSame(0.61, $producto->margen);
+        $this->assertSame(0.78, $producto->margen);
     }
 
     public function test_un_producto_exonerado_no_lleva_impuesto_en_el_estante(): void
@@ -247,7 +247,7 @@ class CatalogoTest extends TestCase
         $producto = $this->producto();
         $producto->afecto_impuesto = false;
 
-        $this->assertSame(3.81, $producto->precio_estante);
+        $this->assertSame(3.98, $producto->precio_estante);
     }
 
     // ------------------------------------------------------------- inventario
@@ -671,7 +671,7 @@ class CatalogoTest extends TestCase
     {
         Config::olvidar();
 
-        $this->assertSame(0.18, Config::tasaImpuesto());
+        $this->assertSame(0.13, Config::tasaImpuesto());
         $this->assertSame('Bs', Config::moneda());
         $this->assertSame('Bs 4.50', Config::importe(4.5));
         $this->assertSame('120', Config::cantidad('120.000'));

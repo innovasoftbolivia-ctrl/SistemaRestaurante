@@ -140,10 +140,13 @@ INSERT INTO clientes (id, tipo_persona, tipo_documento, documento, razon_social,
 
 -- --------------------------------- Productos ---------------------------------
 -- Importante: precio_compra y precio_venta se registran SIN impuesto.
--- El impuesto (18%) se agrega sobre la base al calcular el total de la venta.
--- Los precios base se eligieron de modo que el precio final por unidad quede redondo:
---     precio_venta = ROUND(precio_estante / 1.18, 2)
---     ROUND(precio_venta * 1.18, 2) = precio_estante
+-- El impuesto (el IVA boliviano, 13%) se agrega sobre la base al calcular el
+-- total de la venta. Los precios base se eligieron de modo que el precio final
+-- por unidad quede redondo:
+--     precio_venta = ROUND(precio_estante / 1.13, 2)
+--     ROUND(precio_venta * 1.13, 2) = precio_estante
+-- Hasta septiembre de 2026 la tasa sembrada era el 18% del IGV peruano, y las
+-- bases estaban calculadas para ese 18%. Los precios de estante son los mismos.
 --
 -- `contenido_empaque` / `nombre_empaque`: cómo llega del proveedor. Solo lo
 -- llevan los que de verdad vienen en caja; el arroz por kilo o el aceite
@@ -154,18 +157,18 @@ INSERT INTO productos
      codigo, codigo_barras, nombre,
      precio_compra, precio_venta, stock_actual, stock_minimo) VALUES
     --                                                                    costo  base   stock min   -- estante c/imp.
-    (1, 2, NULL, NULL,      1, 'P-0001', '7790001000019', 'Arroz extra 1 kg',      3.20,  3.81,  120, 20),  --  4.50
-    (1, 3, NULL, NULL,      1, 'P-0002', '7790001000026', 'Aceite vegetal 1 L',    6.10,  6.95,   60, 12),  --  8.20
-    (1, 2, NULL, NULL,      1, 'P-0003', '7790001000033', 'Azúcar rubia 1 kg',     3.00,  3.56,   45, 15),  --  4.20
-    (1, 1,   24, 'Caja',    2, 'P-0004', '7790001000040', 'Leche evaporada 400 g', 2.80,  3.39,   90, 24),  --  4.00
-    (2, 3,   12, 'Caja',    2, 'P-0005', '7790001000057', 'Gaseosa 1.5 L',         4.00,  5.51,   75, 18),  --  6.50
-    (2, 3,   15, 'Paquete', 2, 'P-0006', '7790001000064', 'Agua mineral 625 ml',   0.90,  1.27,  150, 30),  --  1.50
-    (3, 2, NULL, NULL,      1, 'P-0007', '7790001000071', 'Detergente 1 kg',       7.50,  9.24,   40, 10),  -- 10.90
-    (3, 3, NULL, NULL,      1, 'P-0008', '7790001000088', 'Lejía 1 L',             2.20,  2.97,   35, 10),  --  3.50
-    (4, 1,   72, 'Caja',    2, 'P-0009', '7790001000095', 'Jabón de tocador',      1.60,  2.37,   80, 20),  --  2.80
-    (4, 1, NULL, NULL,      2, 'P-0010', '7790001000101', 'Papel higiénico x4',    4.20,  5.51,   55, 12),  --  6.50
-    (5, 1,   50, 'Caja',    2, 'P-0011', '7790001000118', 'Galletas surtidas',     0.70,  1.02,  200, 40),  --  1.20
-    (5, 1,   24, 'Caja',    2, 'P-0012', '7790001000125', 'Chocolate barra 40 g',  1.10,  2.12,  110, 25);  --  2.50
+    (1, 2, NULL, NULL,      1, 'P-0001', '7790001000019', 'Arroz extra 1 kg',      3.20,  3.98,  120, 20),  --  4.50
+    (1, 3, NULL, NULL,      1, 'P-0002', '7790001000026', 'Aceite vegetal 1 L',    6.10,  7.26,   60, 12),  --  8.20
+    (1, 2, NULL, NULL,      1, 'P-0003', '7790001000033', 'Azúcar rubia 1 kg',     3.00,  3.72,   45, 15),  --  4.20
+    (1, 1,   24, 'Caja',    2, 'P-0004', '7790001000040', 'Leche evaporada 400 g', 2.80,  3.54,   90, 24),  --  4.00
+    (2, 3,   12, 'Caja',    2, 'P-0005', '7790001000057', 'Gaseosa 1.5 L',         4.00,  5.75,   75, 18),  --  6.50
+    (2, 3,   15, 'Paquete', 2, 'P-0006', '7790001000064', 'Agua mineral 625 ml',   0.90,  1.33,  150, 30),  --  1.50
+    (3, 2, NULL, NULL,      1, 'P-0007', '7790001000071', 'Detergente 1 kg',       7.50,  9.65,   40, 10),  -- 10.90
+    (3, 3, NULL, NULL,      1, 'P-0008', '7790001000088', 'Lejía 1 L',             2.20,  3.10,   35, 10),  --  3.50
+    (4, 1,   72, 'Caja',    2, 'P-0009', '7790001000095', 'Jabón de tocador',      1.60,  2.48,   80, 20),  --  2.80
+    (4, 1, NULL, NULL,      2, 'P-0010', '7790001000101', 'Papel higiénico x4',    4.20,  5.75,   55, 12),  --  6.50
+    (5, 1,   50, 'Caja',    2, 'P-0011', '7790001000118', 'Galletas surtidas',     0.70,  1.06,  200, 40),  --  1.20
+    (5, 1,   24, 'Caja',    2, 'P-0012', '7790001000125', 'Chocolate barra 40 g',  1.10,  2.21,  110, 25);  --  2.50
 
 -- Verificación: esta consulta debe devolver el precio de estante redondo de cada producto.
 -- SELECT codigo, nombre, precio_venta,
@@ -187,7 +190,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('negocio_telefono',    '33561200',              'Teléfono de contacto'),
     ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
-    ('tasa_impuesto',       '0.1800',                'Tasa del impuesto a las ventas (IGV)'),
+    ('tasa_impuesto',       '0.1300',                'Tasa del IVA (en Bolivia, 13 %)'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
