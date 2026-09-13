@@ -60,6 +60,49 @@ pestañas a la vista: la computadora de la caja parece un sistema de
 punto de venta y no un navegador con una pagina abierta.
 
 
+MOSTRAR EL SISTEMA A UN CLIENTE
+---------------------------------------------------------------------
+No hay que hacer nada ni desactivar nada: se abre el sistema en un
+Chrome normal, del icono de siempre, y listo.
+
+La hoja del ticket distingue las dos ventanas y se comporta distinto:
+
+    ventana "Caja" (el acceso directo)  ->  imprime sola y se cierra
+    pestaña normal de Chrome            ->  muestra el ticket y se queda
+
+Asi que en una demostracion el cliente ve el ticket y nada mas: ninguna
+ventana de impresion, ninguna vista previa. Si en la demo se quiere
+imprimir igual, esta el boton "Imprimir" de la barra de arriba.
+
+(Como lo sabe: el acceso directo abre Chrome en modo aplicacion, y esas
+ventanas se identifican como "standalone"; una pestaña comun se
+identifica como "browser".)
+
+
+SI APARECE EL DIALOGO EN LA VENTANA DE LA CAJA
+---------------------------------------------------------------------
+Entonces al acceso directo le falta --kiosk-printing. La pagina se da
+cuenta y lo dice: se queda abierta con un aviso amarillo explicando
+como agregarlo.
+
+Como reconocer la ventana de un vistazo: si se ven la barra de
+direcciones y las pestañas arriba, NO es la ventana de la caja.
+
+
+EL TAMAÑO DEL PAPEL
+---------------------------------------------------------------------
+De esto se encarga el sistema, no hay nada que tocar. Cada ticket sale
+de 80 mm de ancho y del alto exacto que ocupa, asi la impresora de
+rollo corta donde termina el ticket y no escupe papel en blanco.
+
+(Hasta septiembre de 2026 esto estaba roto: la hoja pedia el papel con
+una regla de CSS invalida, el navegador la descartaba sin avisar y el
+ticket salia en A4. Se veia bien en pantalla; solo se notaba al
+imprimir. Si alguien vuelve a poner "size: 80mm auto" en la hoja del
+comprobante, el ticket vuelve a salir en hoja oficio — y hay una prueba
+que lo impide.)
+
+
 DOS AVISOS
 ---------------------------------------------------------------------
 1. Con --kiosk-printing, TODO lo que se imprima desde esa ventana va

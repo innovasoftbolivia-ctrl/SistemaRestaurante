@@ -370,7 +370,10 @@ class SustitucionComprobanteTest extends TestCase
         // Se busca el DISPARO automático, no «window.print()» a secas: el
         // botón manual de la barra también lo lleva, así que buscar eso daría
         // por buenas las dos versiones sin distinguirlas.
-        $marca = "addEventListener('load'";
+        // Tampoco sirve ya «addEventListener('load'»: el guion que mide el
+        // alto del papel está en las DOS versiones y también escucha ese
+        // evento. Queda la línea que solo existe en el disparo automático.
+        $marca = 'const demora = performance.now() - antes;';
 
         $mirar = $this->actingAs($this->admin())
             ->get(route('comprobantes.imprimir', $comprobante));
@@ -382,16 +385,45 @@ class SustitucionComprobanteTest extends TestCase
             ->get(route('comprobantes.imprimir', [$comprobante, 'imprimir' => 1]));
         $imprimir->assertOk();
         $imprimir->assertSee($marca, false);
+
+        // Y ni aun así se imprime en una pestaña común: el disparo está
+        // condicionado a la ventana de la caja, la que abre el acceso directo
+        // con `--app=`, que Chrome declara «standalone» (una pestaña normal se
+        // declara «browser»). Esto mira el texto, no el comportamiento —acá no
+        // corre JavaScript—, pero deja constancia de que la condición está:
+        // sin ella, mostrarle el sistema a un cliente le planta el diálogo de
+        // impresión encima.
+        $imprimir->assertSee("matchMedia('(display-mode: standalone)')", false);
     }
 
-    /** El ticket sale a 80 mm y la otra vista, en A4. */
+    /**
+     * El ticket sale a 80 mm y la otra vista, en A4.
+     *
+     * Esta prueba antes exigía `size: 80mm auto`, que es lo que decía la hoja
+     * y lo que se lee en medio internet. Y pasaba en verde mientras el ticket
+     * salía en A4: mezclar una medida con la palabra `auto` es CSS inválido,
+     * el navegador descarta la regla entera sin avisar y usa el papel por
+     * defecto de la impresora.
+     *
+     * Por eso se mira la DECLARACIÓN y no el documento entero: el comentario
+     * de al lado nombra la forma rota para que nadie la reponga, y buscar en
+     * todo el HTML se tropezaría con ese texto.
+     */
     public function test_cada_formato_declara_su_tamano_de_papel(): void
     {
         $comprobante = $this->ventaConRecibo($this->turno())->comprobante;
 
-        $this->actingAs($this->admin())
-            ->get(route('comprobantes.imprimir', $comprobante))
-            ->assertSee('size: 80mm auto', false);
+        $ticket = $this->actingAs($this->admin())
+            ->get(route('comprobantes.imprimir', $comprobante));
+
+        $this->assertMatchesRegularExpression(
+            '/@page\s*\{\s*size:\s*80mm 200mm;\s*margin:\s*4mm;\s*\}/',
+            $ticket->getContent(),
+            'la regla @page del ticket no declara un tamaño de papel válido');
+
+        // Y el alto de verdad lo calcula la hoja, para que la impresora de
+        // rollo corte donde termina el ticket y no a los 200 mm.
+        $ticket->assertSee("'@media print { @page { size: ' + ANCHO + 'mm '", false);
 
         $this->actingAs($this->admin())
             ->get(route('comprobantes.imprimir', [$comprobante, 'formato' => 'a4']))

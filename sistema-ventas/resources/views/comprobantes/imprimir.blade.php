@@ -159,11 +159,34 @@
 
         .acciones .principal { background: #465fff; border-color: #465fff; color: #fff; }
 
+        /* No se le pone `display`: el atributo `hidden` tiene que poder
+           esconderlo solo, y una regla de display acá lo anularía. */
+        .aviso {
+            max-width: {{ $ticket ? '80mm' : '210mm' }};
+            margin: 0 auto 12px;
+            padding: 10px 12px;
+            border: 1px solid #f5c26b;
+            border-radius: 8px;
+            background: #fffaeb;
+            color: #7a5b12;
+            font-family: system-ui, sans-serif;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
         @media print {
             body { background: #fff; padding: 0; }
             .hoja { box-shadow: none; padding: {{ $ticket ? '0' : '16mm' }}; width: auto; }
-            .acciones { display: none; }
-            @page { size: {{ $ticket ? '80mm auto' : 'A4' }}; margin: {{ $ticket ? '4mm' : '12mm' }}; }
+            .acciones, .aviso { display: none; }
+
+            /* `size: 80mm auto` PARECE lo correcto y es lo que se lee en medio
+               internet, pero es CSS inválido: la norma no permite mezclar una
+               medida con la palabra `auto`. Chrome no avisa de nada: descarta
+               la regla ENTERA y sale en el papel por defecto de la impresora,
+               que casi siempre es A4. Por eso va una altura concreta, y el
+               guion de más abajo la reemplaza por la que el ticket mide de
+               verdad, para que la impresora de rollo no escupa papel en blanco. */
+            @page { size: {{ $ticket ? '80mm 200mm' : 'A4' }}; margin: {{ $ticket ? '4mm' : '12mm' }}; }
         }
     </style>
 </head>
@@ -177,20 +200,102 @@
         <a href="{{ route('ventas.show', $venta) }}">Volver a la venta</a>
     </div>
 
+    @if ($ticket)
+        <script>
+            /* La altura del papel se mide y se declara. Sin esto el ticket sale
+               sobre una hoja de 200 mm fijos: uno corto deja un palmo de papel
+               en blanco antes del corte, y uno largo se parte en dos. */
+            (function () {
+                const PX_A_MM = 25.4 / 96;      // 96 px por pulgada, por norma
+                const ANCHO = 80, MARGEN = 4;   // los mismos que declara @page
+
+                function altoImpreso() {
+                    const hoja = document.querySelector('.hoja');
+
+                    /* Se mide con la geometría de impresión y no con la de
+                       pantalla, que lleva relleno y sombra. El `maxWidth` hay que
+                       anularlo o no sirve fijar el ancho: la hoja tiene
+                       `max-width: 100%` y en una ventana angosta se encoge, el
+                       texto se parte en más renglones y la altura se dispara.
+                       Medido: 410 mm con el tope puesto contra 185 mm reales. */
+                    const antes = hoja.getAttribute('style') || '';
+                    hoja.style.padding = '0';
+                    hoja.style.maxWidth = 'none';
+                    hoja.style.width = (ANCHO - 2 * MARGEN) + 'mm';
+                    const mm = hoja.getBoundingClientRect().height * PX_A_MM;
+                    hoja.setAttribute('style', antes);
+
+                    return mm;
+                }
+
+                /* En `load` y no antes: la tipografía todavía puede cambiar el
+                   alto, y una medida tomada demasiado pronto se queda corta. */
+                window.addEventListener('load', function () {
+                    const papel = Math.ceil(altoImpreso() + 2 * MARGEN + 2);
+                    const regla = document.createElement('style');
+                    regla.textContent =
+                        '@media print { @page { size: ' + ANCHO + 'mm ' + papel + 'mm; } }';
+                    document.head.appendChild(regla);
+                });
+            })();
+        </script>
+    @endif
+
     @if ($autoImprimir ?? false)
+        <div class="aviso" hidden>
+            <strong>Apareció la ventana de impresión.</strong>
+            Al acceso directo <strong>Caja</strong> le falta la opción
+            <code>--kiosk-printing</code>: clic derecho en el acceso directo,
+            Propiedades, y agregarla en «Destino» después de
+            <code>chrome.exe</code>. Mientras tanto el ticket sale igual,
+            apretando Imprimir en esta ventana.
+        </div>
+
         <script>
             /* Se espera a `load` y no a que el documento esté listo: si se
                dispara antes de que bajen las imágenes y la tipografía, la
                impresora saca el ticket a medio armar. El respiro de 150 ms es
                para el navegador, que a veces reporta `load` un instante antes
                de haber pintado. */
-            window.addEventListener('load', () => setTimeout(() => window.print(), 150));
+            window.addEventListener('load', () => setTimeout(() => {
+                /* Solo se imprime sola en la ventana de la caja.
 
-            /* Y se cierra sola después. En un turno de cien ventas, si no, la
-               caja termina con cien pestañas de tickets abiertas. Se cierra
-               igual si el cajero cancela el diálogo: para MIRAR el comprobante
-               está el otro botón, que abre la hoja y se queda. */
-            window.addEventListener('afterprint', () => window.close());
+                   El acceso directo abre Chrome con `--app=`, y esas ventanas
+                   se declaran `standalone`; una pestaña común se declara
+                   `browser`. Medido en la máquina de la caja: --app da
+                   STANDALONE y la ventana normal da BROWSER.
+
+                   Así nadie recibe el diálogo de impresión encima por abrir el
+                   comprobante desde un navegador cualquiera —mostrándole el
+                   sistema a un cliente, por ejemplo—: ahí la hoja se ve y ya
+                   está. Para imprimir igual está el botón «Imprimir». */
+                if (! matchMedia('(display-mode: standalone)').matches) {
+                    return;
+                }
+
+                /* `print()` es sincrónico: cuando el navegador muestra el
+                   diálogo, no devuelve hasta que alguien lo cierra. Ese tiempo
+                   es la única forma de saber, desde la página, si el ticket
+                   salió solo o si hubo que apretar un botón. */
+                const antes = performance.now();
+                window.print();
+                const demora = performance.now() - antes;
+
+                if (demora < 1200) {
+                    /* Salió solo. La pestaña se cierra: en un turno de cien
+                       ventas, si no, la caja termina con cien tickets abiertos.
+                       Para MIRAR el comprobante está el otro botón, que abre la
+                       hoja y se queda. */
+                    window.close();
+
+                    return;
+                }
+
+                /* Hubo diálogo. La pestaña se queda abierta con el motivo, en
+                   vez de cerrarse y dejar al cajero preguntándose qué fue esa
+                   ventana que no pidió. */
+                document.querySelector('.aviso').hidden = false;
+            }, 150));
         </script>
     @endif
 
