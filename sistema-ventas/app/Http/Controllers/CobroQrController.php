@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\CobroQr;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Qr\QrBanco;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -119,23 +118,29 @@ class CobroQrController extends Controller
     /**
      * El banco avisa que le pagaron.
      *
-     * Sin sesión —el banco no inicia sesión— y sin CSRF, así que la única
-     * defensa es la firma que comprueba la pasarela. Ver
-     * {@see QrBanco::verificarAviso()}.
+     * Sin sesión —el banco no inicia sesión— y sin CSRF. El aviso nunca da un
+     * cobro por pagado por sí mismo: {@see CobrosQr::procesarAviso()} le
+     * pregunta al banco y vale lo que el banco conteste.
+     *
+     * Responde con `responseCode`/`message`, el formato que espera Banco
+     * Económico, además de los campos propios.
      */
     public function aviso(Request $request): JsonResponse
     {
+        // Las cabeceras llegan como listas; la pasarela espera un valor por nombre.
+        $cabeceras = array_map(fn ($valores) => (string) ($valores[0] ?? ''), $request->headers->all());
+
         try {
-            $cobro = CobrosQr::procesarAviso($request->all(), $request->headers->all());
+            $cobro = CobrosQr::procesarAviso($request->all(), $cabeceras);
         } catch (RuntimeException $e) {
-            return response()->json(['error' => $e->getMessage()], 403);
+            return response()->json(['responseCode' => 1, 'message' => $e->getMessage(), 'error' => $e->getMessage()], 403);
         } catch (Throwable $e) {
             report($e);
 
-            return response()->json(['error' => 'No se pudo procesar el aviso.'], 500);
+            return response()->json(['responseCode' => 1, 'message' => 'No se pudo procesar el aviso.', 'error' => 'No se pudo procesar el aviso.'], 500);
         }
 
-        return response()->json(['recibido' => true, 'estado' => $cobro?->estado]);
+        return response()->json(['responseCode' => 0, 'message' => '', 'recibido' => true, 'estado' => $cobro?->estado]);
     }
 
     /**
@@ -171,6 +176,8 @@ class CobroQrController extends Controller
             'monto' => (float) $cobro->monto,
             'moneda' => $cobro->moneda,
             'payload' => $cobro->payload,
+            // El banco puede devolver la imagen ya hecha en vez del texto a dibujar.
+            'imagen' => str_starts_with((string) $cobro->payload, 'data:image/'),
             'expira_en' => $cobro->expira_en?->toIso8601String(),
             'pagado' => $cobro->estaPagado(),
             'simulado' => CobrosQr::estaSimulado(),

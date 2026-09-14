@@ -47,6 +47,25 @@ return [
 
     'pasarelas' => [
 
+        /*
+        | Banco Económico (BEC QR Connect). Usuario, contraseña, llave y cuenta
+        | los entrega el banco. La URL por omisión es la de certificación; en
+        | producción el banco da otra.
+        */
+        'baneco' => [
+            'url_base' => env('QR_BANECO_URL', 'https://apimktdesa.baneco.com.bo/ApiGateway'),
+            'usuario' => env('QR_BANECO_USUARIO'),
+            'password' => env('QR_BANECO_PASSWORD'),
+            'llave' => env('QR_BANECO_LLAVE'),
+            'cuenta' => env('QR_BANECO_CUENTA'),
+            // Opcional: si el banco abona por sucursal (máximo 5 caracteres).
+            'sucursal' => env('QR_BANECO_SUCURSAL'),
+            // Va delante del número de cobro en `transactionId`, para reconocer
+            // en el extracto los QR de esta instalación.
+            'prefijo' => env('QR_BANECO_PREFIJO', 'SV'),
+            'timeout' => (int) env('QR_TIMEOUT', 15),
+        ],
+
         'banco' => [
             'url_base' => env('QR_URL_BASE'),
             'token' => env('QR_TOKEN'),

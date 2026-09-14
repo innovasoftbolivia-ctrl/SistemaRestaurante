@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Cliente;
+use App\Models\CobroQr;
 use App\Models\Comprobante;
 use App\Models\MetodoPago;
 use App\Models\Producto;
@@ -241,6 +242,8 @@ class Ventas
             );
         }
 
+        $cobrosUsados = [];
+
         foreach ($pagos as $pago) {
             $metodo = MetodoPago::findOrFail($pago['metodo_pago_id']);
             $monto = round((float) $pago['monto'], 2);
@@ -249,6 +252,8 @@ class Ventas
             if ($monto <= 0) {
                 throw new RuntimeException('Cada forma de pago debe tener un monto mayor que cero.');
             }
+
+            $cobro = self::cobroQrDelPago($venta, $metodo, $pago, $monto, $cobrosUsados);
 
             // El vuelto solo existe en efectivo: en tarjeta se cobra el importe exacto.
             if (! $metodo->esEfectivo()) {
@@ -262,9 +267,75 @@ class Ventas
                 'metodo_pago_id' => $metodo->id,
                 'monto' => $monto,
                 'monto_recibido' => $recibido,
-                'referencia' => $pago['referencia'] ?? null,
+                'referencia' => $pago['referencia'] ?? $cobro?->referencia_bancaria,
             ]);
+
+            $cobro?->update(['venta_id' => $venta->id]);
         }
+    }
+
+    /**
+     * El cobro por QR que respalda un pago, ya bloqueado y comprobado.
+     *
+     * Todo dentro de la transacción de la venta y con la fila del cobro
+     * bloqueada: si algo no cuadra, la venta entera se deshace, y dos ventas a
+     * la vez no pueden gastar el mismo QR. Las reglas:
+     *
+     *   - pago por QR ⇔ cobro: un QR sin cobro detrás no se acepta, y un cobro
+     *     no puede respaldar un pago en efectivo (el dinero está en el banco,
+     *     no en el cajón);
+     *   - el cobro es de quien vende, de este turno, está pagado y libre;
+     *   - el importe del pago —también cuando es «el resto»— es exactamente el
+     *     del QR. Si el carrito cambió después de cobrar, no cuadra.
+     *
+     * @param  array<string, mixed>  $pago
+     * @param  array<int, true>  $usados
+     */
+    private static function cobroQrDelPago(Venta $venta, MetodoPago $metodo, array $pago, float $monto, array &$usados): ?CobroQr
+    {
+        $id = (int) ($pago['cobro_qr_id'] ?? 0);
+        $esQr = $metodo->codigo === 'QR';
+
+        if (! $esQr) {
+            if ($id) {
+                throw new RuntimeException('Un cobro por QR solo puede respaldar un pago por QR.');
+            }
+
+            return null;
+        }
+
+        if (! $id) {
+            throw new RuntimeException('El pago por QR necesita su cobro: genera el QR y espera la confirmación del pago.');
+        }
+
+        if (isset($usados[$id])) {
+            throw new RuntimeException('El mismo cobro por QR no puede pagar dos veces.');
+        }
+
+        $usados[$id] = true;
+        $cobro = CobroQr::whereKey($id)->lockForUpdate()->first();
+
+        if (! $cobro || $cobro->usuario_id !== $venta->usuario_id || $cobro->sesion_caja_id !== $venta->sesion_caja_id) {
+            throw new RuntimeException('Ese cobro por QR no es de este turno de caja.');
+        }
+
+        if (! $cobro->estaPagado()) {
+            throw new RuntimeException('El cobro por QR todavía no está pagado.');
+        }
+
+        if ($cobro->venta_id !== null) {
+            throw new RuntimeException('Ese cobro por QR ya se usó en otra venta.');
+        }
+
+        if (abs($monto - round((float) $cobro->monto, 2)) > 0.001) {
+            throw new RuntimeException(sprintf(
+                'El QR se pagó por %s y el pago de la venta es de %s: el total cambió después de cobrar. Revisa el carrito.',
+                Config::importe($cobro->monto),
+                Config::importe($monto),
+            ));
+        }
+
+        return $cobro;
     }
 
     /**

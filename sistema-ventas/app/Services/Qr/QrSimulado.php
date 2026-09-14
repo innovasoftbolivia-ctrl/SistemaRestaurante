@@ -66,6 +66,14 @@ class QrSimulado implements PasarelaQr
         return $cobro->estado;
     }
 
+    /** No hay banco donde anular nada. */
+    public function anular(CobroQr $cobro): void {}
+
+    public function referenciaDelPago(): ?string
+    {
+        return null;
+    }
+
     /** Sin banco no hay avisos, así que ninguno es de fiar. */
     public function verificarAviso(array $datos, array $cabeceras): bool
     {

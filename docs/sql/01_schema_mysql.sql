@@ -508,7 +508,7 @@ CREATE TABLE cobros_qr (
 
     pasarela            VARCHAR(30)     NOT NULL,    -- 'simulado' o el código del banco
     id_externo          VARCHAR(80)     NULL,        -- el identificador que devuelve el banco
-    payload             TEXT            NULL,        -- lo que se codifica en el QR
+    payload             MEDIUMTEXT      NULL,        -- lo que se codifica en el QR, o la imagen del banco (data URL)
 
     estado              ENUM('PENDIENTE','PAGADO','EXPIRADO','ANULADO')
                         NOT NULL DEFAULT 'PENDIENTE',

@@ -394,8 +394,9 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
 | Fuera de toda sesión y fuera de CSRF, porque quien llama es el banco: no
 | inicia sesión ni tiene un token de formulario. Eso la deja como una dirección
 | pública, así que la ÚNICA defensa es la firma del aviso, que comprueba la
-| pasarela antes de tocar nada (ver `QrBanco::verificarAviso`). Sin secreto
-| configurado se rechaza todo: falla cerrado, no abierto.
+| pasarela antes de tocar nada (ver `QrBanco::verificarAviso`). Y aunque la
+| firma pase, el aviso no marca nada por sí solo: dispara una consulta al banco
+| y vale lo que el banco conteste (ver `CobrosQr::procesarAviso`).
 |
 | La exención de CSRF está en bootstrap/app.php.
 */
@@ -403,3 +404,8 @@ Route::middleware(['auth', 'cuenta.vigente'])->group(function () {
 Route::post('qr/aviso', [CobroQrController::class, 'aviso'])
     ->middleware('throttle:120,1')
     ->name('qr.aviso');
+
+// La misma entrada en la dirección que Banco Económico espera del comercio.
+Route::post('api/qrsimple/notifyPaymentQR', [CobroQrController::class, 'aviso'])
+    ->middleware('throttle:120,1')
+    ->name('qr.aviso.baneco');

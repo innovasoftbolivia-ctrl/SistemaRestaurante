@@ -31,7 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // El aviso de pago del banco no puede traer token CSRF: quien llama es
         // el banco, no un formulario del sistema. Su defensa es la firma del
         // aviso, no la sesión.
-        $middleware->validateCsrfTokens(except: ['qr/aviso']);
+        $middleware->validateCsrfTokens(except: ['qr/aviso', 'api/qrsimple/notifyPaymentQR']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

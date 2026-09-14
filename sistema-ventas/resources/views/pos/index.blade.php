@@ -409,7 +409,7 @@
 
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="m in metodos" :key="m.id">
-                                        <button type="button" @click="pago.metodoId = m.id"
+                                        <button type="button" @click="cambiarMetodo(pago, m.id)"
                                             :class="pago.metodoId === m.id
                                                 ? 'bg-brand-500 text-white'
                                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.05] dark:text-gray-400 dark:hover:bg-white/10'"
@@ -487,7 +487,21 @@
                                         <div class="rounded-xl border border-gray-200 p-3 text-center dark:border-gray-800">
 
                                             <div x-show="!pago.qr.pagado" class="flex flex-col items-center">
-                                                <canvas :id="'qr-' + pago.qr.id" class="rounded-lg bg-white p-2"></canvas>
+                                                {{-- El banco entrega la imagen ya hecha; el simulador, el
+                                                     texto que hay que dibujar. --}}
+                                                <template x-if="pago.qr.imagen">
+                                                    <img :src="pago.qr.payload" alt="Código QR para pagar" width="260" height="260"
+                                                        class="h-[260px] w-[260px] rounded-lg bg-white p-2" />
+                                                </template>
+                                                <template x-if="!pago.qr.imagen">
+                                                    <canvas :id="'qr-' + pago.qr.id" class="rounded-lg bg-white p-2"></canvas>
+                                                </template>
+
+                                                {{-- El total cambió después de generar el QR: ese QR ya
+                                                     no sirve, el servidor lo rechazaría. --}}
+                                                <p x-show="qrDesfasado(pago)" role="alert"
+                                                    class="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700 dark:bg-error-500/10 dark:text-error-400"
+                                                    x-text="'El total cambió: este QR es por {{ $moneda }} ' + pago.qr.monto.toFixed(2) + '. Cancélalo y genera otro por {{ $moneda }} ' + montoDe(pago).toFixed(2) + '.'"></p>
 
                                                 <p class="mt-2 text-theme-sm font-medium text-gray-800 dark:text-white/90"
                                                     x-text="'{{ $moneda }} ' + pago.qr.monto.toFixed(2)"></p>
@@ -510,8 +524,8 @@
                                                          cajero mira el comprobante en el celular del
                                                          cliente. Queda con su nombre en la bitácora. --}}
                                                     <button type="button" @click="confirmarQr(pago)"
-                                                        class="flex-1 rounded-lg bg-success-500 px-3 py-2 text-theme-xs font-medium text-white transition hover:bg-success-600">
-                                                        Ya me pagó
+                                                        class="flex-1 rounded-lg bg-success-500 px-3 py-2 text-theme-xs font-medium text-white transition hover:bg-success-600"
+                                                        x-text="pago.qr.simulado ? 'Ya me pagó' : 'Verificar pago'">
                                                     </button>
                                                     <button type="button" @click="anularQr(pago)"
                                                         class="rounded-lg border border-gray-300 px-3 py-2 text-theme-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">
@@ -524,6 +538,9 @@
                                                 <p class="text-lg font-semibold text-success-700 dark:text-success-500">
                                                     Pago confirmado
                                                 </p>
+                                                <p x-show="qrDesfasado(pago)" role="alert"
+                                                    class="mt-2 rounded-lg bg-error-50 px-3 py-2 text-theme-xs text-error-700 dark:bg-error-500/10 dark:text-error-400"
+                                                    x-text="'El total cambió después de cobrar: el cliente pagó {{ $moneda }} ' + pago.qr.monto.toFixed(2) + ' y ahora son {{ $moneda }} ' + montoDe(pago).toFixed(2) + '. Deja el carrito como estaba o cobra la diferencia aparte.'"></p>
                                                 <p class="mt-0.5 text-theme-sm text-gray-500 dark:text-gray-400"
                                                     x-text="'{{ $moneda }} ' + pago.qr.monto.toFixed(2)"></p>
                                                 <p x-show="pago.qr.referencia" class="mt-1 font-mono text-theme-xs text-gray-500 dark:text-gray-400"
@@ -1135,6 +1152,23 @@
                             return this.esQr(pago) && !(pago.qr && pago.qr.pagado);
                         },
 
+                        /* El QR se generó por un importe y el carrito cambió después. */
+                        qrDesfasado(pago) {
+                            return this.esQr(pago) && !!pago.qr && Math.abs(Number(pago.qr.monto) - this.montoDe(pago)) > 0.001;
+                        },
+
+                        /* Cambiar de forma de pago deja de lado el QR: si todavía no se
+                           pagó, se anula en el banco para que no quede cobrable. */
+                        cambiarMetodo(pago, metodoId) {
+                            if (pago.metodoId === metodoId) return;
+                            if (pago.qr && !pago.qr.pagado) this.anularQr(pago);
+                            if (pago.qr && pago.qr.pagado && !this.metodosQr.includes(metodoId)) {
+                                pago.qrError = 'Ese QR ya está pagado: el dinero está en el banco. Déjalo como pago por QR.';
+                                return;
+                            }
+                            pago.metodoId = metodoId;
+                        },
+
                         get cabecera() {
                             return {
                                 'Content-Type': 'application/json',
@@ -1174,6 +1208,7 @@
                         },
 
                         pintarQr(pago) {
+                            if (pago.qr.imagen) return;
                             const lienzo = document.getElementById('qr-' + pago.qr.id);
                             if (lienzo && window.dibujarQr) window.dibujarQr(lienzo, pago.qr.payload);
                         },
@@ -1281,6 +1316,7 @@
                             if (!this.pagoCubierto) return false;
                             if (this.pagos.some(p => this.efectivoCorto(p))) return false;
                             if (this.pagos.some(p => this.qrPendiente(p))) return false;
+                            if (this.pagos.some(p => this.qrDesfasado(p))) return false;
 
                             return true;
                         },
@@ -1297,6 +1333,7 @@
                                 return 'Las formas de pago suman {{ $moneda }} ' + Math.abs(this.restante).toFixed(2) + ' de más.';
                             }
                             if (this.pagos.some(p => this.efectivoCorto(p))) return 'El efectivo recibido no alcanza.';
+                            if (this.pagos.some(p => this.qrDesfasado(p))) return 'El total cambió después de generar el QR.';
                             if (this.pagos.some(p => this.qrPendiente(p))) return 'Falta que se confirme el pago por QR.';
                             return '';
                         },
@@ -1412,7 +1449,7 @@
                                 /* El cobro por QR viaja con su línea: el servidor
                                    comprueba que esté pagado, libre y por el mismo
                                    importe antes de registrar la venta. */
-                                if (p.qr && p.qr.pagado) {
+                                if (this.esQr(p) && p.qr && p.qr.pagado) {
                                     oculto(`pagos[${i}][cobro_qr_id]`, p.qr.id);
                                 }
                             });

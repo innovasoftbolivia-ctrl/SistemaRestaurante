@@ -8,6 +8,7 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Qr\PasarelaQr;
 use App\Services\Qr\QrBanco;
+use App\Services\Qr\QrBaneco;
 use App\Services\Qr\QrSimulado;
 use App\Support\Config;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +45,7 @@ class CobrosQr
             throw new RuntimeException("No hay configuración para la pasarela de QR «{$codigo}».");
         }
 
-        return new QrBanco($codigo, $config);
+        return $codigo === QrBaneco::CODIGO ? new QrBaneco($config) : new QrBanco($codigo, $config);
     }
 
     public static function estaSimulado(): bool
@@ -101,14 +102,15 @@ class CobrosQr
             return $cobro;
         }
 
-        $estado = self::pasarela()->consultar($cobro);
+        $pasarela = self::pasarela();
+        $estado = $pasarela->consultar($cobro);
 
         if ($estado === $cobro->estado) {
             return $cobro;
         }
 
         if ($estado === CobroQr::PAGADO) {
-            return self::marcarPagado($cobro, 'PASARELA');
+            return self::marcarPagado($cobro, 'PASARELA', null, $pasarela->referenciaDelPago());
         }
 
         $cobro->update(['estado' => $estado]);
@@ -120,9 +122,12 @@ class CobrosQr
      * El cajero da por pagado un cobro mirando el comprobante en el celular
      * del cliente.
      *
-     * Hace falta: la API del banco se cae, o todavía no hay convenio. Pero es
-     * el punto por donde se colaría un cobro que nunca entró, así que queda
-     * con nombre y en la bitácora.
+     * Con el simulador es la única forma. Con un banco conectado, primero se
+     * le pregunta al banco: si ya lo registra, queda pagado por el banco; si
+     * dice que sigue pendiente, NO se acepta la palabra del cajero —es
+     * justamente el caso de un comprobante falso o de una transferencia que no
+     * llegó—. Solo si el banco no responde se permite confirmar a mano, y
+     * queda con nombre y en la bitácora.
      */
     public static function confirmarAMano(CobroQr $cobro, Usuario $usuario, ?string $referencia = null): CobroQr
     {
@@ -134,6 +139,25 @@ class CobrosQr
             throw new RuntimeException('Ese cobro fue cancelado: genera uno nuevo.');
         }
 
+        if (! self::estaSimulado()) {
+            try {
+                $cobro = self::refrescar($cobro);
+            } catch (RuntimeException) {
+                // El banco no contesta: se sigue con la confirmación a mano.
+                return self::marcarPagado($cobro, 'MANUAL', $usuario, $referencia);
+            }
+
+            if ($cobro->estaPagado()) {
+                return $cobro;
+            }
+
+            throw new RuntimeException(match ($cobro->estado) {
+                CobroQr::EXPIRADO => 'El QR venció sin que el banco registrara el pago. Genera uno nuevo.',
+                CobroQr::ANULADO => 'Ese cobro fue cancelado: genera uno nuevo.',
+                default => 'El banco todavía no registra este pago. Espera unos segundos; si el cliente insiste en que pagó, pídele el comprobante y vuelve a verificar.',
+            });
+        }
+
         return self::marcarPagado($cobro, 'MANUAL', $usuario, $referencia);
     }
 
@@ -142,6 +166,21 @@ class CobrosQr
     {
         if ($cobro->estaPagado()) {
             throw new RuntimeException('Ese cobro ya está pagado: no se puede cancelar.');
+        }
+
+        // En el banco primero: un QR que queda vivo allá se puede pagar después,
+        // cuando ya no hay venta esperándolo.
+        if ($cobro->estaPendiente()) {
+            try {
+                self::pasarela()->anular($cobro);
+            } catch (RuntimeException $e) {
+                // Puede que no se anule porque justo lo pagaron: se pregunta.
+                if (self::refrescar($cobro)->estaPagado()) {
+                    throw new RuntimeException('El cliente ya pagó ese QR: no se puede cancelar. Úsalo para cobrar.');
+                }
+
+                throw $e;
+            }
         }
 
         $cobro->update(['estado' => CobroQr::ANULADO]);
@@ -209,7 +248,11 @@ class CobrosQr
             return $cobro;
         }
 
-        return self::marcarPagado($cobro, 'PASARELA', null, $datos['referencia'] ?? null);
+        // El aviso no marca nada por sí mismo: dispara una consulta al banco y
+        // vale lo que el banco conteste. Así un aviso falsificado —o uno de un
+        // banco que no firma, como Banco Económico— no puede dar por pagado un
+        // cobro que no se pagó.
+        return self::refrescar($cobro);
     }
 
     private static function marcarPagado(

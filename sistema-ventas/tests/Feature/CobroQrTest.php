@@ -11,6 +11,7 @@ use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -185,7 +186,8 @@ class CobroQrTest extends TestCase
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $total = round((float) $producto->precio_venta * 2, 2);
+        // El total con impuesto: el QR tiene que ser por lo que la venta cobra.
+        $total = $this->totalDe($producto, 2);
 
         $cobro = CobrosQr::generar($sesion, $this->cajero(), $total);
         CobrosQr::confirmarAMano($cobro, $this->cajero());
@@ -256,12 +258,10 @@ class CobroQrTest extends TestCase
             usuario: $this->cajero(),
             lineas: [['producto_id' => $producto->id, 'cantidad' => 2]],
             pagos: [
-                ['metodo_pago_id' => $this->metodoQr()->id, 'monto' => 3.00],
+                ['metodo_pago_id' => $this->metodoQr()->id, 'monto' => 3.00, 'cobro_qr_id' => $cobro->id],
                 ['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->first()->id, 'monto' => null],
             ],
         );
-
-        CobrosQr::consumir($cobro->id, $venta);
 
         $this->assertCount(2, $venta->pagos()->get());
         $this->assertSame($venta->id, $cobro->fresh()->venta_id);
@@ -293,6 +293,14 @@ class CobroQrTest extends TestCase
     private function turnoActual(): SesionCaja
     {
         return Cajas::sesionDe($this->cajero());
+    }
+
+    private function totalDe(Producto $producto, float $cantidad): float
+    {
+        $base = round((float) $producto->precio_venta * $cantidad, 2);
+        $tasa = $producto->afecto_impuesto ? (float) Config::get('tasa_impuesto', '0') : 0.0;
+
+        return round($base + round($base * $tasa, 2), 2);
     }
 
     private function ventaDe(SesionCaja $sesion)

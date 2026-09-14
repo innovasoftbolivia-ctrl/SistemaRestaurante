@@ -91,6 +91,16 @@ class QrBanco implements PasarelaQr
         };
     }
 
+    public function anular(CobroQr $cobro): void
+    {
+        // TODO(banco): la ruta de anulación sale de su manual.
+    }
+
+    public function referenciaDelPago(): ?string
+    {
+        return null;
+    }
+
     /**
      * Sin secreto configurado se rechaza TODO aviso.
      *

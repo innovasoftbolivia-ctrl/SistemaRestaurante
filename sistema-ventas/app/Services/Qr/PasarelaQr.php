@@ -43,6 +43,18 @@ interface PasarelaQr
     public function consultar(CobroQr $cobro): string;
 
     /**
+     * Anula en el banco un QR que no se va a usar, para que nadie lo pague
+     * cuando ya no hay venta esperándolo.
+     */
+    public function anular(CobroQr $cobro): void;
+
+    /**
+     * La referencia bancaria del pago que encontró la última consulta, si la
+     * pasarela la informa: queda en el cobro para conciliar con el extracto.
+     */
+    public function referenciaDelPago(): ?string;
+
+    /**
      * ¿Este aviso viene de verdad del banco?
      *
      * Un webhook es una dirección pública: cualquiera puede llamarla diciendo
