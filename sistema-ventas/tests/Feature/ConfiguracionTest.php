@@ -66,7 +66,11 @@ class ConfiguracionTest extends TestCase
             'negocio_direccion' => $valor('negocio_direccion'),
             'negocio_telefono' => $valor('negocio_telefono'),
             'moneda_codigo' => $valor('moneda_codigo'),
-            'tasa_impuesto' => rtrim(rtrim(number_format((float) $valor('tasa_impuesto') * 100, 2, '.', ''), '0'), '.'),
+            'cobra_impuesto' => (float) $valor('tasa_impuesto') > 0 ? '1' : '0',
+            'tasa_impuesto' => (float) $valor('tasa_impuesto') > 0
+                ? rtrim(rtrim(number_format((float) $valor('tasa_impuesto') * 100, 2, '.', ''), '0'), '.')
+                : '13',
+            'precios_incluyen_impuesto' => $valor('precios_incluyen_impuesto') === '1' ? '1' : '0',
             'descuento_max_cajero' => $valor('descuento_max_cajero'),
             'egreso_max_cajero' => $valor('egreso_max_cajero'),
             'cliente_generico_nombre' => $valor('cliente_generico_nombre'),
@@ -255,5 +259,72 @@ class ConfiguracionTest extends TestCase
         $this->guardar([])->assertRedirect()->assertSessionHas('aviso');
 
         $this->assertSame($antes, Auditoria::where('accion', 'CONFIGURACION_ACTUALIZADA')->count());
+    }
+
+    // ================================================================ impuesto y precios
+
+    /** El negocio que todavía no factura desmarca el IVA y la tasa queda en cero. */
+    public function test_se_puede_trabajar_sin_iva(): void
+    {
+        // La tasa sigue escrita en el formulario (oculta): no se usa.
+        $this->guardar(['cobra_impuesto' => '0', 'tasa_impuesto' => '13'])->assertSessionHasNoErrors();
+
+        $this->assertSame(0.0, Config::tasaImpuesto());
+        $this->assertSame('0.00', $this->venta()->impuesto);
+    }
+
+    /**
+     * Pasar a precios con IVA incluido ajusta el catálogo: el cliente sigue
+     * pagando lo mismo que veía en el estante.
+     */
+    public function test_pasar_a_iva_incluido_conserva_lo_que_paga_el_cliente(): void
+    {
+        $leche = Producto::where('codigo', 'P-0004')->firstOrFail();
+        $estanteAntes = $leche->precio_estante;
+        $exonerado = Producto::where('codigo', 'P-0009')->firstOrFail();
+        $exonerado->update(['afecto_impuesto' => 0]);
+
+        $this->guardar(['precios_incluyen_impuesto' => '1', 'convertir_precios' => '1'])
+            ->assertSessionHas('exito', fn ($m) => str_contains($m, 'siga pagando lo mismo'));
+
+        $this->assertTrue(Config::preciosIncluyenImpuesto());
+        $this->assertSame(number_format($estanteAntes, 2, '.', ''), $leche->fresh()->precio_venta);
+        $this->assertSame($estanteAntes, $leche->fresh()->precio_estante);
+        // Un producto exonerado cuesta lo mismo en los dos modos.
+        $this->assertSame($exonerado->precio_venta, $exonerado->fresh()->precio_venta);
+
+        $venta = $this->venta();
+        $this->assertTrue($venta->impuesto_incluido);
+        $this->assertSame(number_format($estanteAntes, 2, '.', ''), $venta->total);
+        $this->assertTrue(Auditoria::where('accion', 'PRECIOS_CONVERTIDOS')->exists());
+    }
+
+    public function test_sin_ajustar_los_precios_quedan_como_estaban(): void
+    {
+        $antes = Producto::where('codigo', 'P-0004')->value('precio_venta');
+
+        $this->guardar(['precios_incluyen_impuesto' => '1', 'convertir_precios' => '0'])->assertSessionHasNoErrors();
+
+        $this->assertSame($antes, Producto::where('codigo', 'P-0004')->value('precio_venta'));
+    }
+
+    /** Ida y vuelta: la base vuelve a ser la de antes, al centavo o casi. */
+    public function test_volver_al_iva_encima_recupera_la_base(): void
+    {
+        $base = (float) Producto::where('codigo', 'P-0004')->value('precio_venta');
+
+        $this->guardar(['precios_incluyen_impuesto' => '1', 'convertir_precios' => '1']);
+        $this->guardar(['precios_incluyen_impuesto' => '0', 'convertir_precios' => '1']);
+
+        $this->assertFalse(Config::preciosIncluyenImpuesto());
+        $this->assertEqualsWithDelta($base, (float) Producto::where('codigo', 'P-0004')->value('precio_venta'), 0.01);
+    }
+
+    public function test_la_pantalla_tiene_el_apartado_de_impuesto_y_precios(): void
+    {
+        $this->actingAs($this->admin())->get(route('configuracion.edit'))->assertOk()
+            ->assertSee('data-impuesto-y-precios', false)
+            ->assertSee('Ya incluyen el IVA')
+            ->assertSee('El negocio cobra IVA en sus ventas');
     }
 }

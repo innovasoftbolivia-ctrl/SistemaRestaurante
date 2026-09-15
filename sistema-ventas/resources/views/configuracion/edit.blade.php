@@ -10,6 +10,25 @@
             nit: @js(old('negocio_documento', $actual['negocio_documento'])),
             direccion: @js(old('negocio_direccion', $actual['negocio_direccion'])),
             telefono: @js(old('negocio_telefono', $actual['negocio_telefono'])),
+            cobra: @js((bool) old('cobra_impuesto', $actual['cobra_impuesto'] === '1')),
+            tasa: Number(@js(old('tasa_impuesto', $actual['tasa_impuesto']))),
+            incluido: @js(old('precios_incluyen_impuesto', $actual['precios_incluyen_impuesto'])),
+            incluidoAntes: @js($actual['precios_incluyen_impuesto']),
+            convertir: @js((bool) old('convertir_precios', true)),
+            ejemplo: 10,
+            /* Lo que ve el mostrador con un producto de ejemplo, en centavos
+               enteros y con la misma cuenta que la base. */
+            get tasaEfectiva() { return this.cobra ? Math.max(Number(this.tasa) || 0, 0) / 100 : 0; },
+            get ivaEjemplo() {
+                const c = Math.round(this.ejemplo * 100), t = Math.round(this.tasaEfectiva * 10000), d = 10000 + t;
+                return this.incluido === '1'
+                    ? Math.floor((2 * c * t + d) / (2 * d)) / 100
+                    : Math.floor((c * t + 5000) / 10000) / 100;
+            },
+            get pagaEjemplo() {
+                return this.incluido === '1' ? this.ejemplo : Math.round((this.ejemplo + this.ivaEjemplo) * 100) / 100;
+            },
+            get cambiaModo() { return this.incluido !== this.incluidoAntes; },
         }"
         class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         @csrf
@@ -46,19 +65,84 @@
                 </div>
             </x-common.component-card>
 
-            <x-common.component-card title="Moneda e impuesto"
-                desc="Afectan solo a las ventas nuevas. Cada venta ya registrada conserva la tasa y la moneda con las que se hizo.">
+            <x-common.component-card title="Moneda">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <x-form.campo label="Moneda" for="moneda_codigo" name="moneda_codigo" required>
                         <x-form.select id="moneda_codigo" name="moneda_codigo" :opciones="$monedas"
                             :value="$actual['moneda_codigo']" required />
                     </x-form.campo>
+                </div>
+            </x-common.component-card>
 
-                    <x-form.campo label="Tasa de impuesto (%)" for="tasa_impuesto" name="tasa_impuesto" required
-                        help="El IVA en Bolivia es del 13 %. Pon 0 si el negocio no desglosa impuesto.">
-                        <x-form.input id="tasa_impuesto" name="tasa_impuesto" type="number" step="0.01" min="0"
-                            max="100" :value="$actual['tasa_impuesto']" required />
-                    </x-form.campo>
+            {{-- Impuesto y precios: lo decide el negocio (y su contador). Afecta solo
+                 a las ventas nuevas: cada venta guarda la tasa y el modo con que se hizo. --}}
+            <x-common.component-card title="Impuesto y precios"
+                desc="Si el negocio cobra IVA y cómo van tus precios. Cambiarlo afecta solo a las ventas nuevas: las ya registradas conservan la tasa y el modo con que se hicieron.">
+                <div class="space-y-5" data-impuesto-y-precios>
+                    <div>
+                        <x-form.check name="cobra_impuesto" model="cobra"
+                            label="El negocio cobra IVA en sus ventas" />
+                        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            Desmárcalo si el negocio todavía no factura con impuesto: los tickets no mostrarán IVA.
+                        </p>
+                    </div>
+
+                    <div x-show="cobra" x-cloak class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                        <x-form.campo label="Tasa del IVA (%)" for="tasa_impuesto" name="tasa_impuesto"
+                            help="En Bolivia es del 13 %.">
+                            <x-form.input id="tasa_impuesto" name="tasa_impuesto" type="number" step="0.01" min="0"
+                                max="100" :value="$actual['tasa_impuesto']" x-model.number="tasa" x-bind:required="cobra" />
+                        </x-form.campo>
+                    </div>
+
+                    <fieldset class="space-y-3">
+                        <legend class="mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-400">Tus precios de venta</legend>
+
+                        <label class="flex cursor-pointer gap-3 rounded-xl border p-4 transition"
+                            :class="incluido === '1' ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-800'">
+                            <input type="radio" name="precios_incluyen_impuesto" value="1" x-model="incluido" class="mt-1 accent-brand-500">
+                            <span>
+                                <span class="block text-sm font-medium text-gray-800 dark:text-white/90">Ya incluyen el IVA</span>
+                                <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                    El precio del producto es lo que paga el cliente. El IVA se separa por dentro para la factura.
+                                    Es lo habitual en Bolivia.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label class="flex cursor-pointer gap-3 rounded-xl border p-4 transition"
+                            :class="incluido === '0' ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10' : 'border-gray-200 dark:border-gray-800'">
+                            <input type="radio" name="precios_incluyen_impuesto" value="0" x-model="incluido" class="mt-1 accent-brand-500">
+                            <span>
+                                <span class="block text-sm font-medium text-gray-800 dark:text-white/90">No incluyen el IVA: se suma al cobrar</span>
+                                <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
+                                    El precio del producto es la base y el mostrador le agrega el impuesto.
+                                </span>
+                            </span>
+                        </label>
+                    </fieldset>
+
+                    {{-- Ejemplo en vivo: lo que el cajero cobraría con esta configuración. --}}
+                    <div class="rounded-xl bg-gray-50 px-4 py-3 text-theme-sm dark:bg-white/[0.03]" data-ejemplo-precio>
+                        Un producto con precio {{ App\Support\Config::moneda() }} <b x-text="ejemplo.toFixed(2)"></b>:
+                        el cliente paga <b class="text-gray-800 dark:text-white/90">{{ App\Support\Config::moneda() }} <span x-text="pagaEjemplo.toFixed(2)"></span></b><span x-show="tasaEfectiva > 0">,
+                        de los que {{ App\Support\Config::moneda() }} <span x-text="ivaEjemplo.toFixed(2)"></span> son IVA</span>.
+                    </div>
+
+                    {{-- Cambiar de modo sin convertir le cambiaría el precio a todo el mostrador. --}}
+                    <div x-show="cambiaModo" x-cloak class="rounded-xl bg-warning-50 px-4 py-3 dark:bg-orange-500/10">
+                        <x-form.check name="convertir_precios" model="convertir"
+                            label="Ajustar los precios del catálogo para que el cliente siga pagando lo mismo" />
+                        <p class="mt-1.5 text-theme-xs text-warning-700 dark:text-orange-400">
+                            <span x-show="incluido === '1'">Cada precio pasa a ser el que hoy paga el cliente, con el IVA ya adentro.</span>
+                            <span x-show="incluido === '0'">Cada precio pasa a ser la base sin IVA; el mostrador le suma el impuesto al cobrar.</span>
+                            Solo los productos afectos al impuesto. Sin ajustar, todos los precios del mostrador cambian.
+                        </p>
+                    </div>
+
+                    <p x-show="!cambiaModo && incluido === '0' && cobra" x-cloak class="text-theme-xs text-gray-500 dark:text-gray-400">
+                        Con el IVA sumado al cobrar, cambiar la tasa cambia lo que paga el cliente.
+                    </p>
                 </div>
             </x-common.component-card>
 

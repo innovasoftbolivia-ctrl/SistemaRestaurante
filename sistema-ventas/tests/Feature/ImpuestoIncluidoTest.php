@@ -217,4 +217,21 @@ class ImpuestoIncluidoTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('pos.index'))->assertOk()->assertSee('IVA incluido (13%)');
     }
+
+    public function test_las_pantallas_de_productos_hablan_de_precio_con_iva(): void
+    {
+        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
+
+        $this->actingAs($this->admin())->get(route('productos.edit', $producto))->assertOk()
+            ->assertSee('Lo que paga el cliente por una unidad, con el IVA incluido.')
+            ->assertSee('IVA incluido')
+            ->assertDontSee('Precio de venta (base)');
+
+        $this->actingAs($this->admin())->get(route('productos.show', $producto))->assertOk()
+            ->assertSee('Precio sin IVA')
+            ->assertSee(Config::importe(3.54));
+
+        $this->actingAs($this->admin())->get(route('productos.index'))->assertOk()
+            ->assertSee('el precio final con el IVA incluido', false);
+    }
 }

@@ -76,7 +76,7 @@
                             ->filter()->implode(' · ')],
                     // Sin impuesto el precio de estante y el de venta son el mismo
                     // numero: no tiene sentido anunciarlo como si fueran dos cosas.
-                    [Config::tasaImpuesto() > 0 ? 'Precio de estante' : 'Precio de venta',
+                    [Config::tasaImpuesto() > 0 && ! Config::preciosIncluyenImpuesto() ? 'Precio de estante' : 'Precio de venta',
                         Config::importe($producto->precio_estante), 'text-gray-800 dark:text-white/90',
                         Config::tasaImpuesto() > 0
                             ? ($producto->afecto_impuesto ? 'incluye impuesto' : 'exonerado')
@@ -181,7 +181,13 @@
             {{-- Datos --}}
             <div class="space-y-6">
                 @php
-                    $filasDePrecio = Config::tasaImpuesto() > 0
+                    $filasDePrecio = Config::tasaImpuesto() > 0 && Config::preciosIncluyenImpuesto()
+                        ? [
+                            'Precio de compra' => Config::importe($producto->precio_compra).' (sin impuesto)',
+                            'Precio de venta' => Config::importe($producto->precio_venta).($producto->afecto_impuesto ? ' (IVA incluido)' : ' (exonerado)'),
+                            'Precio sin IVA' => Config::importe($producto->precio_base),
+                        ]
+                        : (Config::tasaImpuesto() > 0
                         ? [
                             'Precio de compra' => Config::importe($producto->precio_compra).' (sin impuesto)',
                             'Precio de venta base' => Config::importe($producto->precio_venta).' (sin impuesto)',
@@ -192,7 +198,7 @@
                             'Precio de venta' => Config::importe($producto->precio_venta),
                             'Ganancia por unidad' => Config::importe($producto->margen)
                                 .($producto->margen_porcentaje !== null ? ' ('.$producto->margen_porcentaje.'% de margen)' : ''),
-                        ];
+                        ]);
 
                     // Todos los precios del sistema son por unidad de venta. El
                     // de la caja se muestra calculado, y solo para poder

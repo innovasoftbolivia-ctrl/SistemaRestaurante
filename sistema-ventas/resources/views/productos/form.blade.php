@@ -5,6 +5,9 @@
 
     $esEdicion = $producto->exists;
     $tasa = Config::tasaImpuesto();
+    $incluido = Config::preciosIncluyenImpuesto();
+    // Dos precios distintos (base y estante) solo con el impuesto sumado encima.
+    $separa = $tasa > 0 && ! $incluido;
     $moneda = Config::moneda();
 
     // Los campos que quedan detrás de «Más datos». Son los que un comerciante
@@ -37,6 +40,7 @@
         action="{{ $esEdicion ? route('productos.update', $producto) : route('productos.store') }}"
         x-data="{
             tasa: {{ $tasa }},
+            incluido: @js($incluido),
             compra: Number(@js(old('precio_compra', $producto->precio_compra ?? 0))),
             venta: Number(@js(old('precio_venta', $producto->precio_venta ?? 0))),
             afecto: @js((bool) old('afecto_impuesto', $producto->afecto_impuesto ?? true)),
@@ -124,11 +128,21 @@
                 const base = this.afecto ? this.venta * (1 + this.tasa) : this.venta;
                 return base.toFixed(2);
             },
+            /* El IVA que lleva adentro el precio, igual que la base de datos. */
+            get ivaDentro() {
+                if (!this.incluido || !this.afecto) return 0;
+                const c = Math.round(this.venta * 100), t = Math.round(this.tasa * 10000), d = 10000 + t;
+                return Math.floor((2 * c * t + d) / (2 * d)) / 100;
+            },
+            /* La ganancia se mide sin impuesto: el IVA no es del negocio. */
+            get ventaSinIva() {
+                return this.venta - this.ivaDentro;
+            },
             get margen() {
-                return (this.venta - this.compraUnidad).toFixed(2);
+                return (this.ventaSinIva - this.compraUnidad).toFixed(2);
             },
             get margenPorcentaje() {
-                return this.venta > 0 ? ((this.venta - this.compraUnidad) / this.venta * 100).toFixed(1) : '0.0';
+                return this.ventaSinIva > 0 ? ((this.ventaSinIva - this.compraUnidad) / this.ventaSinIva * 100).toFixed(1) : '0.0';
             },
             /* Al revés: se escribe el precio de estante deseado y sale la base. */
             desdeEstante(valor) {
@@ -298,9 +312,11 @@
             </x-common.component-card>
 
             <x-common.component-card title="Precios"
-                :desc="$tasa > 0
+                :desc="$separa
                     ? 'Se registran SIN impuesto. El impuesto se agrega al calcular el total de la venta.'
-                    : 'El precio de venta es el que paga el cliente: el sistema no le agrega nada encima.'">
+                    : ($tasa > 0
+                        ? 'El precio de venta es el que paga el cliente e incluye el IVA: el sistema lo separa por dentro.'
+                        : 'El precio de venta es el que paga el cliente: el sistema no le agrega nada encima.')">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <x-form.campo label="Precio de compra" for="precio_compra" name="precio_compra" required
                         help="Sin impuesto. Se guarda siempre por unidad de venta.">
@@ -331,11 +347,11 @@
                         </p>
                     </x-form.campo>
 
-                    <x-form.campo :label="$tasa > 0 ? 'Precio de venta (base)' : 'Precio de venta'"
+                    <x-form.campo :label="$separa ? 'Precio de venta (base)' : 'Precio de venta'"
                         for="precio_venta" name="precio_venta" required
-                        :help="$tasa > 0
+                        :help="$separa
                             ? 'Base imponible: es lo que se guarda en la base de datos.'
-                            : 'Lo que paga el cliente por una unidad.'">
+                            : ($tasa > 0 ? 'Lo que paga el cliente por una unidad, con el IVA incluido.' : 'Lo que paga el cliente por una unidad.')">
                         <x-form.input id="precio_venta" name="precio_venta" type="number" step="0.01" min="0"
                             :value="$producto->precio_venta ?? '0.00'" x-model.number="venta" required />
                     </x-form.campo>
@@ -344,7 +360,7 @@
                          número, y la casilla de impuesto no decide nada: se muestran
                          solo cuando el negocio trabaja con impuesto. El valor de
                          `afecto_impuesto` viaja igual, para no perderlo al guardar. --}}
-                    @if ($tasa > 0)
+                    @if ($separa)
                         <x-form.campo label="Precio de estante" for="precio_estante"
                             help="Lo que paga el cliente. Escríbelo aquí y la base se calcula sola.">
                             {{-- Se refresca cuando cambian la base o el impuesto, pero no
@@ -360,6 +376,12 @@
                                 label="Afecto al impuesto ({{ number_format($tasa * 100, 0) }}%)" />
                             <x-ui.en-construccion size="sm" titulo="Tasa provisional" />
                         </div>
+                    @elseif ($tasa > 0)
+                        <div class="flex flex-col justify-end gap-1.5 pb-1">
+                            <x-form.check name="afecto_impuesto" :checked="$producto->afecto_impuesto ?? true"
+                                model="afecto"
+                                label="Lleva IVA ({{ rtrim(rtrim(number_format($tasa * 100, 2), '0'), '.') }}%)" />
+                        </div>
                     @else
                         <input type="hidden" name="afecto_impuesto"
                             value="{{ (int) old('afecto_impuesto', $producto->afecto_impuesto ?? true) }}">
@@ -369,11 +391,18 @@
                 {{-- Resumen en vivo, para no tener que sacar la calculadora --}}
                 <div
                     class="grid @if ($tasa > 0) grid-cols-3 @else grid-cols-2 @endif gap-4 rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
-                    @if ($tasa > 0)
+                    @if ($separa)
                         <div>
                             <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Estante</p>
                             <p class="text-lg font-semibold text-gray-800 dark:text-white/90">
                                 {{ $moneda }} <span x-text="estante"></span>
+                            </p>
+                        </div>
+                    @elseif ($tasa > 0)
+                        <div>
+                            <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">IVA incluido</p>
+                            <p class="text-lg font-semibold text-gray-800 dark:text-white/90">
+                                {{ $moneda }} <span x-text="ivaDentro.toFixed(2)"></span>
                             </p>
                         </div>
                     @endif

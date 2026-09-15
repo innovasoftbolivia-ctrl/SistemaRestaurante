@@ -895,7 +895,11 @@ sus propios datos de negocio.
    Al entrar, el sistema obliga a cambiarla antes de hacer cualquier otra cosa.
 
 6. **Datos del negocio y cuentas reales.** En **Sistema → Configuración**: nombre, NIT,
-   dirección, teléfono, moneda, tasa de impuesto y topes del cajero. En **Personal → Empleados y
+   dirección, teléfono, moneda y topes del cajero. En **Impuesto y precios**: si el negocio cobra IVA,
+   la tasa y si los precios de venta ya lo incluyen (una instalación nueva arranca sin IVA y con los
+   precios como los ve el cliente; al activarlo con el precio incluido, lo que paga el cliente no
+   cambia). Al cambiar de modo, el sistema ofrece ajustar los precios del catálogo para que el
+   cliente siga pagando lo mismo. En **Personal → Empleados y
    Usuarios**: el personal y sus cuentas. Cada cuenta nueva, y cada contraseña que restablece un
    administrador, se cambia al primer ingreso.
 

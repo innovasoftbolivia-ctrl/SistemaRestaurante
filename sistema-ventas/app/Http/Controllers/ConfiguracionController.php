@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SerieComprobante;
 use App\Services\Auditor;
+use App\Services\Precios;
 use App\Support\Config;
 use Closure;
 use Illuminate\Http\RedirectResponse;
@@ -71,7 +72,11 @@ class ConfiguracionController extends Controller
                 ...array_keys(self::MONEDAS),
                 Config::get('moneda_codigo', 'BOB'),
             ]))],
-            'tasa_impuesto' => ['required', 'numeric', 'min:0', 'max:100', 'decimal:0,2'],
+            'cobra_impuesto' => ['boolean'],
+            // Sin impuesto, la tasa escrita no se usa: no se valida.
+            'tasa_impuesto' => ['exclude_unless:cobra_impuesto,1', 'required', 'numeric', 'min:0', 'max:100', 'decimal:0,2'],
+            'precios_incluyen_impuesto' => ['required', Rule::in(['0', '1'])],
+            'convertir_precios' => ['boolean'],
             'descuento_max_cajero' => ['required', 'integer', 'min:0', 'max:100'],
             'egreso_max_cajero' => ['required', 'numeric', 'min:0', 'max:99999999', 'decimal:0,2'],
             'cliente_generico_nombre' => ['required', 'string', 'max:60'],
@@ -91,6 +96,7 @@ class ConfiguracionController extends Controller
             'negocio_telefono' => 'teléfono',
             'moneda_codigo' => 'moneda',
             'tasa_impuesto' => 'tasa de impuesto',
+            'precios_incluyen_impuesto' => 'cómo van los precios',
             'descuento_max_cajero' => 'descuento máximo del cajero',
             'egreso_max_cajero' => 'egreso máximo del cajero',
             'cliente_generico_nombre' => 'nombre del cliente sin registrar',
@@ -109,7 +115,8 @@ class ConfiguracionController extends Controller
             'negocio_telefono' => trim((string) ($datos['negocio_telefono'] ?? '')),
             'moneda_codigo' => $datos['moneda_codigo'],
             'moneda_simbolo' => Config::simbolo($datos['moneda_codigo']),
-            'tasa_impuesto' => number_format((float) $datos['tasa_impuesto'] / 100, 4, '.', ''),
+            'tasa_impuesto' => number_format($request->boolean('cobra_impuesto') ? (float) $datos['tasa_impuesto'] / 100 : 0, 4, '.', ''),
+            'precios_incluyen_impuesto' => $datos['precios_incluyen_impuesto'],
             'descuento_max_cajero' => (string) (int) $datos['descuento_max_cajero'],
             'egreso_max_cajero' => number_format((float) $datos['egreso_max_cajero'], 2, '.', ''),
             'cliente_generico_nombre' => trim($datos['cliente_generico_nombre']),
@@ -137,23 +144,47 @@ class ConfiguracionController extends Controller
                 ->with('aviso', 'No había nada que cambiar.');
         }
 
-        DB::transaction(function () use ($cambios) {
+        // Al cambiar de modo, el catálogo se ajusta para que el cliente siga
+        // pagando lo mismo (ver Precios). En la misma transacción: nunca
+        // quedan la configuración nueva con los precios viejos.
+        $convertir = isset($cambios['precios_incluyen_impuesto']) && $request->boolean('convertir_precios');
+        $tasaAnterior = (float) ($antes['tasa_impuesto'] ?? 0);
+        $tasaNueva = (float) $nuevos['tasa_impuesto'];
+
+        $convertidos = DB::transaction(function () use ($cambios, $convertir, $nuevos, $tasaAnterior, $tasaNueva) {
             foreach ($cambios as $clave => $valor) {
                 DB::table('configuracion')->updateOrInsert(
                     ['clave' => $clave],
                     ['valor' => $valor['despues']],
                 );
             }
+
+            return $convertir
+                ? Precios::convertirAlModo($nuevos['precios_incluyen_impuesto'] === '1', $tasaAnterior, $tasaNueva)
+                : 0;
         });
 
         Config::olvidar();
 
         Auditor::registrar('CONFIGURACION_ACTUALIZADA', 'configuracion', null, $cambios);
 
-        $cuantos = count($cambios);
+        if ($convertidos > 0) {
+            Auditor::registrar('PRECIOS_CONVERTIDOS', 'productos', null, [
+                'productos' => $convertidos,
+                'precios_incluyen_impuesto' => $nuevos['precios_incluyen_impuesto'],
+                'tasa_anterior' => $tasaAnterior,
+                'tasa_nueva' => $tasaNueva,
+            ]);
+        }
 
-        return redirect()->route('configuracion.edit')
-            ->with('exito', $cuantos === 1 ? 'Se guardó 1 cambio.' : "Se guardaron {$cuantos} cambios.");
+        $cuantos = count($cambios);
+        $mensaje = $cuantos === 1 ? 'Se guardó 1 cambio.' : "Se guardaron {$cuantos} cambios.";
+
+        if ($convertidos > 0) {
+            $mensaje .= " Se ajustó el precio de {$convertidos} producto(s) para que el cliente siga pagando lo mismo.";
+        }
+
+        return redirect()->route('configuracion.edit')->with('exito', $mensaje);
     }
 
     /**
@@ -172,7 +203,10 @@ class ConfiguracionController extends Controller
             'negocio_direccion' => (string) Config::get('negocio_direccion', ''),
             'negocio_telefono' => (string) Config::get('negocio_telefono', ''),
             'moneda_codigo' => (string) Config::get('moneda_codigo', 'BOB'),
-            'tasa_impuesto' => rtrim(rtrim(number_format($tasa, 2, '.', ''), '0'), '.'),
+            'cobra_impuesto' => $tasa > 0 ? '1' : '0',
+            // Sin impuesto se propone el IVA boliviano para cuando se active.
+            'tasa_impuesto' => $tasa > 0 ? rtrim(rtrim(number_format($tasa, 2, '.', ''), '0'), '.') : '13',
+            'precios_incluyen_impuesto' => Config::preciosIncluyenImpuesto() ? '1' : '0',
             'descuento_max_cajero' => (string) Config::get('descuento_max_cajero', '0'),
             'egreso_max_cajero' => (string) Config::get('egreso_max_cajero', '0'),
             'cliente_generico_nombre' => (string) Config::get('cliente_generico_nombre', 'Cliente varios'),

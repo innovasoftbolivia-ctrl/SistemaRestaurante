@@ -5,7 +5,8 @@
 
     // Sin impuesto, «Venta» y «Estante» son el mismo importe: se muestra una
     // sola columna, y es la que tiene que sobrevivir en el teléfono.
-    $tasa = Config::tasaImpuesto();
+    // Con el IVA incluido en el precio también es un solo importe.
+    $tasa = Config::preciosIncluyenImpuesto() ? 0 : Config::tasaImpuesto();
 @endphp
 
 @section('content')
@@ -203,7 +204,10 @@
         </div>
 
         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-            @if (Config::tasaImpuesto() > 0)
+            @if (Config::tasaImpuesto() > 0 && Config::preciosIncluyenImpuesto())
+                El precio de venta es <b>el precio final con el IVA incluido</b>: es lo que paga el cliente. El margen se
+                calcula sin el IVA, que no es del negocio. El precio de compra va sin impuesto.
+            @elseif (Config::tasaImpuesto() > 0)
                 Los precios de compra y de venta se registran <b>sin impuesto</b>. La columna «Estante» es lo que
                 paga el cliente: precio base más el {{ number_format(Config::tasaImpuesto() * 100, 0) }}% de impuesto.
             @else
