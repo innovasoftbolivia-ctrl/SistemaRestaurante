@@ -68,6 +68,7 @@ class ClienteController extends Controller
                 'nombre' => $c->nombre,
                 'etiqueta' => $c->etiqueta,
                 'juridica' => $c->esJuridica(),
+                'factura' => $c->llevaFactura(),
             ])
         );
     }
@@ -96,6 +97,7 @@ class ClienteController extends Controller
                 'nombre' => $cliente->nombre,
                 'etiqueta' => $cliente->etiqueta,
                 'juridica' => $cliente->esJuridica(),
+                'factura' => $cliente->llevaFactura(),
             ], 201);
         }
 
@@ -148,6 +150,7 @@ class ClienteController extends Controller
     private function validar(Request $request, ?Cliente $cliente = null): array
     {
         $juridica = $request->input('tipo_persona') === 'JURIDICA';
+        $conNit = $juridica || $request->input('tipo_documento') === 'NIT';
 
         $datos = $request->validate([
             'tipo_persona' => ['required', Rule::in(Cliente::TIPOS_PERSONA)],
@@ -156,7 +159,7 @@ class ClienteController extends Controller
                 $juridica ? Rule::in(['NIT']) : Rule::in(Cliente::DOCUMENTOS_NATURAL),
             ],
             'documento' => [
-                $juridica ? 'required' : 'nullable',
+                $conNit ? 'required' : 'nullable',
                 'string', 'max:20',
                 // Documentos bolivianos: el NIT son solo dígitos; el CI, dígitos
                 // con complemento opcional (-1A) y extensión opcional (LP, SC…).
@@ -186,7 +189,7 @@ class ClienteController extends Controller
                 'CI' => 'El CI lleva números, con complemento y extensión opcionales: 1234567, 1234567-1A o 1234567 LP.',
                 default => 'El documento lleva letras, números o guiones, entre 4 y 20 caracteres.',
             },
-            'documento.required' => 'La persona jurídica necesita NIT para poder emitirle factura.',
+            'documento.required' => 'Escribe el NIT: con él se emite la factura.',
             'direccion.required' => 'La factura exige la dirección fiscal de la empresa.',
             'razon_social.required' => 'La persona jurídica se identifica por su razón social.',
             'nombres.required' => 'La persona natural se identifica por sus nombres y apellidos.',

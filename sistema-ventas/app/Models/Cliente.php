@@ -24,7 +24,7 @@ class Cliente extends Model
 
     public const TIPOS_PERSONA = ['NATURAL', 'JURIDICA'];
 
-    public const DOCUMENTOS_NATURAL = ['CI', 'CE', 'PAS', 'SIN'];
+    public const DOCUMENTOS_NATURAL = ['CI', 'CE', 'PAS', 'SIN', 'NIT'];
 
     protected $fillable = [
         'tipo_persona', 'tipo_documento', 'documento',
@@ -51,6 +51,15 @@ class Cliente extends Model
     public function esJuridica(): bool
     {
         return $this->tipo_persona === 'JURIDICA';
+    }
+
+    /**
+     * Quién recibe factura: una empresa, o una persona natural con NIT (un
+     * unipersonal, un profesional independiente). El resto, recibo.
+     */
+    public function llevaFactura(): bool
+    {
+        return $this->esJuridica() || $this->tipo_documento === 'NIT';
     }
 
     public function scopeActivos(Builder $query): Builder

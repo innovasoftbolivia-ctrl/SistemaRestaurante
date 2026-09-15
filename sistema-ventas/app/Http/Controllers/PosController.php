@@ -46,7 +46,7 @@ class PosController extends Controller
                     'id' => $c->id,
                     'nombre' => $c->nombre,
                     'etiqueta' => $c->etiqueta,
-                    'juridica' => $c->esJuridica(),
+                    'juridica' => $c->llevaFactura(),
                 ]),
             'tasaImpuesto' => Config::tasaImpuesto(),
             'moneda' => Config::moneda(),

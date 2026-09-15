@@ -156,8 +156,8 @@
                                     {{ $cliente->documento ? $cliente->tipo_documento.' '.$cliente->documento : '—' }}
                                 </td>
                                 <td class="px-5 py-4">
-                                    <x-ui.estado :estado="$cliente->esJuridica() ? 'PLAZO_FIJO' : 'PRACTICAS'"
-                                        :texto="$cliente->esJuridica() ? 'Jurídica — factura' : 'Natural — recibo'" />
+                                    <x-ui.estado :estado="$cliente->llevaFactura() ? 'PLAZO_FIJO' : 'PRACTICAS'"
+                                        :texto="$cliente->esJuridica() ? 'Jurídica — factura' : ($cliente->llevaFactura() ? 'Natural con NIT — factura' : 'Natural — recibo')" />
                                 </td>
                                 <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ collect([$cliente->telefono, $cliente->email])->filter()->implode(' · ') ?: '—' }}
@@ -254,7 +254,7 @@
 
                             <x-form.campo label="Tipo de documento" for="cliente-tipodoc" name="tipo_documento" required>
                                 <x-form.select id="cliente-tipodoc" name="tipo_documento" x-model="f.tipo_documento"
-                                    :opciones="['CI' => 'CI (cédula de identidad)', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
+                                    :opciones="['CI' => 'CI (cédula de identidad)', 'NIT' => 'NIT (unipersonal: recibe factura)', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
                             </x-form.campo>
 
                             <x-form.campo label="Documento" for="cliente-doc-nat" name="documento">

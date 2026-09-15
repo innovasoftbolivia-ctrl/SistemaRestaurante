@@ -252,12 +252,15 @@ CREATE TABLE clientes (
     UNIQUE KEY uq_clientes_documento (tipo_documento, documento),
     KEY ix_clientes_nombre  (nombre),
     KEY ix_clientes_persona (tipo_persona),
+    -- Una persona natural puede tener NIT (unipersonal, profesional
+    -- independiente): con él recibe factura a su nombre.
     CONSTRAINT ck_clientes_natural CHECK (
         tipo_persona <> 'NATURAL' OR (
             nombres   IS NOT NULL AND
             apellidos IS NOT NULL AND
             razon_social IS NULL  AND
-            tipo_documento IN ('CI','CE','PAS','SIN')
+            tipo_documento IN ('CI','CE','PAS','SIN','NIT') AND
+            (tipo_documento <> 'NIT' OR documento IS NOT NULL)
         )
     ),
     CONSTRAINT ck_clientes_juridica CHECK (
@@ -1194,8 +1197,10 @@ BEGIN
 
     -- Si hay cliente identificado, su tipo de persona debe coincidir con el documento.
     -- Sin cliente (venta al paso) solo pasan los tipos que no lo exigen: recibo y nota de venta.
+    -- La excepción: una persona natural con NIT (unipersonal) recibe factura.
     IF v_aplica <> 'AMBAS' AND NEW.cliente_id IS NOT NULL
-       AND IFNULL(NEW.tipo_persona, '') <> v_aplica THEN
+       AND IFNULL(NEW.tipo_persona, '') <> v_aplica
+       AND NOT (v_aplica = 'JURIDICA' AND NEW.cliente_tipo_documento = 'NIT') THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'El tipo de comprobante no corresponde al tipo de persona del cliente';
     END IF;

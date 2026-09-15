@@ -388,7 +388,7 @@ class Ventas
     /** La serie a usar sale de la configuración del negocio. */
     public static function seriePara(?Cliente $cliente): SerieComprobante
     {
-        $clave = $cliente?->esJuridica() ? 'serie_factura' : 'serie_recibo';
+        $clave = $cliente?->llevaFactura() ? 'serie_factura' : 'serie_recibo';
         $id = (int) Config::get($clave, '0');
 
         $serie = SerieComprobante::with('tipo')->find($id);

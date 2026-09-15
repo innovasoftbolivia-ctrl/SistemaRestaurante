@@ -302,7 +302,7 @@
                             @endforeach
                             {{-- Los que se registran sin salir del mostrador, en esta misma venta. --}}
                             <template x-for="c in clientesNuevos" :key="c.id">
-                                <option :value="c.id" x-text="c.etiqueta + (c.juridica ? ' — factura' : '')"></option>
+                                <option :value="c.id" x-text="c.etiqueta + (c.factura ? ' — factura' : '')"></option>
                             </template>
                         </select>
                         <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
@@ -692,6 +692,7 @@
                                     <select x-model="nuevoCliente.tipo_documento"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                                         <option value="CI">CI</option>
+                                        <option value="NIT">NIT (recibe factura)</option>
                                         <option value="CE">Carné de extranjería</option>
                                         <option value="PAS">Pasaporte</option>
                                         <option value="SIN">Sin documento</option>

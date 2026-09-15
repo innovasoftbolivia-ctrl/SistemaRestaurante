@@ -109,7 +109,7 @@ class VentaController extends Controller
                 ->map(fn (Cliente $c) => [
                     'id' => $c->id,
                     'etiqueta' => $c->etiqueta,
-                    'juridica' => $c->esJuridica(),
+                    'juridica' => $c->llevaFactura(),
                 ]),
         ]);
     }

@@ -215,9 +215,11 @@ class ReglasEnPhp
             throw new RuntimeException('Este tipo de comprobante exige el documento del cliente');
         }
 
+        // La excepción: una persona natural con NIT (unipersonal) recibe factura.
         if ($tipo->aplica_persona !== 'AMBAS'
             && ($datos['cliente_id'] ?? null) !== null
-            && ($datos['tipo_persona'] ?? '') !== $tipo->aplica_persona) {
+            && ($datos['tipo_persona'] ?? '') !== $tipo->aplica_persona
+            && ! ($tipo->aplica_persona === 'JURIDICA' && ($datos['cliente_tipo_documento'] ?? null) === 'NIT')) {
             throw new RuntimeException('El tipo de comprobante no corresponde al tipo de persona del cliente');
         }
     }

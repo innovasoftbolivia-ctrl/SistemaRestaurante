@@ -253,4 +253,43 @@ class ClientesTest extends TestCase
 
         $this->assertFalse((bool) $cliente->fresh()->activo);
     }
+
+    // ================================================================ unipersonal con NIT
+
+    /**
+     * Un unipersonal pide factura con su NIT y su nombre: no hace falta
+     * registrarlo como empresa, con razón social y dirección.
+     */
+    public function test_una_persona_natural_con_nit_recibe_factura(): void
+    {
+        $this->actingAs($this->cajero())->postJson('/clientes', [
+            'tipo_persona' => 'NATURAL', 'tipo_documento' => 'NIT', 'documento' => '',
+            'nombres' => 'Rosa', 'apellidos' => 'Vaca Suárez',
+        ])->assertJsonValidationErrors(['documento' => 'NIT']);
+
+        $this->actingAs($this->cajero())->postJson('/clientes', [
+            'tipo_persona' => 'NATURAL', 'tipo_documento' => 'NIT', 'documento' => '4455667011',
+            'nombres' => 'Rosa', 'apellidos' => 'Vaca Suárez',
+        ])->assertCreated()->assertJson(['juridica' => false, 'factura' => true]);
+
+        $cliente = Cliente::where('documento', '4455667011')->firstOrFail();
+        $cajero = $this->cajero();
+        $venta = Ventas::registrar(
+            sesion: Cajas::sesionDe($cajero) ?? Cajas::abrir(Caja::firstOrFail(), $cajero, 100),
+            usuario: $cajero,
+            lineas: [['producto_id' => Producto::where('codigo', 'P-0004')->value('id'), 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+            cliente: $cliente,
+        );
+
+        $comprobante = $venta->comprobante;
+        $this->assertSame('FAC', $comprobante->serie->tipo->codigo);
+        $this->assertSame('Rosa Vaca Suárez', $comprobante->cliente_nombre);
+        $this->assertSame('NIT', $comprobante->cliente_tipo_documento);
+        $this->assertSame('4455667011', $comprobante->cliente_documento);
+
+        // Con CI sigue siendo recibo.
+        $conCi = Cliente::where('tipo_persona', 'NATURAL')->where('tipo_documento', 'CI')->firstOrFail();
+        $this->assertSame('REC', Ventas::seriePara($conCi)->tipo->codigo);
+    }
 }
