@@ -360,4 +360,35 @@ class RespaldosTest extends TestCase
             ->get(route('respaldos.index'))
             ->assertSee('El último respaldo tiene más de una semana');
     }
+
+    /** Un respaldo en el mismo disco que la base se pierde con él: se copia afuera. */
+    public function test_cada_respaldo_se_copia_a_la_carpeta_de_afuera(): void
+    {
+        $afuera = sys_get_temp_dir().DIRECTORY_SEPARATOR.'respaldos-afuera-'.bin2hex(random_bytes(4));
+        config(['ventas.respaldos.copia' => $afuera]);
+
+        try {
+            $hecho = Respaldos::crear();
+
+            $this->assertSame($afuera, $hecho['copia']);
+            $this->assertNull($hecho['error_copia']);
+            $this->assertFileEquals($hecho['base'], $afuera.DIRECTORY_SEPARATOR.basename($hecho['base']));
+
+            $this->actingAs($this->admin())->get(route('respaldos.index'))
+                ->assertOk()->assertSee('data-copia-afuera', false);
+        } finally {
+            foreach (glob($afuera.DIRECTORY_SEPARATOR.'*') ?: [] as $archivo) {
+                @unlink($archivo);
+            }
+            @rmdir($afuera);
+        }
+    }
+
+    public function test_sin_carpeta_de_afuera_la_pantalla_lo_advierte(): void
+    {
+        config(['ventas.respaldos.copia' => null]);
+
+        $this->actingAs($this->admin())->get(route('respaldos.index'))
+            ->assertOk()->assertSee('data-sin-copia-afuera', false);
+    }
 }

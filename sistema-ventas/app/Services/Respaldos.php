@@ -75,9 +75,21 @@ class Respaldos
     }
 
     /**
+     * La segunda carpeta, fuera del disco del servidor —un disco externo, una
+     * carpeta sincronizada con la nube, una unidad de red—, si se configuró.
+     * Un respaldo que vive en el mismo disco que la base se pierde con él.
+     */
+    public static function carpetaDeCopia(): ?string
+    {
+        $ruta = trim((string) config('ventas.respaldos.copia'));
+
+        return $ruta === '' ? null : $ruta;
+    }
+
+    /**
      * Hace un respaldo completo y borra los viejos.
      *
-     * @return array{base: string, fotos: ?string}
+     * @return array{base: string, fotos: ?string, copia: ?string, error_copia: ?string}
      */
     public static function crear(): array
     {
@@ -111,7 +123,42 @@ class Respaldos
 
         self::limpiar();
 
-        return ['base' => $base, 'fotos' => $fotos];
+        // La copia afuera tampoco tumba el respaldo: si el disco externo no
+        // está enchufado, el respaldo local ya quedó bien, y se avisa.
+        [$copia, $errorCopia] = self::copiarAfuera(array_filter([$base, $fotos]));
+
+        return ['base' => $base, 'fotos' => $fotos, 'copia' => $copia, 'error_copia' => $errorCopia];
+    }
+
+    /**
+     * @param  array<int, string>  $archivos
+     * @return array{0: ?string, 1: ?string} carpeta de la copia y, si falló, por qué
+     */
+    private static function copiarAfuera(array $archivos): array
+    {
+        $destino = self::carpetaDeCopia();
+
+        if ($destino === null) {
+            return [null, null];
+        }
+
+        try {
+            if (! is_dir($destino) && ! @mkdir($destino, 0770, true) && ! is_dir($destino)) {
+                throw new RuntimeException("no existe la carpeta {$destino} ni se pudo crear");
+            }
+
+            foreach ($archivos as $archivo) {
+                if (! @copy($archivo, $destino.DIRECTORY_SEPARATOR.basename($archivo))) {
+                    throw new RuntimeException('no se pudo copiar '.basename($archivo)." a {$destino}");
+                }
+            }
+
+            return [$destino, null];
+        } catch (Throwable $e) {
+            report($e);
+
+            return [null, $e->getMessage()];
+        }
     }
 
     /**
@@ -197,6 +244,15 @@ class Respaldos
         $zona = $pdo->query('SELECT @@session.time_zone')->fetchColumn();
         $pdo->exec("SET time_zone = '+00:00'");
 
+        // Una foto coherente de la base: todas las tablas se leen como estaban en
+        // un mismo instante. Sin esto, un respaldo hecho mientras se vende podía
+        // guardar las líneas de una venta que en su tabla todavía no estaba. Si
+        // ya hay una transacción abierta en esta conexión, esa foto es la que vale.
+        $fotoPropia = $conexion->transactionLevel() === 0;
+        if ($fotoPropia) {
+            $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+        }
+
         try {
             $colacion = $pdo->query(
                 'SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '.$pdo->quote($base)
@@ -275,6 +331,9 @@ class Respaldos
 
             $escribir("SET FOREIGN_KEY_CHECKS = 1;\nSET UNIQUE_CHECKS = 1;\n");
         } finally {
+            if ($fotoPropia) {
+                $pdo->exec('COMMIT');
+            }
             $pdo->exec('SET time_zone = '.$pdo->quote((string) $zona));
             gzclose($gz);
         }
@@ -304,21 +363,31 @@ class Respaldos
         $cabecera = 'INSERT INTO '.self::id($tabla)." ({$lista}) VALUES\n";
         $filas = [];
 
-        $lectura = $pdo->query("SELECT {$lista} FROM ".self::id($tabla));
+        // Fila a fila, sin traer la tabla entera a memoria: el kardex o la
+        // bitácora de unos años no entran en los 128 MB de un hosting.
+        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
 
-        while (($fila = $lectura->fetch(PDO::FETCH_NUM)) !== false) {
-            // `quote` escapa también los saltos de línea: un valor nunca parte
-            // una sentencia en dos renglones, y el archivo se puede leer línea
-            // por línea igual que lo lee el cliente `mysql`.
-            $filas[] = '('.implode(', ', array_map(
-                fn ($valor) => $valor === null ? 'NULL' : $pdo->quote((string) $valor),
-                $fila,
-            )).')';
+        try {
+            $lectura = $pdo->query("SELECT {$lista} FROM ".self::id($tabla));
 
-            if (count($filas) === self::LOTE) {
-                $escribir($cabecera.implode(",\n", $filas).";\n");
-                $filas = [];
+            while (($fila = $lectura->fetch(PDO::FETCH_NUM)) !== false) {
+                // `quote` escapa también los saltos de línea: un valor nunca parte
+                // una sentencia en dos renglones, y el archivo se puede leer línea
+                // por línea igual que lo lee el cliente `mysql`.
+                $filas[] = '('.implode(', ', array_map(
+                    fn ($valor) => $valor === null ? 'NULL' : $pdo->quote((string) $valor),
+                    $fila,
+                )).')';
+
+                if (count($filas) === self::LOTE) {
+                    $escribir($cabecera.implode(",\n", $filas).";\n");
+                    $filas = [];
+                }
             }
+
+            $lectura->closeCursor();
+        } finally {
+            $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
         }
 
         if ($filas) {

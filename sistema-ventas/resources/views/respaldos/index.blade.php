@@ -19,6 +19,17 @@
                     los programa: hazlo desde aquí y descárgalo a otra computadora, porque un respaldo que vive en el
                     mismo servidor se pierde junto con él.
                 </p>
+                @if ($copiaAfuera)
+                    <p class="mt-3 max-w-3xl text-theme-sm text-success-700 dark:text-success-500" data-copia-afuera>
+                        Cada respaldo se copia también a <span class="font-mono">{{ $copiaAfuera }}</span>.
+                    </p>
+                @else
+                    <p class="mt-3 max-w-3xl rounded-lg bg-warning-50 px-3 py-2 text-theme-sm text-warning-700 dark:bg-orange-500/10 dark:text-orange-400" data-sin-copia-afuera>
+                        Los respaldos quedan en el mismo disco que la base: si ese disco falla, se pierden los dos.
+                        Configura <span class="font-mono">RESPALDOS_COPIA</span> con una carpeta en otro disco o
+                        sincronizada con la nube, o descarga el último respaldo con frecuencia.
+                    </p>
+                @endif
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">

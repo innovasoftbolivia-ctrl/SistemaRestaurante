@@ -47,6 +47,9 @@ return [
 
     'respaldos' => [
         'ruta' => env('RESPALDOS_RUTA'),
+        // Una segunda carpeta FUERA del disco del servidor (disco externo,
+        // carpeta sincronizada, unidad de red): cada respaldo se copia ahí.
+        'copia' => env('RESPALDOS_COPIA'),
     ],
 
     /*

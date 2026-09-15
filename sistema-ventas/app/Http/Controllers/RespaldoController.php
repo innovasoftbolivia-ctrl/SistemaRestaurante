@@ -34,6 +34,7 @@ class RespaldoController extends Controller
             'viejo' => $ultimo && $ultimo['fecha']->lt(now()->subDays(self::DIAS_DE_AVISO)),
             'dias' => Respaldos::DIAS,
             'diasAviso' => self::DIAS_DE_AVISO,
+            'copiaAfuera' => Respaldos::carpetaDeCopia(),
         ]);
     }
 
@@ -56,9 +57,17 @@ class RespaldoController extends Controller
             'origen' => 'manual',
         ]);
 
-        return redirect()->route('respaldos.index')->with('exito',
-            "Respaldo hecho: {$nombre} (".Number::fileSize((int) filesize($hecho['base'])).')'
-            .($hecho['fotos'] ? ', con las fotos.' : '. No había fotos que guardar.'));
+        $mensaje = "Respaldo hecho: {$nombre} (".Number::fileSize((int) filesize($hecho['base'])).')'
+            .($hecho['fotos'] ? ', con las fotos.' : '. No había fotos que guardar.')
+            .($hecho['copia'] ? ' Copiado también a '.$hecho['copia'].'.' : '');
+
+        if ($hecho['error_copia']) {
+            return redirect()->route('respaldos.index')
+                ->with('exito', $mensaje)
+                ->with('error', 'El respaldo quedó en el servidor, pero no se pudo copiar afuera: '.$hecho['error_copia'].'.');
+        }
+
+        return redirect()->route('respaldos.index')->with('exito', $mensaje);
     }
 
     public function descargar(string $nombre): BinaryFileResponse
