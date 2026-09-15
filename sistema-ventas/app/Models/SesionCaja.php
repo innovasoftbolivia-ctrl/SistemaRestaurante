@@ -20,7 +20,8 @@ class SesionCaja extends Model
     protected $fillable = [
         'caja_id', 'usuario_apertura_id', 'usuario_cierre_id',
         'fecha_apertura', 'fecha_cierre', 'monto_inicial',
-        'monto_esperado', 'monto_declarado', 'estado', 'observacion',
+        'monto_esperado', 'monto_declarado', 'fondo_dejado', 'estado',
+        'observacion', 'observacion_cierre',
     ];
 
     protected function casts(): array
@@ -31,6 +32,7 @@ class SesionCaja extends Model
             'monto_inicial' => 'decimal:2',
             'monto_esperado' => 'decimal:2',
             'monto_declarado' => 'decimal:2',
+            'fondo_dejado' => 'decimal:2',
             'diferencia' => 'decimal:2',
         ];
     }
@@ -82,6 +84,18 @@ class SesionCaja extends Model
      */
     public function efectivoEsperado(): float
     {
+        return $this->desgloseDelEfectivo()['esperado'];
+    }
+
+    /**
+     * La cuenta del efectivo esperado, término a término: inicial + ventas en
+     * efectivo + ingresos − egresos − devoluciones en efectivo. Es la que va
+     * impresa en el cierre, para que se pueda cuadrar a mano.
+     *
+     * @return array{inicial: float, ventas: float, ingresos: float, egresos: float, devuelto: float, esperado: float}
+     */
+    public function desgloseDelEfectivo(): array
+    {
         $ventas = (float) $this->ventas()
             ->where('ventas.estado', '<>', 'ANULADA')
             ->join('venta_pagos', 'venta_pagos.venta_id', '=', 'ventas.id')
@@ -113,6 +127,35 @@ class SesionCaja extends Model
             )
             ->value('efectivo');
 
-        return round((float) $this->monto_inicial + $ventas + $ingresos - $egresos - $devuelto, 2);
+        return [
+            'inicial' => (float) $this->monto_inicial,
+            'ventas' => round($ventas, 2),
+            'ingresos' => round($ingresos, 2),
+            'egresos' => round($egresos, 2),
+            'devuelto' => round($devuelto, 2),
+            'esperado' => round((float) $this->monto_inicial + $ventas + $ingresos - $egresos - $devuelto, 2),
+        ];
+    }
+
+    /**
+     * Una firma del estado del turno en este momento: cambia con cualquier
+     * venta, anulación, movimiento o devolución.
+     *
+     * El formulario de cierre la lleva desde que se abre. Si al confirmar ya
+     * no coincide, algo entró mientras se contaba y la diferencia que se vio
+     * en pantalla no es la que se guardaría. Firmada con la clave de la
+     * aplicación: no deja adivinar el esperado.
+     */
+    public function huella(): string
+    {
+        $partes = $this->desgloseDelEfectivo() + [
+            'ventas_n' => $this->ventas()->count(),
+            'anuladas_n' => $this->ventas()->where('estado', 'ANULADA')->count(),
+            'ultima_venta' => (int) $this->ventas()->max('id'),
+            'movimientos_n' => $this->movimientos()->count(),
+            'devoluciones_n' => $this->devoluciones()->count(),
+        ];
+
+        return hash_hmac('sha256', json_encode($partes), (string) config('app.key'));
     }
 }

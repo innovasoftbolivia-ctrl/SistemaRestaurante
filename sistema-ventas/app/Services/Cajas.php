@@ -52,6 +52,19 @@ class Cajas
             throw new RuntimeException("La {$caja->nombre} ya está abierta por otro usuario.");
         }
 
+        // El turno anterior dejó un fondo contado en el cajón. Abrir con otro
+        // monto sin decir por qué dejaba un sobrante (o un faltante) que el
+        // arqueo de este turno no podía ver.
+        $fondo = self::fondoDejadoEn($caja);
+
+        if ($fondo !== null && round($montoInicial, 2) !== round($fondo, 2) && blank($observacion)) {
+            throw new RuntimeException(sprintf(
+                'El último turno de la %s dejó %s en el cajón. Si empiezas con otro monto, explica en la observación por qué.',
+                $caja->nombre,
+                Config::importe($fondo),
+            ));
+        }
+
         try {
             $sesion = DB::transaction(fn () => SesionCaja::create([
                 'caja_id' => $caja->id,
@@ -77,6 +90,18 @@ class Cajas
         ], $usuario->id);
 
         return $sesion;
+    }
+
+    /** Lo que el último turno cerrado de la caja dejó en el cajón, si lo anotó. */
+    public static function fondoDejadoEn(Caja $caja): ?float
+    {
+        $fondo = SesionCaja::where('caja_id', $caja->id)
+            ->where('estado', 'CERRADA')
+            ->orderByDesc('fecha_cierre')
+            ->orderByDesc('id')
+            ->value('fondo_dejado');
+
+        return $fondo === null ? null : (float) $fondo;
     }
 
     public static function movimiento(
@@ -169,12 +194,17 @@ class Cajas
     /**
      * Cierra el turno con el efectivo contado. El procedimiento calcula el
      * esperado y la base deriva la diferencia.
+     *
+     * @param  ?float  $fondo  lo que queda en el cajón para el siguiente turno
+     * @param  ?string  $huella  `SesionCaja::huella()` de cuando se empezó a contar
      */
     public static function cerrar(
         SesionCaja $sesion,
         Usuario $usuario,
         float $declarado,
         ?string $observacion = null,
+        ?float $fondo = null,
+        ?string $huella = null,
     ): SesionCaja {
         if (! $sesion->estaAbierta()) {
             throw new RuntimeException('Esta caja ya fue cerrada.');
@@ -184,16 +214,8 @@ class Cajas
             throw new RuntimeException('El efectivo contado no puede ser negativo.');
         }
 
-        // Una diferencia sin explicación no le sirve a nadie. Se calcula aquí
-        // con la misma fórmula que firma el procedimiento.
-        $diferencia = round($declarado - $sesion->efectivoEsperado(), 2);
-
-        if ($diferencia !== 0.0 && blank($observacion)) {
-            throw new RuntimeException(sprintf(
-                'El conteo tiene una diferencia de %s%s: escribe en la observación qué pasó.',
-                $diferencia > 0 ? '+' : '−',
-                Config::importe(abs($diferencia)),
-            ));
+        if ($fondo !== null && ($fondo < 0 || round($fondo, 2) > round($declarado, 2))) {
+            throw new RuntimeException('Lo que queda en el cajón no puede ser negativo ni más de lo contado.');
         }
 
         // `sp_cerrar_caja` hace su SELECT ... FOR UPDATE y su UPDATE final en
@@ -211,11 +233,46 @@ class Cajas
         // `DB::select` y no `DB::statement`: el procedimiento termina con un
         // SELECT del arqueo, y ese resultado hay que consumirlo o la siguiente
         // consulta de la conexión falla.
-        DB::transaction(fn () => ReglasEnPhp::activa()
-            ? ReglasEnPhp::cerrarCaja($sesion->id, $usuario->id, $declarado, $observacion)
-            : DB::select('CALL sp_cerrar_caja(?, ?, ?, ?)', [
-                $sesion->id, $usuario->id, $declarado, $observacion,
-            ]), self::REINTENTOS);
+        DB::transaction(function () use ($sesion, $usuario, $declarado, $observacion, $fondo, $huella) {
+            // Primero el turno bloqueado: una venta, un movimiento o una
+            // devolución que llegue ahora espera a que el cierre termine y lo
+            // encuentra cerrado. Lo que se compara con el conteo es lo que hay
+            // en este instante, no lo que había cuando se abrió la pantalla.
+            $bloqueada = SesionCaja::whereKey($sesion->id)->lockForUpdate()->first();
+
+            if (! $bloqueada?->estaAbierta()) {
+                throw new RuntimeException('Esta caja ya fue cerrada.');
+            }
+
+            if ($huella !== null && ! hash_equals($bloqueada->huella(), $huella)) {
+                throw new RuntimeException(
+                    'Mientras contabas se registraron ventas o movimientos en este turno y el efectivo esperado cambió. '
+                    .'Revisa el nuevo esperado y vuelve a confirmar el cierre.'
+                );
+            }
+
+            // Una diferencia sin explicación no le sirve a nadie. Se calcula
+            // aquí con la misma fórmula que firma el procedimiento.
+            $diferencia = round($declarado - $bloqueada->efectivoEsperado(), 2);
+
+            if ($diferencia !== 0.0 && blank($observacion)) {
+                throw new RuntimeException(sprintf(
+                    'El conteo tiene una diferencia de %s%s: escribe en la observación qué pasó.',
+                    $diferencia > 0 ? '+' : '−',
+                    Config::importe(abs($diferencia)),
+                ));
+            }
+
+            ReglasEnPhp::activa()
+                ? ReglasEnPhp::cerrarCaja($sesion->id, $usuario->id, $declarado, $observacion)
+                : DB::select('CALL sp_cerrar_caja(?, ?, ?, ?)', [
+                    $sesion->id, $usuario->id, $declarado, $observacion,
+                ]);
+
+            if ($fondo !== null) {
+                SesionCaja::whereKey($sesion->id)->update(['fondo_dejado' => $fondo]);
+            }
+        }, self::REINTENTOS);
 
         $sesion->refresh();
 
@@ -223,6 +280,7 @@ class Cajas
             'esperado' => $sesion->monto_esperado,
             'declarado' => $sesion->monto_declarado,
             'diferencia' => $sesion->diferencia,
+            'fondo_dejado' => $sesion->fondo_dejado,
         ], $usuario->id);
 
         return $sesion;

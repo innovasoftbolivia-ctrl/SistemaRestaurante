@@ -13,6 +13,7 @@ use App\Support\Config;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Tests\TestCase;
 
 class CajaTest extends TestCase
@@ -290,5 +291,117 @@ class CajaTest extends TestCase
             ->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
+    }
+
+    // ============================================================ cierre y siguiente turno
+
+    public function test_la_nota_de_cierre_no_pisa_la_de_apertura(): void
+    {
+        $sesion = Cajas::abrir(Caja::firstOrFail(), $this->cajero(), 100, 'Billetes de 10 cambiados en el banco');
+        Cajas::cerrar($sesion->fresh(), $this->admin(), 95, 'Faltó vuelto de una venta');
+
+        $sesion->refresh();
+        $this->assertSame('Billetes de 10 cambiados en el banco', $sesion->observacion);
+        $this->assertSame('Faltó vuelto de una venta', $sesion->observacion_cierre);
+
+        $this->actingAs($this->admin())->get(route('caja.imprimir', $sesion))->assertOk()
+            ->assertSee('Billetes de 10 cambiados en el banco')
+            ->assertSee('Faltó vuelto de una venta');
+    }
+
+    /** Lo que se vende mientras se cuenta no puede quedar como diferencia sin que nadie lo vea. */
+    public function test_si_se_vende_mientras_se_cuenta_el_cierre_pide_revisar(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $huella = $sesion->fresh()->huella();
+        $esperadoVisto = $sesion->fresh()->efectivoEsperado();
+
+        $this->vender($sesion);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => $esperadoVisto, 'huella' => $huella,
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'Mientras contabas'));
+        $this->assertTrue($sesion->fresh()->estaAbierta());
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => $sesion->fresh()->efectivoEsperado(), 'huella' => $sesion->fresh()->huella(),
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+        $this->assertSame(0.0, (float) $sesion->fresh()->diferencia);
+    }
+
+    public function test_no_se_vende_en_un_turno_que_se_cerro_entretanto(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $pantallaVieja = $sesion->fresh();
+        Cajas::cerrar($sesion->fresh(), $this->admin(), 100);
+
+        try {
+            $this->vender($pantallaVieja);
+            $this->fail('La venta entró en un turno ya cerrado.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('se cerró', $e->getMessage());
+        }
+
+        $this->assertSame(0, $sesion->ventas()->count());
+    }
+
+    public function test_lo_que_queda_en_el_cajon_es_el_monto_del_siguiente_turno(): void
+    {
+        $caja = Caja::firstOrFail();
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 100, 'fondo_dejado' => 150,
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'más de lo contado'));
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 100, 'fondo_dejado' => 60,
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+
+        $this->actingAs($this->admin())->get(route('caja.imprimir', $sesion))->assertOk()
+            ->assertSeeInOrder(['Queda en el cajón para el siguiente turno', Config::importe(60), 'Se retira del cajón', Config::importe(40)]);
+        $this->assertSame(60.0, Cajas::fondoDejadoEn($caja));
+
+        try {
+            Cajas::abrir($caja, $this->cajero(), 20);
+            $this->fail('Abrió con menos fondo del que quedó, sin explicar nada.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('dejó', $e->getMessage());
+        }
+
+        $this->assertTrue(Cajas::abrir($caja, $this->cajero(), 60)->estaAbierta());
+    }
+
+    public function test_abrir_con_otro_fondo_se_acepta_si_se_explica(): void
+    {
+        $caja = Caja::firstOrFail();
+        Cajas::cerrar($this->turno(inicial: 100)->fresh(), $this->admin(), 100, null, 60);
+
+        $sesion = Cajas::abrir($caja, $this->cajero(), 20, 'El dueño retiró 40 para el proveedor');
+
+        $this->assertSame('20.00', $sesion->fresh()->monto_inicial);
+    }
+
+    public function test_el_impreso_muestra_la_cuenta_completa_del_esperado(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $this->vender($sesion, 2);
+        Cajas::movimiento($sesion->fresh(), $this->admin(), 'INGRESO', 'Cambio del banco', 50);
+        Cajas::movimiento($sesion->fresh(), $this->admin(), 'EGRESO', 'Bolsas', 15);
+        $cuenta = $sesion->fresh()->desgloseDelEfectivo();
+        Cajas::cerrar($sesion->fresh(), $this->admin(), $cuenta['esperado']);
+
+        $this->assertSame($cuenta['esperado'], (float) $sesion->fresh()->monto_esperado);
+
+        $this->actingAs($this->admin())->get(route('caja.imprimir', $sesion))->assertOk()
+            ->assertSeeInOrder([
+                'Arqueo',
+                'Monto inicial', Config::importe(100),
+                'Ventas en efectivo', Config::importe($cuenta['ventas']),
+                'Ingresos de caja', Config::importe(50),
+                'Egresos de caja', Config::importe(15),
+                'Devoluciones en efectivo', Config::importe(0),
+                'Efectivo esperado', Config::importe($cuenta['esperado']),
+            ]);
     }
 }

@@ -21,11 +21,17 @@ class CajaController extends Controller
     public function index(): View
     {
         $usuario = Auth::user();
+        $cajas = Caja::activas()->with('sesionAbierta.usuarioApertura')->orderBy('nombre')->get();
 
         return view('caja.index', [
             'title' => 'Caja',
             'sesion' => Cajas::sesionDe($usuario)?->loadCount('ventas'),
-            'cajas' => Caja::activas()->with('sesionAbierta.usuarioApertura')->orderBy('nombre')->get(),
+            'cajas' => $cajas,
+            // Lo que dejó en el cajón el último turno de cada caja libre: con
+            // eso se propone el monto inicial.
+            'fondos' => $cajas->reject(fn (Caja $c) => $c->sesionAbierta)
+                ->mapWithKeys(fn (Caja $c) => [$c->id => Cajas::fondoDejadoEn($c)])
+                ->reject(fn (?float $f) => $f === null),
             // El cajero ve sus turnos; los de los demás y sus diferencias son
             // de quien arquea.
             'historial' => SesionCaja::with(['caja:id,nombre', 'usuarioApertura:id,usuario'])
@@ -102,6 +108,7 @@ class CajaController extends Controller
         return view('caja.imprimir', [
             'sesion' => $sesion,
             'resumen' => $this->resumen($sesion),
+            'desglose' => $sesion->desgloseDelEfectivo(),
             'porMetodo' => $this->porMetodoPago($sesion),
             'negocio' => [
                 'nombre' => Config::get('negocio_nombre', config('app.name')),
@@ -176,9 +183,12 @@ class CajaController extends Controller
         $datos = $request->validate([
             'monto_declarado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'observacion' => ['nullable', 'string', 'max:255'],
+            'fondo_dejado' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'huella' => ['nullable', 'string', 'max:100'],
         ], [], [
             'monto_declarado' => 'efectivo contado',
             'observacion' => 'observación',
+            'fondo_dejado' => 'lo que queda en el cajón',
         ]);
 
         if ($sesion->usuario_apertura_id !== Auth::id() && ! Auth::user()->tienePermiso('reportes.ver')) {
@@ -191,6 +201,8 @@ class CajaController extends Controller
                 Auth::user(),
                 (float) $datos['monto_declarado'],
                 $datos['observacion'] ?? null,
+                isset($datos['fondo_dejado']) ? (float) $datos['fondo_dejado'] : null,
+                $datos['huella'] ?? null,
             );
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());

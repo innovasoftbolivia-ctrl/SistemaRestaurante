@@ -249,10 +249,32 @@
             </tbody>
         </table>
 
+        {{-- La cuenta completa, término a término, para poder cuadrarla a mano
+             con las tablas de arriba. --}}
         <h2>Arqueo</h2>
-        <table style="margin-bottom: 12px;">
+        <table style="margin-bottom: 12px;" data-cuenta-del-esperado>
             <tr>
-                <td class="tenue" style="width: 50%;">Efectivo esperado</td>
+                <td class="tenue" style="width: 50%;">Monto inicial</td>
+                <td class="derecha">{{ Config::importe($desglose['inicial']) }}</td>
+            </tr>
+            <tr>
+                <td class="tenue">+ Ventas en efectivo</td>
+                <td class="derecha">{{ Config::importe($desglose['ventas']) }}</td>
+            </tr>
+            <tr>
+                <td class="tenue">+ Ingresos de caja</td>
+                <td class="derecha">{{ Config::importe($desglose['ingresos']) }}</td>
+            </tr>
+            <tr>
+                <td class="tenue">− Egresos de caja</td>
+                <td class="derecha">{{ Config::importe($desglose['egresos']) }}</td>
+            </tr>
+            <tr>
+                <td class="tenue">− Devoluciones en efectivo</td>
+                <td class="derecha">{{ Config::importe($desglose['devuelto']) }}</td>
+            </tr>
+            <tr>
+                <td class="tenue">= Efectivo esperado</td>
                 <td class="derecha fuerte">{{ Config::importe($resumen['esperado']) }}</td>
             </tr>
             <tr>
@@ -265,10 +287,23 @@
                     {{ (float) $sesion->diferencia > 0 ? '+' : '' }}{{ Config::importe($sesion->diferencia) }}
                 </td>
             </tr>
+            @if ($sesion->fondo_dejado !== null)
+                <tr>
+                    <td class="tenue">Queda en el cajón para el siguiente turno</td>
+                    <td class="derecha">{{ Config::importe($sesion->fondo_dejado) }}</td>
+                </tr>
+                <tr>
+                    <td class="tenue">Se retira del cajón</td>
+                    <td class="derecha fuerte">{{ Config::importe((float) $sesion->monto_declarado - (float) $sesion->fondo_dejado) }}</td>
+                </tr>
+            @endif
         </table>
 
         @if ($sesion->observacion)
-            <p class="tenue"><span class="fuerte">Observación:</span> {{ $sesion->observacion }}</p>
+            <p class="tenue"><span class="fuerte">Observación al abrir:</span> {{ $sesion->observacion }}</p>
+        @endif
+        @if ($sesion->observacion_cierre)
+            <p class="tenue"><span class="fuerte">Observación al cerrar:</span> {{ $sesion->observacion_cierre }}</p>
         @endif
 
         <div class="firmas">

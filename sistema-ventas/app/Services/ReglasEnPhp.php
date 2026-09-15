@@ -536,7 +536,7 @@ class ReglasEnPhp
             'monto_esperado' => round($esperado, 2),
             'monto_declarado' => $declarado,
             'estado' => 'CERRADA',
-            'observacion' => $observacion,
+            'observacion_cierre' => $observacion,
         ]);
     }
 

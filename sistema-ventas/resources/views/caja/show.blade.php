@@ -33,7 +33,14 @@
                         @endunless
                     </p>
                     @if ($sesion->observacion)
-                        <p class="mt-2 text-theme-sm text-gray-500 dark:text-gray-400">{{ $sesion->observacion }}</p>
+                        <p class="mt-2 text-theme-sm text-gray-500 dark:text-gray-400">
+                            <span class="font-medium text-gray-700 dark:text-gray-300">Al abrir:</span> {{ $sesion->observacion }}
+                        </p>
+                    @endif
+                    @if ($sesion->observacion_cierre)
+                        <p class="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">
+                            <span class="font-medium text-gray-700 dark:text-gray-300">Al cerrar:</span> {{ $sesion->observacion_cierre }}
+                        </p>
                     @endif
                 </div>
 
@@ -248,6 +255,9 @@
 
                         <form method="POST" action="{{ route('caja.cerrar', $sesion) }}" class="space-y-5">
                             @csrf
+                            {{-- El estado del turno cuando se empezó a contar: si al confirmar
+                                 ya cambió, el cierre se detiene y pide revisar. --}}
+                            <input type="hidden" name="huella" value="{{ $sesion->huella() }}">
 
                             {{-- El esperado aparece recién después de contar: primero se
                                  cuenta el cajón, después se compara. --}}
@@ -289,6 +299,12 @@
                                 <x-form.textarea id="cierre_observacion" name="observacion"
                                     x-bind:required="declarado !== null && Math.round((declarado - esperado) * 100) !== 0"
                                     placeholder="Sin novedad / faltó vuelto de una venta / …" />
+                            </x-form.campo>
+
+                            <x-form.campo label="Queda en el cajón para el siguiente turno" for="fondo_dejado" name="fondo_dejado"
+                                help="El fondo de cambio que no se retira. El próximo turno de esta caja empieza con este monto.">
+                                <x-form.input id="fondo_dejado" name="fondo_dejado" type="number" step="0.01" min="0"
+                                    placeholder="Opcional" />
                             </x-form.campo>
 
                             <div class="flex justify-end gap-3">

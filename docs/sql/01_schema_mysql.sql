@@ -295,11 +295,13 @@ CREATE TABLE sesiones_caja (
     monto_inicial       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     monto_esperado      DECIMAL(12,2) NULL,     -- calculado al cerrar
     monto_declarado     DECIMAL(12,2) NULL,     -- efectivo contado
+    fondo_dejado        DECIMAL(12,2) NULL,     -- lo que queda en el cajón para el siguiente turno
     -- derivada de las dos anteriores: columna generada, no se puede desincronizar (3FN)
     diferencia          DECIMAL(12,2) GENERATED ALWAYS AS
                         (ROUND(monto_declarado - monto_esperado, 2)) STORED,
     estado              ENUM('ABIERTA','CERRADA') NOT NULL DEFAULT 'ABIERTA',
-    observacion         VARCHAR(255) NULL,
+    observacion         VARCHAR(255) NULL,      -- al abrir
+    observacion_cierre  VARCHAR(255) NULL,      -- al cerrar: explica la diferencia
     PRIMARY KEY (id),
     KEY ix_sesiones_caja      (caja_id, estado),
     KEY ix_sesiones_usuario   (usuario_apertura_id),
@@ -1534,7 +1536,8 @@ BEGIN
            monto_esperado    = v_esperado,
            monto_declarado   = p_declarado,
            estado            = 'CERRADA',
-           observacion       = p_observacion
+           -- en su propia columna: la nota de apertura no se pisa
+           observacion_cierre = p_observacion
      WHERE id = p_sesion_id;
 
     SELECT v_esperado AS monto_esperado,

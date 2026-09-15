@@ -78,6 +78,17 @@ class Ventas
         // reintenta la transacción entera, que se deshizo por completo al
         // fallar, así que no queda nada a medias.
         return DB::transaction(function () use ($sesion, $usuario, $lineas, $pagos, $cliente, $descuento, $observacion) {
+            // El turno, leído con candado compartido: varias ventas pueden
+            // entrar a la vez, pero un cierre en curso las hace esperar, y al
+            // terminar la venta encuentra la caja cerrada. Sin esto, una venta
+            // que empezó con la pantalla vieja se colaba en un turno ya
+            // arqueado y su efectivo no aparecía en ningún cierre.
+            $turno = SesionCaja::whereKey($sesion->id)->sharedLock()->first();
+
+            if (! $turno?->estaAbierta()) {
+                throw new RuntimeException('La caja se cerró mientras registrabas la venta. Abre un turno nuevo para seguir vendiendo.');
+            }
+
             $venta = Venta::create([
                 'cliente_id' => $cliente?->id,
                 'usuario_id' => $usuario->id,
