@@ -30,7 +30,9 @@
 
         {{-- La frase responde lo que de verdad se pregunta un dueño de
              negocio ("¿cómo me fue?"), antes que la grilla de cifras sueltas.
-             La ganancia es aproximada: descuenta el costo de HOY de cada
+             La ganancia va sin impuesto y con el costo del día de cada venta
+             (las ventas anteriores al 15/09/2026 quedaron con el costo que
+             tenía el producto ese 15/09). Antes descontaba el costo de HOY de cada
              producto vendido, no el que tenía el día de la venta (misma
              salvedad que ya lleva el "margen estimado" de Productos). --}}
         <div class="rounded-2xl border border-brand-200 bg-brand-50 p-6 dark:border-brand-800 dark:bg-brand-500/10">

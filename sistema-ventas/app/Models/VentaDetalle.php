@@ -28,7 +28,7 @@ class VentaDetalle extends Model
     // él los pisa, así que estar en esta lista no cambia nada en esa vía.
     protected $fillable = [
         'venta_id', 'producto_id', 'descripcion', 'unidad',
-        'cantidad', 'precio_unitario', 'descuento',
+        'cantidad', 'precio_unitario', 'descuento', 'costo_unitario',
         'afecto_impuesto', 'tasa_impuesto',
     ];
 

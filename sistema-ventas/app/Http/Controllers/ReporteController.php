@@ -194,7 +194,10 @@ class ReporteController extends Controller
         $alertas = Producto::alertasDeStock()->orderByDesc('faltante')->get();
         $ranking = $this->masVendidos($desde, $hasta)->values();
 
-        $totalVendido = (float) $ranking->sum('monto_vendido');
+        // El porcentaje, contra todo lo vendido en el período y no contra los
+        // veinte de la tabla: con cientos de productos, esos veinte sumaban
+        // siempre 100 %.
+        $totalVendido = $this->totalVendidoNeto($desde, $hasta);
 
         $indicadores = [
             ['etiqueta' => 'Productos activos', 'valor' => $inventario['productos'], 'formato' => 'entero', 'nota' => 'en catálogo'],
@@ -236,7 +239,7 @@ class ReporteController extends Controller
                     $totalVendido > 0 ? (float) $p->monto_vendido / $totalVendido : 0,
                     (float) $p->margen_estimado,
                 ])->all(),
-                'totales' => [null, null, 'Total', null, (float) $ranking->sum('unidades_vendidas'), $totalVendido, $totalVendido > 0 ? 1.0 : 0, (float) $ranking->sum('margen_estimado')],
+                'totales' => [null, null, 'Total de los listados', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0, (float) $ranking->sum('margen_estimado')],
                 'vacia' => 'No se vendió ningún producto en el período.',
             ],
         ]);
@@ -319,20 +322,40 @@ class ReporteController extends Controller
             ->whereBetween('fecha', [$desde, $hasta])
             ->sum('total');
 
-        // Costo de lo vendido, para dar una ganancia y no solo un total cobrado.
-        // Usa el `precio_compra` DE HOY: es una aproximación, no el costo exacto
-        // que tenía el producto el día que se vendió (mismo criterio que ya usa
-        // el "margen estimado" del reporte de productos). `cantidad -
-        // cantidad_devuelta` y no `cantidad`: lo devuelto ya se restó del
-        // ingreso (`$devuelto` abajo), así que su costo tampoco puede seguir
-        // contando — si no, una venta devuelta del todo mostraría "pérdida"
-        // por el costo de mercadería que en realidad volvió intacta al estante.
+        /*
+         * La ganancia, con un solo criterio de fecha y sin impuesto:
+         *
+         *   (ventas del período − devoluciones del período, las dos sin IVA)
+         *   − (costo de lo vendido en el período − costo de lo que volvió al
+         *      estante en el período)
+         *
+         * El IVA cobrado no es del negocio. Antes: se restaba con impuesto, el
+         * costo de lo devuelto se descontaba por la fecha de la VENTA (junio
+         * subía cada vez que se registraba en julio una devolución de junio) y
+         * la mercadería dañada que no reingresó contaba como recuperada. El
+         * costo es el del día de la venta (`costo_unitario`), no el de hoy.
+         */
+        $base = (float) DB::table('ventas')
+            ->whereBetween('fecha', [$desde, $hasta])
+            ->where('estado', '<>', 'ANULADA')
+            ->selectRaw('COALESCE(SUM(total - impuesto), 0) AS base')
+            ->value('base');
+
+        $devuelta = DB::table('devolucion_detalle as dd')
+            ->join('devoluciones as dv', 'dv.id', '=', 'dd.devolucion_id')
+            ->join('venta_detalle as vd', 'vd.id', '=', 'dd.venta_detalle_id')
+            ->join('productos as p', 'p.id', '=', 'dd.producto_id')
+            ->whereBetween('dv.fecha', [$desde, $hasta])
+            ->selectRaw('COALESCE(SUM(dd.importe), 0) AS base')
+            ->selectRaw('COALESCE(SUM(IF(dd.reingresa_stock = 1, dd.cantidad * COALESCE(vd.costo_unitario, p.precio_compra), 0)), 0) AS costo')
+            ->first();
+
         $costo = (float) DB::table('venta_detalle as vd')
             ->join('ventas as v', 'v.id', '=', 'vd.venta_id')
             ->join('productos as p', 'p.id', '=', 'vd.producto_id')
             ->where('v.estado', '<>', 'ANULADA')
             ->whereBetween('v.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM((vd.cantidad - vd.cantidad_devuelta) * p.precio_compra), 0) AS costo')
+            ->selectRaw('COALESCE(SUM(vd.cantidad * COALESCE(vd.costo_unitario, p.precio_compra)), 0) AS costo')
             ->value('costo');
 
         $operaciones = (int) $ventas->operaciones;
@@ -345,7 +368,7 @@ class ReporteController extends Controller
             'anuladas' => (int) $ventas->anuladas,
             'devuelto' => $devuelto,
             'neto' => round($vendido - $devuelto, 2),
-            'ganancia' => round($vendido - $devuelto - $costo, 2),
+            'ganancia' => round(($base - (float) $devuelta->base) - ($costo - (float) $devuelta->costo), 2),
             'ticket' => $operaciones > 0 ? round($vendido / $operaciones, 2) : 0.0,
         ];
     }
@@ -470,12 +493,28 @@ class ReporteController extends Controller
      * consulta se repite aquí con **las mismas fórmulas**. Una prueba compara
      * ambas sin filtro para que no se separen con el tiempo.
      */
+    /** Lo vendido en el período por todos los productos, con el mismo neto que el ranking. */
+    private function totalVendidoNeto(Carbon $desde, Carbon $hasta): float
+    {
+        return (float) DB::table('venta_detalle as d')
+            ->join('ventas as v', function ($join) {
+                $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
+            })
+            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->selectRaw('COALESCE(SUM(ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)'
+                .' * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2)), 0) AS total')
+            ->value('total');
+    }
+
     private function masVendidos(Carbon $desde, Carbon $hasta): Collection
     {
-        // Neto de devoluciones: el importe de cada línea se prorratea por la
-        // fracción que el cliente se quedó, igual que hace la vista.
-        $neto = 'ROUND(d.importe * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2)';
+        // Neto del descuento de la venta —repartido entre sus líneas: ahí vive
+        // el descuento del mostrador— y de lo devuelto, igual que la vista
+        // `v_productos_mas_vendidos`. El margen, con el costo del día de la venta.
+        $neto = 'ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)'
+            .' * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2)';
         $unidades = '(d.cantidad - d.cantidad_devuelta)';
+        $costo = 'COALESCE(d.costo_unitario, p.precio_compra)';
 
         return DB::table('venta_detalle as d')
             ->join('ventas as v', function ($join) {
@@ -488,7 +527,7 @@ class ReporteController extends Controller
             ->selectRaw('p.id, p.codigo, p.nombre, c.nombre AS categoria')
             ->selectRaw("SUM({$unidades}) AS unidades_vendidas")
             ->selectRaw("SUM({$neto}) AS monto_vendido")
-            ->selectRaw("SUM({$neto} - ROUND({$unidades} * p.precio_compra, 2)) AS margen_estimado")
+            ->selectRaw("SUM({$neto} - ROUND({$unidades} * {$costo}, 2)) AS margen_estimado")
             // Columna añadida, fuera de la vista: deja ver cuánto se devolvió
             // de un producto sin tener que abrir su ficha.
             ->selectRaw('SUM(d.cantidad_devuelta) AS unidades_devueltas')

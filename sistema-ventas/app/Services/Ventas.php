@@ -175,6 +175,9 @@ class Ventas
                 // decide el precio de una venta real.
                 'precio_unitario' => $linea['precio_unitario'] ?? $producto->precio_venta,
                 'descuento' => $linea['descuento'] ?? 0,
+                // El costo de hoy queda con la venta: la ganancia de este mes no
+                // cambia cuando el proveedor suba el precio el mes que viene.
+                'costo_unitario' => $producto->precio_compra,
             ];
 
             // Sin triggers en la base, el régimen de impuesto y el descuento de

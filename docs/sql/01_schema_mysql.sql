@@ -439,6 +439,10 @@ CREATE TABLE venta_detalle (
     cantidad            DECIMAL(12,3) NOT NULL,
     precio_unitario     DECIMAL(12,2) NOT NULL,      -- copia histórica del precio
     descuento           DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    -- Costo del producto el día de la venta: la ganancia de un mes pasado no
+    -- cambia porque el proveedor subió el precio después. NULL solo en ventas
+    -- anteriores al 15/09/2026 que no se pudieron completar.
+    costo_unitario      DECIMAL(12,2) NULL,
     importe             DECIMAL(12,2) GENERATED ALWAYS AS
                         (ROUND(cantidad * precio_unitario - descuento, 2)) STORED,
     -- Desglose de impuesto por línea: es lo que imprime la FACTURA.
@@ -1583,19 +1587,23 @@ SELECT DATE(v.fecha)      AS dia,
 -- reparte solo y no hace falta repetir su fórmula.
 -- Un producto devuelto por completo queda en cero, no con unidades cero e
 -- importe entero.
+-- Neto del descuento de la venta (repartido entre sus líneas) y de lo
+-- devuelto, y con el costo que tenía el producto el día que se vendió.
 CREATE OR REPLACE VIEW v_productos_mas_vendidos AS
 SELECT p.id, p.codigo, p.nombre, c.nombre AS categoria,
-       SUM(n.unidades_netas)                                            AS unidades_vendidas,
-       SUM(n.monto_neto)                                                AS monto_vendido,
-       SUM(n.monto_neto - ROUND(n.unidades_netas * p.precio_compra, 2)) AS margen_estimado
+       SUM(n.unidades_netas)                                     AS unidades_vendidas,
+       SUM(n.monto_neto)                                         AS monto_vendido,
+       SUM(n.monto_neto - ROUND(n.unidades_netas * n.costo, 2))  AS margen_estimado
   FROM (
         SELECT d.producto_id,
                (d.cantidad - d.cantidad_devuelta) AS unidades_netas,
-               ROUND(d.importe * IF(d.cantidad > 0,
-                                    (d.cantidad - d.cantidad_devuelta) / d.cantidad,
-                                    0), 2)        AS monto_neto
+               ROUND(d.importe
+                     * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)
+                     * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2) AS monto_neto,
+               COALESCE(d.costo_unitario, pc.precio_compra) AS costo
           FROM venta_detalle d
           JOIN ventas v ON v.id = d.venta_id AND v.estado <> 'ANULADA'
+          JOIN productos pc ON pc.id = d.producto_id
        ) AS n
   JOIN productos  p ON p.id = n.producto_id
   JOIN categorias c ON c.id = p.categoria_id

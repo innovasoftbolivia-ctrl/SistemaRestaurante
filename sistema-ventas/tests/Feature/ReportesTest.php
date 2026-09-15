@@ -156,38 +156,87 @@ class ReportesTest extends TestCase
         );
     }
 
+    private function ganancia(): float
+    {
+        return $this->actingAs($this->admin())
+            ->get(route('reportes.ventas', $this->hoy()))
+            ->viewData('resumen')['ganancia'];
+    }
+
     /**
-     * La ganancia también tiene que descontar el costo de lo devuelto, no
-     * solo el dinero: si el costo sigue contando unidades que ya volvieron
-     * al estante, una venta muy devuelta muestra menos ganancia (o pérdida)
-     * de la que en realidad hubo.
+     * La ganancia descuenta el costo de lo devuelto que volvió al estante, y va
+     * sin impuesto: el IVA cobrado no es del negocio.
      */
     public function test_la_ganancia_descuenta_tambien_el_costo_de_lo_devuelto(): void
     {
         $sesion = $this->turno();
         $venta = $this->vender($sesion, 5, 'P-0004');
-        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
+        $costo = (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
 
         $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Dos rotas');
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Dos de más');
 
-        $resumen = $this->actingAs($this->admin())
-            ->get(route('reportes.ventas', $this->hoy()))
-            ->viewData('resumen');
+        $venta->refresh();
+        $baseVendida = (float) $venta->total - (float) $venta->impuesto;
+        $baseDevuelta = (float) $devolucion->detalle()->sum('importe');
 
-        // Costo de las 3 unidades que se quedaron (5 vendidas − 2 devueltas), no de las 5.
-        $costoCorrecto = round(3 * (float) $producto->precio_compra, 2);
-        $gananciaEsperada = round($resumen['vendido'] - (float) $devolucion->total - $costoCorrecto, 2);
+        $this->assertSame(round(($baseVendida - $baseDevuelta) - 3 * $costo, 2), $this->ganancia());
+    }
 
-        $this->assertSame($gananciaEsperada, $resumen['ganancia']);
+    public function test_la_ganancia_no_incluye_el_impuesto_cobrado(): void
+    {
+        $venta = $this->vender($this->turno(), 5, 'P-0004');
+        $costo = 5 * (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
+        $this->assertGreaterThan(0, (float) $venta->impuesto, 'la semilla trae IVA 13 %');
 
-        // Antes del fix, el costo seguía contando las 5 unidades completas:
-        // la ganancia salía distinta (más baja) de lo que correspondía.
-        $costoDeAntesDelFix = round(5 * (float) $producto->precio_compra, 2);
-        $this->assertNotEquals(
-            round($resumen['vendido'] - (float) $devolucion->total - $costoDeAntesDelFix, 2),
-            $resumen['ganancia']
+        $this->assertSame(round((float) $venta->total - (float) $venta->impuesto - $costo, 2), $this->ganancia());
+    }
+
+    /** Lo roto se le devuelve al cliente pero no vuelve al estante: su costo se perdió. */
+    public function test_lo_devuelto_danado_no_recupera_su_costo(): void
+    {
+        $sesion = $this->turno();
+        $venta = $this->vender($sesion, 5, 'P-0004');
+        $costo = (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
+
+        $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2, 'reingresa_stock' => false]], 'Dos rotas');
+
+        $venta->refresh();
+        $esperada = ((float) $venta->total - (float) $venta->impuesto - (float) $devolucion->detalle()->sum('importe')) - 5 * $costo;
+
+        $this->assertSame(round($esperada, 2), $this->ganancia());
+    }
+
+    /** La ganancia de lo ya vendido no cambia porque el proveedor subió el precio después. */
+    public function test_la_ganancia_usa_el_costo_del_dia_de_la_venta(): void
+    {
+        $this->vender($this->turno(), 5, 'P-0004');
+        $antes = $this->ganancia();
+
+        Producto::where('codigo', 'P-0004')->firstOrFail()->forceFill(['precio_compra' => 99])->save();
+
+        $this->assertSame($antes, $this->ganancia());
+    }
+
+    /** Una venta de Bs 100 con 10 % de descuento no aparece en el ranking como 100. */
+    public function test_mas_vendidos_reparte_el_descuento_de_la_venta(): void
+    {
+        $sesion = $this->turno();
+        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
+        $venta = Ventas::registrar(
+            sesion: $sesion, usuario: $this->admin(),
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 10]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+            descuento: 3.54,
         );
+
+        $fila = $this->actingAs($this->admin())
+            ->get(route('reportes.productos', $this->hoy()))
+            ->viewData('masVendidos')
+            ->firstWhere('id', $producto->id);
+
+        $this->assertSame(round((float) $venta->subtotal - 3.54, 2), round((float) $fila->monto_vendido, 2));
     }
 
     /** Sin rellenar los huecos, el gráfico uniría días lejanos con una recta. */
