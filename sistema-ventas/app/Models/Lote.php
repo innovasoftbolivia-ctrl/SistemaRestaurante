@@ -67,8 +67,12 @@ class Lote extends Model
      */
     public function scopeEnOrdenDeSalida(Builder $query): Builder
     {
+        // Primero lo vigente que vence antes; después lo que no tiene fecha; y al
+        // final lo ya vencido. Lo vencido está retirado del estante: si la venta
+        // lo descontara primero, la alerta de vencidos se apagaría sola y el
+        // sistema diría que esa mercadería se vendió.
         return $query
-            ->orderByRaw('fecha_vencimiento IS NULL')
+            ->orderByRaw('CASE WHEN fecha_vencimiento IS NULL THEN 1 WHEN fecha_vencimiento < CURDATE() THEN 2 ELSE 0 END')
             ->orderBy('fecha_vencimiento')
             ->orderBy('id');
     }

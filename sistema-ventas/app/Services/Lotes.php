@@ -75,7 +75,7 @@ class Lotes
      * sería castigar al cajero por un descuadre que no es suyo. La cifra que
      * manda es `stock_actual`, y los lotes se acomodan a ella.
      */
-    public static function consumir(Producto $producto, float $cantidad): void
+    public static function consumir(Producto $producto, float $cantidad, ?int $ventaDetalleId = null): void
     {
         if (! $producto->controla_vencimiento || $cantidad <= 0) {
             return;
@@ -100,7 +100,62 @@ class Lotes
 
             $lote->forceFill(['cantidad_actual' => round((float) $lote->cantidad_actual - $sale, 3)])->save();
 
+            // Si es una venta, se anota de qué lote salió: la anulación y la
+            // devolución reponen ahí mismo.
+            if ($ventaDetalleId !== null && $sale > 0) {
+                DB::table('lote_salidas')->insert([
+                    'lote_id' => $lote->id,
+                    'venta_detalle_id' => $ventaDetalleId,
+                    'cantidad' => $sale,
+                ]);
+            }
+
             $porRepartir = round($porRepartir - $sale, 3);
+        }
+    }
+
+    /**
+     * Lo que vuelve de una línea de venta, a los lotes de los que salió.
+     *
+     * Primero al que salió último (el que vence más tarde): de lo que se llevó
+     * el cliente, eso es lo más reciente. Lo que no tenga salida registrada
+     * —ventas anteriores a este registro— se repone como siempre.
+     */
+    public static function reponerDeVenta(Producto $producto, int $ventaDetalleId, float $cantidad): void
+    {
+        if (! $producto->controla_vencimiento || $cantidad <= 0) {
+            return;
+        }
+
+        $porReponer = round($cantidad, 3);
+
+        $salidas = DB::table('lote_salidas as s')
+            ->join('lotes as l', 'l.id', '=', 's.lote_id')
+            ->where('s.venta_detalle_id', $ventaDetalleId)
+            ->whereColumn('s.repuesta', '<', 's.cantidad')
+            ->orderByRaw('l.fecha_vencimiento IS NULL')
+            ->orderByDesc('l.fecha_vencimiento')
+            ->orderByDesc('s.id')
+            ->lockForUpdate()
+            ->get(['s.id', 's.lote_id', 's.cantidad', 's.repuesta']);
+
+        foreach ($salidas as $salida) {
+            if ($porReponer <= 0) {
+                break;
+            }
+
+            $vuelve = min(round((float) $salida->cantidad - (float) $salida->repuesta, 3), $porReponer);
+
+            DB::table('lotes')->where('id', $salida->lote_id)
+                ->update(['cantidad_actual' => DB::raw('ROUND(cantidad_actual + '.number_format($vuelve, 3, '.', '').', 3)')]);
+            DB::table('lote_salidas')->where('id', $salida->id)
+                ->update(['repuesta' => round((float) $salida->repuesta + $vuelve, 3)]);
+
+            $porReponer = round($porReponer - $vuelve, 3);
+        }
+
+        if ($porReponer > 0) {
+            self::reponer($producto, $porReponer);
         }
     }
 
@@ -199,6 +254,13 @@ class Lotes
         if ($falta > 0) {
             self::ingresar($producto, $falta);
         }
+
+        // Y al revés: si mientras el control estuvo apagado se vendió sin
+        // descontar lotes, quedaron unidades que ya no existen. Se recortan
+        // por el mismo orden por el que habrían salido.
+        if ($falta < 0) {
+            self::consumir($producto, abs($falta));
+        }
     }
 
     /**
@@ -234,6 +296,9 @@ class Lotes
             ->leftJoin('compra_detalle as cd', 'cd.id', '=', 'l.compra_detalle_id')
             ->leftJoin('compras as c', 'c.id', '=', 'cd.compra_id')
             ->where('p.activo', 1)
+            // Un producto al que se le apagó el control no avisa: sus lotes ya
+            // no siguen al stock.
+            ->where('p.controla_vencimiento', 1)
             ->where('l.cantidad_actual', '>', 0)
             ->whereNotNull('l.fecha_vencimiento')
             ->whereDate('l.fecha_vencimiento', '<=', now()->addDays($dias))

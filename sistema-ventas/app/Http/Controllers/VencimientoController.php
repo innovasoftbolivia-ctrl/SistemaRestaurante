@@ -111,7 +111,11 @@ class VencimientoController extends Controller
         $cantidad = Config::cantidad($lote->cantidad_actual);
         $unidad = $lote->producto?->unidadMedida?->codigo;
 
-        $movimiento = Inventario::bajaDeLote($lote, $this->motivoDeLaBaja($lote, $datos['observacion'] ?? null));
+        try {
+            $movimiento = Inventario::bajaDeLote($lote, $this->motivoDeLaBaja($lote, $datos['observacion'] ?? null));
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         if (! $movimiento) {
             return back()->with('error', 'Esa tanda ya no tiene unidades.');

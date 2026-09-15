@@ -758,6 +758,24 @@ CREATE TABLE lotes (
     )
 ) ENGINE=InnoDB;
 
+-- De qué lote salió cada línea de venta. Sin esto, lo anulado o devuelto
+-- volvía al lote que vence antes entre los abiertos —o a uno que vence en un
+-- año— y las unidades perdían su fecha real: dejaban de aparecer en la alerta
+-- de vencimientos. `repuesta` evita devolver dos veces lo mismo.
+CREATE TABLE lote_salidas (
+    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    lote_id             BIGINT UNSIGNED NOT NULL,
+    venta_detalle_id    BIGINT UNSIGNED NOT NULL,
+    cantidad            DECIMAL(12,3)   NOT NULL,
+    repuesta            DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
+    PRIMARY KEY (id),
+    KEY ix_lote_salidas_linea (venta_detalle_id),
+    KEY ix_lote_salidas_lote  (lote_id),
+    CONSTRAINT fk_lote_salidas_lote  FOREIGN KEY (lote_id)          REFERENCES lotes (id),
+    CONSTRAINT fk_lote_salidas_linea FOREIGN KEY (venta_detalle_id) REFERENCES venta_detalle (id),
+    CONSTRAINT ck_lote_salidas CHECK (cantidad > 0 AND repuesta >= 0 AND repuesta <= cantidad)
+) ENGINE=InnoDB;
+
 -- Mercadería que se le devuelve al proveedor, colgada de la compra por la que
 -- entró. No es lo mismo que `devoluciones`, que es del cliente hacia la tienda:
 -- una suma al stock y la otra lo resta, una la firma el cajero y la otra el

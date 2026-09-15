@@ -166,6 +166,13 @@ class Inventario
     {
         $producto = $lote->producto;
 
+        // Con el control apagado los lotes no siguen al stock: la baja restaba
+        // del stock pero no del lote, y la misma tanda se podía dar de baja una
+        // y otra vez hasta dejar el producto en cero.
+        if (! $producto?->controla_vencimiento) {
+            throw new RuntimeException("«{$producto?->nombre}» no controla vencimiento: sus lotes ya no se dan de baja. Si hay mercadería vencida, regístrala como ajuste de inventario.");
+        }
+
         return DB::transaction(function () use ($lote, $producto, $motivo) {
             $actual = (float) Producto::whereKey($producto->id)->lockForUpdate()->value('stock_actual');
 

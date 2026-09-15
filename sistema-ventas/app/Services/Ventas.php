@@ -180,10 +180,10 @@ class Ventas
             // Sin triggers en la base, el régimen de impuesto y el descuento de
             // stock los hace PHP (ver config/ventas.php).
             if (ReglasEnPhp::activa()) {
-                VentaDetalle::create(ReglasEnPhp::antesDeInsertarLineaVenta($datos));
+                $detalle = VentaDetalle::create(ReglasEnPhp::antesDeInsertarLineaVenta($datos));
                 ReglasEnPhp::despuesDeInsertarLineaVenta($venta->id, $producto->id, $cantidad);
             } else {
-                VentaDetalle::create($datos);
+                $detalle = VentaDetalle::create($datos);
             }
 
             // Los lotes se descuentan aquí, fuera del `if`, y no dentro del
@@ -191,7 +191,7 @@ class Ventas
             // FEFO para las dos vías en vez de dos que hay que mantener
             // iguales a mano. El stock ya bajó arriba; esto solo reparte esa
             // baja entre las tandas, empezando por la que vence antes.
-            Lotes::consumir($producto, $cantidad);
+            Lotes::consumir($producto, $cantidad, $detalle->id);
         }
     }
 
@@ -416,7 +416,7 @@ class Ventas
             // de reponer el procedimiento.
             foreach ($venta->detalle()->with('producto')->get() as $linea) {
                 if ($linea->producto) {
-                    Lotes::reponer($linea->producto, (float) $linea->cantidad);
+                    Lotes::reponerDeVenta($linea->producto, $linea->id, (float) $linea->cantidad);
                 }
             }
         });
