@@ -150,8 +150,11 @@ services:
     volumes:
       - ventas_data:/var/lib/mysql
       # Al primer arranque el contenedor ejecuta estos scripts en orden
-      # alfabético: es lo que crea el esquema y los datos base.
-      - ./docs/sql:/docker-entrypoint-initdb.d:ro
+      # alfabético: el esquema y los datos BASE de producción. No el
+      # 02_datos_iniciales.sql de desarrollo, que trae el negocio de
+      # demostración (productos, clientes y empleados de ejemplo).
+      - ./docs/sql/01_schema_mysql.sql:/docker-entrypoint-initdb.d/01_schema_mysql.sql:ro
+      - ./docs/sql/produccion/02_datos_base.sql:/docker-entrypoint-initdb.d/02_datos_base.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 5s

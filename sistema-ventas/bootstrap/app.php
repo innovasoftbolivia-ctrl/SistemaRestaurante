@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ExigirCambioDePassword;
 use App\Http\Middleware\VerificarCuentaVigente;
 use App\Http\Middleware\VerificarPermiso;
 use Illuminate\Foundation\Application;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permiso' => VerificarPermiso::class,
             'cuenta.vigente' => VerificarCuentaVigente::class,
+            'password.propia' => ExigirCambioDePassword::class,
         ]);
 
         // Vacío por omisión: sin proxy delante, no hay nada que confiar. Si el

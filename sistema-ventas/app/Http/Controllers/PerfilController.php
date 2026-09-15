@@ -30,9 +30,10 @@ class PerfilController extends Controller
     {
         $datos = $request->validate([
             'password_actual' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'password' => ['required', 'confirmed', 'different:password_actual', Password::min(8)],
         ], [
             'password_actual.current_password' => 'La contraseña actual no es correcta.',
+            'password.different' => 'La nueva contraseña tiene que ser distinta de la actual.',
         ], [
             'password_actual' => 'contraseña actual',
             'password' => 'nueva contraseña',
@@ -43,6 +44,7 @@ class PerfilController extends Controller
         $usuario->forceFill([
             'password_hash' => Hash::make($datos['password']),
             'password_actualizado_en' => now(),
+            'debe_cambiar_password' => false,
         ])->save();
 
         Auditor::registrar('PASSWORD_CAMBIADA', 'usuarios', $usuario->id);

@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Usuario;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * El script docs/sql/02_datos_iniciales.sql deja un hash de ejemplo que no
@@ -32,6 +33,13 @@ class CredencialesSeeder extends Seeder
 
     public function run(): void
     {
+        // En producción no hay contraseñas de fábrica: ver primerAccesoDeProduccion().
+        if (app()->environment('production')) {
+            $this->primerAccesoDeProduccion();
+
+            return;
+        }
+
         foreach (self::CLAVES as $usuario => $clave) {
             $cuenta = Usuario::where('usuario', $usuario)
                 ->whereNull('password_actualizado_en')
@@ -51,5 +59,37 @@ class CredencialesSeeder extends Seeder
 
             $this->command->info("Contraseña establecida para «{$usuario}».");
         }
+    }
+
+    /**
+     * Una instalación real no arranca con admin/admin123, que está publicada
+     * en el README. Se genera una contraseña aleatoria para `admin`, se muestra
+     * UNA vez en el log del arranque y se marca el cambio obligatorio: quien
+     * entra primero pone la suya. Las cuentas de prueba no existen en la base
+     * de producción (docs/sql/produccion/02_datos_base.sql).
+     */
+    private function primerAccesoDeProduccion(): void
+    {
+        $cuenta = Usuario::where('usuario', 'admin')->whereNull('password_actualizado_en')->first();
+
+        if (! $cuenta) {
+            $this->command->info('El primer acceso ya estaba configurado.');
+
+            return;
+        }
+
+        $clave = Str::password(14, symbols: false);
+
+        $cuenta->forceFill([
+            'password_hash' => Hash::make($clave),
+            'password_actualizado_en' => now(),
+            'debe_cambiar_password' => true,
+            'intentos_fallidos' => 0,
+        ])->save();
+
+        $this->command->warn(str_repeat('=', 64));
+        $this->command->warn('  PRIMER ACCESO — usuario: admin   contraseña: '.$clave);
+        $this->command->warn('  Se muestra una sola vez. Al entrar, el sistema pide cambiarla.');
+        $this->command->warn(str_repeat('=', 64));
     }
 }

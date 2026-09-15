@@ -875,24 +875,20 @@ sus propios datos de negocio.
    (`docker-compose.prod.yml` + `Dockerfile.prod`) hornea el código en la imagen, corre como
    usuario sin privilegios y no publica la base hacia fuera.
 
-5. **Datos del negocio.** No hay pantalla para esto todavía — se edita directo en la tabla
-   `configuracion` (nombre, dirección, teléfono, identificación fiscal, moneda, y `tasa_impuesto`
-   en `0` si el negocio no factura con impuesto):
+5. **Primer acceso.** La base de producción se crea con `docs/sql/produccion/02_datos_base.sql`:
+   sin productos, clientes ni empleados de ejemplo, y con una sola cuenta, `admin`. Su contraseña
+   es aleatoria y sale **una sola vez** en el log del primer arranque:
 
    ```bash
-   docker exec -it ventas_mysql_prod mysql --default-character-set=utf8mb4 -uroot -p ventas_db
+   docker compose -f docker-compose.prod.yml logs app | grep "PRIMER ACCESO"
    ```
 
-   ```sql
-   UPDATE configuracion SET valor = 'Minimarket El Ahorro' WHERE clave = 'negocio_nombre';
-   UPDATE configuracion SET valor = 'Av. Principal 123'    WHERE clave = 'negocio_direccion';
-   -- y así con negocio_telefono, negocio_documento, moneda_simbolo, moneda_codigo, tasa_impuesto...
-   ```
+   Al entrar, el sistema obliga a cambiarla antes de hacer cualquier otra cosa.
 
-6. **Cuentas reales.** `CredencialesSeeder` deja usuarios de prueba (`admin`/`admin123`, etc.) —
-   sirven para instalar y probar, pero no para operar. Antes de entregarle el sistema al cliente,
-   crea sus cuentas reales desde **Personal → Empleados y Usuarios** y desactiva o cambia la
-   contraseña de las de prueba.
+6. **Datos del negocio y cuentas reales.** En **Sistema → Configuración**: nombre, NIT,
+   dirección, teléfono, moneda, tasa de impuesto y topes del cajero. En **Personal → Empleados y
+   Usuarios**: el personal y sus cuentas. Cada cuenta nueva, y cada contraseña que restablece un
+   administrador, se cambia al primer ingreso.
 
 7. **Backup programado.** Sin esto, un disco dañado se lleva el negocio entero — ver
    [Copias de seguridad](#copias-de-seguridad) más abajo. No lo dejes para después.

@@ -85,6 +85,8 @@ class UsuarioController extends Controller
             'usuario' => $datos['usuario'],
             'password_hash' => Hash::make($datos['password']),
             'password_actualizado_en' => now(),
+            // La puso el administrador: la persona pone la suya al entrar.
+            'debe_cambiar_password' => true,
             'activo' => $datos['activo'] ?? true,
         ]);
 
@@ -135,6 +137,8 @@ class UsuarioController extends Controller
             $cambios['password_hash'] = Hash::make($datos['password']);
             $cambios['password_actualizado_en'] = now();
             $cambios['intentos_fallidos'] = 0;
+            // Restablecida por otro: al entrar, la persona pone una propia.
+            $cambios['debe_cambiar_password'] = ! $esPropia;
         }
 
         $aviso = $esPropia && ($datos['rol_id'] != $usuario->rol_id || ! ($datos['activo'] ?? true))

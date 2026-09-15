@@ -26,7 +26,7 @@ class Usuario extends Authenticatable
 
     protected $fillable = [
         'empleado_id', 'rol_id', 'usuario', 'password_hash',
-        'password_actualizado_en', 'activo',
+        'password_actualizado_en', 'debe_cambiar_password', 'activo',
     ];
 
     protected $hidden = ['password_hash'];
@@ -37,6 +37,7 @@ class Usuario extends Authenticatable
             'activo' => 'boolean',
             'ultimo_acceso' => 'datetime',
             'password_actualizado_en' => 'datetime',
+            'debe_cambiar_password' => 'boolean',
         ];
     }
 

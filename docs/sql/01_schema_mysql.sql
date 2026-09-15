@@ -107,6 +107,9 @@ CREATE TABLE usuarios (
     usuario             VARCHAR(40)  NOT NULL,
     password_hash       VARCHAR(255) NOT NULL,
     password_actualizado_en DATETIME NULL,
+    -- 1 = la contraseña la puso otro (la instalación o un administrador): se
+    -- pide cambiarla al entrar, antes de hacer cualquier otra cosa.
+    debe_cambiar_password TINYINT(1) NOT NULL DEFAULT 0,
     activo              TINYINT(1)   NOT NULL DEFAULT 1,
     ultimo_acceso       DATETIME     NULL,
     intentos_fallidos   TINYINT UNSIGNED NOT NULL DEFAULT 0,
