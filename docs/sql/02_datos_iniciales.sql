@@ -194,6 +194,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
     ('tasa_impuesto',       '0.1300',                'Tasa del IVA (en Bolivia, 13 %)'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
+    ('egreso_max_cajero',   '200.00',                'Egreso máximo (Bs) que el cajero registra sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
     ('serie_factura',       '1',                     'ID de serie F001 usada para facturas (persona jurídica)'),

@@ -6,6 +6,7 @@ use App\Models\Caja;
 use App\Models\MovimientoCaja;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
+use App\Support\Config;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -93,6 +94,60 @@ class Cajas
             throw new RuntimeException('El monto del movimiento debe ser mayor que cero.');
         }
 
+        return DB::transaction(function () use ($sesion, $usuario, $tipo, $concepto, $monto) {
+            // El turno bloqueado: dos egresos a la vez no pueden sacar entre
+            // los dos más de lo que hay.
+            $bloqueada = SesionCaja::whereKey($sesion->id)->lockForUpdate()->firstOrFail();
+
+            if (! $bloqueada->estaAbierta()) {
+                throw new RuntimeException('La caja ya está cerrada: no admite más movimientos.');
+            }
+
+            if ($tipo === 'EGRESO') {
+                self::validarEgreso($bloqueada, $usuario, $monto);
+            }
+
+            return self::registrarMovimiento($bloqueada, $usuario, $tipo, $concepto, $monto);
+        }, self::REINTENTOS);
+    }
+
+    /**
+     * Un egreso no puede sacar más de lo que debería haber en el cajón, y el
+     * cajero tiene un tope sin autorización.
+     *
+     * Sin esto, un faltante se tapaba con un egreso por el monto justo —«Compra
+     * de bolsas, 80»— y el arqueo cerraba en cero. Por encima del tope, el
+     * egreso lo registra quien puede cerrar la caja, en el mismo turno.
+     */
+    private static function validarEgreso(SesionCaja $sesion, Usuario $usuario, float $monto): void
+    {
+        $disponible = round($sesion->efectivoEsperado(), 2);
+
+        if (round($monto, 2) > $disponible) {
+            throw new RuntimeException(sprintf(
+                'El egreso (%s) es mayor que el efectivo que debería haber en el cajón (%s).',
+                Config::importe($monto),
+                Config::importe(max(0, $disponible)),
+            ));
+        }
+
+        $tope = (float) Config::get('egreso_max_cajero', '0');
+
+        if (! $usuario->tienePermiso('caja.cerrar') && round($monto, 2) > $tope) {
+            throw new RuntimeException(sprintf(
+                'Tu rol puede registrar egresos de hasta %s. Para uno mayor, pide a un administrador que lo registre en tu turno.',
+                Config::importe($tope),
+            ));
+        }
+    }
+
+    private static function registrarMovimiento(
+        SesionCaja $sesion,
+        Usuario $usuario,
+        string $tipo,
+        string $concepto,
+        float $monto,
+    ): MovimientoCaja {
         $movimiento = MovimientoCaja::create([
             'sesion_caja_id' => $sesion->id,
             'usuario_id' => $usuario->id,
@@ -127,6 +182,18 @@ class Cajas
 
         if ($declarado < 0) {
             throw new RuntimeException('El efectivo contado no puede ser negativo.');
+        }
+
+        // Una diferencia sin explicación no le sirve a nadie. Se calcula aquí
+        // con la misma fórmula que firma el procedimiento.
+        $diferencia = round($declarado - $sesion->efectivoEsperado(), 2);
+
+        if ($diferencia !== 0.0 && blank($observacion)) {
+            throw new RuntimeException(sprintf(
+                'El conteo tiene una diferencia de %s%s: escribe en la observación qué pasó.',
+                $diferencia > 0 ? '+' : '−',
+                Config::importe(abs($diferencia)),
+            ));
         }
 
         // `sp_cerrar_caja` hace su SELECT ... FOR UPDATE y su UPDATE final en

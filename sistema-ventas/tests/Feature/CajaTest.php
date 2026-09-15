@@ -9,8 +9,10 @@ use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CajaTest extends TestCase
@@ -191,5 +193,102 @@ class CajaTest extends TestCase
             ->get(route('caja.imprimir', $sesion))
             ->assertOk()
             ->assertSee('Pago a proveedor de bolsas');
+    }
+    // ============================================================ arqueo a ciegas
+
+    /**
+     * Si el cajero viera «lo que debería haber», sabría cuánto sobra antes del
+     * conteo. El esperado es de quien arquea.
+     */
+    public function test_el_cajero_no_ve_el_efectivo_esperado_y_el_administrador_si(): void
+    {
+        $sesion = $this->turno();
+        $this->vender($sesion);
+
+        $this->actingAs($this->cajero())->get(route('caja.show', $sesion))
+            ->assertOk()->assertDontSee('Efectivo esperado')->assertSee('lo cuenta el administrador contigo');
+        $this->actingAs($this->cajero())->get(route('inicio'))
+            ->assertOk()->assertDontSee('Efectivo esperado');
+
+        $this->actingAs($this->admin())->get(route('caja.show', $sesion))
+            ->assertOk()->assertSee('Efectivo esperado');
+    }
+
+    public function test_el_cajero_solo_ve_sus_propios_turnos(): void
+    {
+        $admin = $this->turno($this->admin());
+        Cajas::cerrar($admin->fresh(), $this->admin(), 100);
+        $propio = $this->turno();
+
+        $this->actingAs($this->cajero())->get(route('caja.show', $admin))->assertForbidden();
+        $this->actingAs($this->cajero())->get(route('caja.imprimir', $admin))->assertForbidden();
+        $this->actingAs($this->cajero())->get(route('caja.show', $propio))->assertOk();
+
+        $historial = $this->actingAs($this->cajero())->get(route('caja.index'))->viewData('historial');
+        $this->assertSame([$this->cajero()->id], $historial->pluck('usuario_apertura_id')->unique()->values()->all());
+    }
+
+    // ============================================================ egresos
+
+    public function test_ningun_egreso_supera_el_efectivo_del_cajon(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->post(route('caja.movimiento', $sesion), [
+            'tipo' => 'EGRESO', 'concepto' => 'Pago de luz', 'monto' => 150,
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'mayor que el efectivo'));
+
+        $this->assertSame(100.0, $sesion->fresh()->efectivoEsperado());
+    }
+
+    /** Por encima del tope, el egreso lo registra el administrador en el turno del cajero. */
+    public function test_el_cajero_tiene_tope_de_egreso_y_el_administrador_lo_registra_por_el(): void
+    {
+        DB::table('configuracion')->where('clave', 'egreso_max_cajero')->update(['valor' => '50.00']);
+        Config::olvidar();
+        $sesion = $this->turno(inicial: 300);
+
+        $this->actingAs($this->cajero())->post(route('caja.movimiento', $sesion), [
+            'tipo' => 'EGRESO', 'concepto' => 'Compra de bolsas', 'monto' => 80,
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'hasta Bs 50.00'));
+        $this->assertSame(300.0, $sesion->fresh()->efectivoEsperado());
+
+        $this->actingAs($this->cajero())->post(route('caja.movimiento', $sesion), [
+            'tipo' => 'EGRESO', 'concepto' => 'Agua', 'monto' => 50,
+        ])->assertSessionHas('exito');
+
+        $this->actingAs($this->admin())->post(route('caja.movimiento', $sesion), [
+            'tipo' => 'EGRESO', 'concepto' => 'Compra de bolsas', 'monto' => 80,
+        ])->assertSessionHas('exito');
+
+        $this->assertSame(170.0, $sesion->fresh()->efectivoEsperado());
+        $this->assertSame($this->admin()->id, $sesion->movimientos()->where('monto', 80)->value('usuario_id'));
+    }
+
+    // ============================================================ cierre
+
+    public function test_con_diferencia_la_observacion_es_obligatoria(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['monto_declarado' => 60])
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'escribe en la observación'));
+        $this->assertTrue($sesion->fresh()->estaAbierta());
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 60, 'observacion' => 'Se pagó el gas sin registrarlo',
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+
+        $this->assertSame(-40.0, (float) $sesion->fresh()->diferencia);
+    }
+
+    public function test_sin_diferencia_se_cierra_sin_observacion(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['monto_declarado' => 100])
+            ->assertRedirect(route('caja.imprimir', $sesion));
+
+        $this->assertFalse($sesion->fresh()->estaAbierta());
     }
 }

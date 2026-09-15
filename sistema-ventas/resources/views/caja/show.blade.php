@@ -12,7 +12,7 @@
          cambiar nada reportaría «cuadrado» sin que nadie haya contado un
          céntimo. El monto se cuenta y se escribe; el esperado ya lo calculó
          el sistema, se muestra aparte como referencia, no como valor inicial. --}}
-    <div x-data="{ moviendo: false, tipo: 'INGRESO', cerrando: false, declarado: null, esperado: {{ $resumen['esperado'] }} }"
+    <div x-data="{ moviendo: false, tipo: 'INGRESO', cerrando: false, declarado: null, esperado: {{ $veArqueo ? $resumen['esperado'] : 'null' }} }"
         @keydown.escape.window="moviendo = false; cerrando = false" class="space-y-6">
 
         {{-- Cabecera --}}
@@ -77,8 +77,13 @@
                     ['Ingresos / egresos',
                         Config::importe($resumen['ingresos']).' / '.Config::importe($resumen['egresos']),
                         'text-gray-800 dark:text-white/90', 'movimientos de caja'],
-                    [$abierta ? 'Efectivo esperado' : 'Esperado al cerrar', Config::importe($resumen['esperado']),
-                        'text-brand-500 dark:text-brand-400', $abierta ? 'lo que debería haber ahora' : null],
+                    // Arqueo a ciegas: el esperado lo ve quien cuenta, no quien
+                    // tiene el cajón. Ver CajaController::arquea().
+                    $veArqueo
+                        ? [$abierta ? 'Efectivo esperado' : 'Esperado al cerrar', Config::importe($resumen['esperado']),
+                            'text-brand-500 dark:text-brand-400', $abierta ? 'lo que debería haber ahora' : null]
+                        : ['Arqueo', $abierta ? 'Al cerrar' : 'Cerrado', 'text-gray-800 dark:text-white/90',
+                            'lo cuenta el administrador contigo'],
                 ];
             @endphp
 
@@ -244,7 +249,9 @@
                         <form method="POST" action="{{ route('caja.cerrar', $sesion) }}" class="space-y-5">
                             @csrf
 
-                            <div class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
+                            {{-- El esperado aparece recién después de contar: primero se
+                                 cuenta el cajón, después se compara. --}}
+                            <div x-show="declarado !== null" x-cloak class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
                                 <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
                                     <span>Efectivo esperado</span>
                                     <b class="text-gray-800 dark:text-white/90">{{ Config::importe($resumen['esperado']) }}</b>
@@ -278,8 +285,9 @@
                             </div>
 
                             <x-form.campo label="Observación" for="cierre_observacion" name="observacion"
-                                help="Obligatoria de hecho si hay diferencia: es lo que justifica el descuadre.">
+                                help="Obligatoria si hay diferencia: es lo que justifica el descuadre.">
                                 <x-form.textarea id="cierre_observacion" name="observacion"
+                                    x-bind:required="declarado !== null && Math.round((declarado - esperado) * 100) !== 0"
                                     placeholder="Sin novedad / faltó vuelto de una venta / …" />
                             </x-form.campo>
 

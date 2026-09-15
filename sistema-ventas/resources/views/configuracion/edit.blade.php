@@ -72,6 +72,13 @@
                             min="0" max="100" inputmode="numeric" :value="$actual['descuento_max_cajero']" required />
                     </x-form.campo>
 
+                    <x-form.campo label="Egreso máximo del cajero (Bs)" for="egreso_max_cajero"
+                        name="egreso_max_cajero" required
+                        help="Un gasto pagado del cajón por encima de esto lo registra un administrador en el turno del cajero.">
+                        <x-form.input id="egreso_max_cajero" name="egreso_max_cajero" type="number" step="0.01"
+                            min="0" inputmode="decimal" :value="$actual['egreso_max_cajero']" required />
+                    </x-form.campo>
+
                     <x-form.campo label="Días para sustituir un comprobante" for="dias_max_sustitucion"
                         name="dias_max_sustitucion" required
                         help="Plazo para cambiar un recibo por una factura después de la venta.">

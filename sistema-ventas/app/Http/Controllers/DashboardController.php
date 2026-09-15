@@ -50,6 +50,7 @@ class DashboardController extends Controller
             'alertasTotal' => ($gestion || $catalogo) ? Producto::alertasDeStock()->count() : null,
             'ultimas' => $gestion ? $this->ultimasVentas() : null,
             'gestion' => $gestion,
+            'veArqueo' => CajaController::arquea($usuario),
         ]);
     }
 

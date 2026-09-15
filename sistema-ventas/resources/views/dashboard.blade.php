@@ -69,7 +69,7 @@
                             @endif
                         </div>
 
-                        @if ($sesion)
+                        @if ($sesion && $veArqueo)
                             <div class="text-right">
                                 <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     Efectivo esperado

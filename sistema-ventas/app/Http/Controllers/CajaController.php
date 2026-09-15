@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Caja;
 use App\Models\SesionCaja;
+use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Support\Config;
 use Illuminate\Http\RedirectResponse;
@@ -25,15 +26,34 @@ class CajaController extends Controller
             'title' => 'Caja',
             'sesion' => Cajas::sesionDe($usuario)?->loadCount('ventas'),
             'cajas' => Caja::activas()->with('sesionAbierta.usuarioApertura')->orderBy('nombre')->get(),
+            // El cajero ve sus turnos; los de los demás y sus diferencias son
+            // de quien arquea.
             'historial' => SesionCaja::with(['caja:id,nombre', 'usuarioApertura:id,usuario'])
+                ->when(! self::arquea($usuario), fn ($q) => $q->where('usuario_apertura_id', $usuario->id))
                 ->withCount('ventas')
                 ->orderByDesc('fecha_apertura')
                 ->paginate(10),
+            'veArqueo' => self::arquea($usuario),
         ]);
+    }
+
+    /**
+     * Quién ve el efectivo esperado y las diferencias: quien cierra la caja o
+     * revisa los reportes.
+     *
+     * El cajero no. Si viera en vivo «lo que debería haber», sabría cuánto
+     * sobra antes de que el administrador cuente, y el arqueo dejaría de
+     * controlar nada. Es el mismo criterio que le quitó el cierre.
+     */
+    public static function arquea(?Usuario $usuario): bool
+    {
+        return $usuario !== null && ($usuario->tienePermiso('caja.cerrar') || $usuario->tienePermiso('reportes.ver'));
     }
 
     public function show(SesionCaja $sesion): View
     {
+        abort_unless(self::arquea(Auth::user()) || $sesion->usuario_apertura_id === Auth::id(), 403);
+
         $sesion->load([
             'caja:id,nombre,ubicacion',
             'usuarioApertura:id,usuario',
@@ -50,6 +70,7 @@ class CajaController extends Controller
                 ->orderByDesc('fecha')
                 ->paginate(15),
             'resumen' => $this->resumen($sesion),
+            'veArqueo' => self::arquea(Auth::user()),
         ]);
     }
 
@@ -63,6 +84,8 @@ class CajaController extends Controller
      */
     public function imprimir(SesionCaja $sesion): View|RedirectResponse
     {
+        abort_unless(self::arquea(Auth::user()) || $sesion->usuario_apertura_id === Auth::id(), 403);
+
         if ($sesion->estaAbierta()) {
             return redirect()->route('caja.show', $sesion)
                 ->with('error', 'El resumen se imprime al cerrar la caja, no antes.');
@@ -127,7 +150,9 @@ class CajaController extends Controller
             'tipo' => 'tipo de movimiento',
         ]);
 
-        if ($sesion->usuario_apertura_id !== Auth::id()) {
+        // Quien abrió el turno, o quien puede cerrarlo: el administrador
+        // registra en el turno del cajero el egreso que supera su tope.
+        if ($sesion->usuario_apertura_id !== Auth::id() && ! Auth::user()->tienePermiso('caja.cerrar')) {
             return back()->with('error', 'Solo quien abrió la caja puede registrar sus movimientos.');
         }
 

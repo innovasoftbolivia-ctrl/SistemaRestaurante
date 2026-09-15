@@ -68,6 +68,7 @@ class ConfiguracionTest extends TestCase
             'moneda_codigo' => $valor('moneda_codigo'),
             'tasa_impuesto' => rtrim(rtrim(number_format((float) $valor('tasa_impuesto') * 100, 2, '.', ''), '0'), '.'),
             'descuento_max_cajero' => $valor('descuento_max_cajero'),
+            'egreso_max_cajero' => $valor('egreso_max_cajero'),
             'cliente_generico_nombre' => $valor('cliente_generico_nombre'),
             'dias_max_sustitucion' => $valor('dias_max_sustitucion'),
             'serie_factura' => $valor('serie_factura'),
