@@ -323,7 +323,7 @@
                                 Razón social<span class="text-error-600 dark:text-error-400">*</span>
                             </label>
                             <x-form.input id="np_razon" x-model="nuevoProveedor.razon_social"
-                                placeholder="Distribuidora del Norte S.A.C." maxlength="120" />
+                                placeholder="Distribuidora del Norte S.R.L." maxlength="120" />
                         </div>
 
                         <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">

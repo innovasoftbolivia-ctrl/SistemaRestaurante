@@ -42,7 +42,7 @@
 
                     <x-form.campo label="Teléfono" for="telefono" name="telefono">
                         <x-form.input id="telefono" name="telefono" :value="$empleado->telefono"
-                            placeholder="987000555" />
+                            placeholder="70012345" />
                     </x-form.campo>
 
                     <x-form.campo label="Correo" for="email" name="email">

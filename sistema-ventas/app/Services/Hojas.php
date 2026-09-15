@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -181,7 +182,15 @@ class Hojas
                     );
                 }
 
-                $hoja->setCellValue([$i + 1, $fila], $valor);
+                // Un texto que empieza con = + - @ se guarda como texto, nunca
+                // como fórmula. Si no, un cliente dado de alta como
+                // «=HYPERLINK(...)» salía como fórmula viva en el Libro de
+                // Ventas de quien lo abriera.
+                if (is_string($valor) && preg_match('/^[=+\-@\t\r]/', $valor)) {
+                    $hoja->setCellValueExplicit([$i + 1, $fila], $valor, DataType::TYPE_STRING);
+                } else {
+                    $hoja->setCellValue([$i + 1, $fila], $valor);
+                }
             }
 
             if ($n % 2 === 1) {

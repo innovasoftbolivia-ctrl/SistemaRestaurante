@@ -707,14 +707,14 @@
                             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div class="sm:col-span-2">
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">Razón social</label>
-                                    <input x-model="nuevoCliente.razon_social" placeholder="Servicios Generales Perú S.A.C."
+                                    <input x-model="nuevoCliente.razon_social" placeholder="Distribuidora Oriente S.R.L."
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                                 </div>
                                 <div class="sm:col-span-2">
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
                                         NIT <span class="text-error-600 dark:text-error-400">*</span>
                                     </label>
-                                    <input x-model="nuevoCliente.documento" placeholder="20512345678"
+                                    <input x-model="nuevoCliente.documento" placeholder="1023456027"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Sin NIT no se puede emitir factura.</p>
                                 </div>
@@ -722,7 +722,7 @@
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
                                         Dirección <span class="text-error-600 dark:text-error-400">*</span>
                                     </label>
-                                    <input x-model="nuevoCliente.direccion" placeholder="Av. Industrial 1420, Lima"
+                                    <input x-model="nuevoCliente.direccion" placeholder="Av. Cañoto 450, Santa Cruz"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Obligatoria para la factura: es la dirección fiscal.</p>
                                 </div>

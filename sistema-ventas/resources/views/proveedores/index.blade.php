@@ -195,19 +195,19 @@
                         <div class="sm:col-span-2">
                             <x-form.campo label="Razón social" for="proveedor-razon" name="razon_social" required>
                                 <x-form.input id="proveedor-razon" name="razon_social" x-model="razon"
-                                    placeholder="Distribuidora del Norte S.A.C." required />
+                                    placeholder="Distribuidora del Norte S.R.L." required />
                             </x-form.campo>
                         </div>
 
                         <x-form.campo label="Documento" for="proveedor-documento" name="documento"
                             help="NIT o identificación fiscal. Opcional, pero no se repite.">
                             <x-form.input id="proveedor-documento" name="documento" x-model="documento"
-                                placeholder="20100000003" />
+                                placeholder="1023456027" />
                         </x-form.campo>
 
                         <x-form.campo label="Teléfono" for="proveedor-telefono" name="telefono">
                             <x-form.input id="proveedor-telefono" name="telefono" x-model="telefono"
-                                placeholder="987654323" />
+                                placeholder="33456789" />
                         </x-form.campo>
 
                         <x-form.campo label="Correo" for="proveedor-email" name="email">

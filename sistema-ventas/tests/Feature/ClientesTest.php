@@ -2,9 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Models\Caja;
 use App\Models\Cliente;
+use App\Models\Comprobante;
+use App\Models\MetodoPago;
+use App\Models\Producto;
 use App\Models\Usuario;
+use App\Models\Venta;
+use App\Services\Cajas;
+use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /**
@@ -193,5 +203,54 @@ class ClientesTest extends TestCase
 
         $respuesta->assertStatus(422);
         $respuesta->assertJsonValidationErrors(['documento', 'direccion']);
+    }
+    // ================================================================ documentos bolivianos
+
+    /** @return TestResponse<JsonResponse> */
+    private function alta(string $tipo, string $documento)
+    {
+        return $this->actingAs($this->cajero())->postJson('/clientes', $tipo === 'NIT'
+            ? ['tipo_persona' => 'JURIDICA', 'tipo_documento' => 'NIT', 'documento' => $documento, 'razon_social' => 'Prueba S.R.L.', 'direccion' => 'Av. Busch 100']
+            : ['tipo_persona' => 'NATURAL', 'tipo_documento' => $tipo, 'documento' => $documento, 'nombres' => 'Ana', 'apellidos' => 'Rojas']);
+    }
+
+    public function test_el_nit_lleva_solo_numeros(): void
+    {
+        $this->alta('NIT', 'ABC123')->assertJsonValidationErrors(['documento' => 'solo números']);
+        $this->alta('NIT', '1023456027')->assertCreated();
+    }
+
+    public function test_el_ci_admite_complemento_y_extension_pero_no_letras_sueltas(): void
+    {
+        $this->alta('CI', 'ABC')->assertJsonValidationErrors('documento');
+        $this->alta('CI', '1234567 LP')->assertCreated();
+        $this->alta('CI', '7654321-1A')->assertCreated();
+    }
+
+    /**
+     * Un cliente que solo quedó en un comprobante sustituido (la venta pasó a
+     * otro cliente) daba error 500 al borrarlo. Se desactiva, como el que tiene compras.
+     */
+    public function test_un_cliente_con_comprobantes_se_desactiva_en_lugar_de_romper(): void
+    {
+        $cliente = Cliente::where('tipo_persona', 'JURIDICA')->firstOrFail();
+        $cajero = $this->cajero();
+        $sesion = Cajas::sesionDe($cajero) ?? Cajas::abrir(Caja::firstOrFail(), $cajero, 100);
+        $venta = Ventas::registrar(
+            sesion: $sesion, usuario: $cajero,
+            lineas: [['producto_id' => Producto::where('codigo', 'P-0004')->value('id'), 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+            cliente: $cliente,
+        );
+
+        // Lo que deja una sustitución a nombre de otro: la venta ya no apunta
+        // al cliente, pero su comprobante viejo sí.
+        Venta::whereKey($venta->id)->update(['cliente_id' => null]);
+        $this->assertTrue(DB::table('comprobantes')->where('cliente_id', $cliente->id)->exists());
+
+        $this->actingAs($this->admin())->delete(route('clientes.destroy', $cliente))
+            ->assertRedirect()->assertSessionHas('exito', fn ($m) => str_contains($m, 'se desactivó'));
+
+        $this->assertFalse((bool) $cliente->fresh()->activo);
     }
 }

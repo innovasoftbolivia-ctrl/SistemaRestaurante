@@ -270,20 +270,20 @@
                             <div class="sm:col-span-2">
                                 <x-form.campo label="Razón social" for="cliente-razon" name="razon_social" required>
                                     <x-form.input id="cliente-razon" name="razon_social" x-model="f.razon_social"
-                                        placeholder="Servicios Generales Perú S.A.C." />
+                                        placeholder="Distribuidora Oriente S.R.L." />
                                 </x-form.campo>
                             </div>
 
                             <x-form.campo label="NIT" for="cliente-nit" name="documento" required
                                 help="Sin NIT no se puede emitir factura.">
-                                <x-form.input id="cliente-ruc" name="documento" x-model="f.documento"
-                                    placeholder="20512345678" />
+                                <x-form.input id="cliente-nit" name="documento" x-model="f.documento" inputmode="numeric"
+                                    placeholder="1023456027" />
                                 <input type="hidden" name="tipo_documento" value="NIT" />
                             </x-form.campo>
 
                             <x-form.campo label="Nombre comercial" for="cliente-comercial" name="nombre_comercial">
                                 <x-form.input id="cliente-comercial" name="nombre_comercial"
-                                    x-model="f.nombre_comercial" placeholder="SerPerú" />
+                                    x-model="f.nombre_comercial" placeholder="Oriente" />
                             </x-form.campo>
 
                             <div class="sm:col-span-2">
@@ -302,13 +302,13 @@
                                 ::required="juridica"
                                 help="Obligatoria para la factura: es la dirección fiscal.">
                                 <x-form.input id="cliente-direccion" name="direccion" x-model="f.direccion"
-                                    placeholder="Av. Industrial 1420, Lima" />
+                                    placeholder="Av. Cañoto 450, Santa Cruz" />
                             </x-form.campo>
                         </div>
 
                         <x-form.campo label="Teléfono" for="cliente-telefono" name="telefono">
                             <x-form.input id="cliente-telefono" name="telefono" x-model="f.telefono"
-                                placeholder="987111222" />
+                                placeholder="70012345" />
                         </x-form.campo>
 
                         <x-form.campo label="Correo" for="cliente-email" name="email">

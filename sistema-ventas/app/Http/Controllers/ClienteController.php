@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Cliente;
+use App\Models\Comprobante;
 use App\Services\Auditor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -119,7 +120,10 @@ class ClienteController extends Controller
     {
         $nombre = $cliente->nombre;
 
-        if ($cliente->ventas()->exists()) {
+        // También cuenta un comprobante: al sustituir una factura a nombre de
+        // otro, el documento viejo sigue apuntando a este cliente aunque la
+        // venta ya no, y borrarlo reventaba con la clave foránea.
+        if ($cliente->ventas()->exists() || Comprobante::where('cliente_id', $cliente->id)->exists()) {
             $cliente->update(['activo' => false]);
 
             Auditor::registrar('CLIENTE_DESACTIVADO', 'clientes', $cliente->id);
@@ -153,7 +157,14 @@ class ClienteController extends Controller
             ],
             'documento' => [
                 $juridica ? 'required' : 'nullable',
-                'string', 'max:20', 'regex:/^[A-Za-z0-9-]+$/',
+                'string', 'max:20',
+                // Documentos bolivianos: el NIT son solo dígitos; el CI, dígitos
+                // con complemento opcional (-1A) y extensión opcional (LP, SC…).
+                match ($request->input('tipo_documento')) {
+                    'NIT' => 'regex:/^\d{6,13}$/',
+                    'CI' => 'regex:/^\d{5,10}(-?\d[A-Za-z])?( ?(LP|CB|SC|OR|PT|TJ|CH|BE|PD))?$/i',
+                    default => 'regex:/^[A-Za-z0-9-]{4,20}$/',
+                },
                 Rule::unique('clientes', 'documento')
                     ->where(fn ($q) => $q->where('tipo_documento', $request->input('tipo_documento')))
                     ->ignore($cliente?->id),
@@ -170,6 +181,11 @@ class ClienteController extends Controller
             'activo' => ['boolean'],
         ], [
             'documento.unique' => 'Ya hay un cliente registrado con ese documento.',
+            'documento.regex' => match ($request->input('tipo_documento')) {
+                'NIT' => 'El NIT lleva solo números, entre 6 y 13 dígitos.',
+                'CI' => 'El CI lleva números, con complemento y extensión opcionales: 1234567, 1234567-1A o 1234567 LP.',
+                default => 'El documento lleva letras, números o guiones, entre 4 y 20 caracteres.',
+            },
             'documento.required' => 'La persona jurídica necesita NIT para poder emitirle factura.',
             'direccion.required' => 'La factura exige la dirección fiscal de la empresa.',
             'razon_social.required' => 'La persona jurídica se identifica por su razón social.',

