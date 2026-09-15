@@ -108,7 +108,7 @@ class QrBanco implements PasarelaQr
      * configurar, el peor caso es que los cobros haya que confirmarlos a mano
      * —molesto— y no que un desconocido pueda darlos por pagados.
      */
-    public function verificarAviso(array $datos, array $cabeceras): bool
+    public function verificarAviso(array $datos, array $cabeceras, string $cuerpo = ''): bool
     {
         $secreto = $this->config['secreto_webhook'] ?? null;
 
@@ -122,9 +122,13 @@ class QrBanco implements PasarelaQr
 
         // TODO(banco): el nombre del encabezado y el algoritmo son suyos.
         $firma = $cabeceras['x-signature'] ?? $cabeceras['X-Signature'] ?? '';
-        $esperada = hash_hmac('sha256', json_encode($datos), $secreto);
 
-        return hash_equals($esperada, (string) $firma);
+        // Sobre el cuerpo crudo. Volver a codificar lo decodificado cambia
+        // espacios, orden de escape y barras (`json_encode` escribe `\/`), y
+        // una firma legítima dejaba de coincidir.
+        $esperada = hash_hmac('sha256', $cuerpo, $secreto);
+
+        return $cuerpo !== '' && hash_equals($esperada, strtolower(trim((string) $firma)));
     }
 
     public function idExternoDelAviso(array $datos): ?string

@@ -9,6 +9,7 @@ use App\Models\Proveedor;
 use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -163,6 +164,52 @@ class EmpaqueDelProductoTest extends TestCase
             ->assertSessionHasErrors('contenido_empaque');
 
         $this->assertDatabaseMissing('productos', ['codigo' => 'P-9101']);
+    }
+
+    /** Tres cajas de 2,5 metían 7,5 unidades que nadie podía vender. */
+    public function test_un_producto_que_se_vende_entero_no_acepta_empaques_con_decimales(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'viene_en_empaque' => '1', 'nombre_empaque' => 'Caja', 'contenido_empaque' => '2.5',
+            ]))
+            ->assertSessionHasErrors('contenido_empaque');
+
+        $this->assertDatabaseMissing('productos', ['codigo' => 'P-9101']);
+    }
+
+    public function test_un_saco_por_kilo_si_puede_traer_decimales(): void
+    {
+        $this->actingAs($this->admin())
+            ->post('/productos', $this->datosProducto([
+                'unidad_medida_id' => UnidadMedida::where('permite_decimal', 1)->value('id'),
+                'viene_en_empaque' => '1', 'nombre_empaque' => 'Saco', 'contenido_empaque' => '2.5',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('productos', ['codigo' => 'P-9101', 'contenido_empaque' => 2.5]);
+    }
+
+    public function test_no_se_pasa_a_una_unidad_entera_con_stock_fraccionario(): void
+    {
+        $producto = $this->productoAGranel();
+        $entera = UnidadMedida::where('permite_decimal', 0)->firstOrFail();
+        DB::table('productos')->where('id', $producto->id)->update(['stock_actual' => 68.5]);
+
+        $datos = $this->datosProducto([
+            'codigo' => $producto->codigo,
+            'nombre' => $producto->nombre,
+            'unidad_medida_id' => $entera->id,
+        ]);
+
+        $this->actingAs($this->admin())->put('/productos/'.$producto->id, $datos)
+            ->assertSessionHasErrors(['unidad_medida_id' => 'Tiene 68.5 en stock, con decimales. Ajusta el stock a un número entero antes de pasarlo a '.$entera->nombre.', que se vende entero.']);
+        $this->assertSame($producto->unidad_medida_id, $producto->fresh()->unidad_medida_id);
+
+        DB::table('productos')->where('id', $producto->id)->update(['stock_actual' => 68]);
+
+        $this->actingAs($this->admin())->put('/productos/'.$producto->id, $datos)->assertSessionHasNoErrors();
+        $this->assertSame($entera->id, $producto->fresh()->unidad_medida_id);
     }
 
     /** Un empaque de una sola unidad no ahorra ninguna cuenta. */

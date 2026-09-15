@@ -226,11 +226,11 @@ class CobrosQr
      * @param  array<string, mixed>  $datos
      * @param  array<string, string>  $cabeceras
      */
-    public static function procesarAviso(array $datos, array $cabeceras): ?CobroQr
+    public static function procesarAviso(array $datos, array $cabeceras, string $cuerpo = ''): ?CobroQr
     {
         $pasarela = self::pasarela();
 
-        if (! $pasarela->verificarAviso($datos, $cabeceras)) {
+        if (! $pasarela->verificarAviso($datos, $cabeceras, $cuerpo)) {
             throw new RuntimeException('Aviso de pago no verificado.');
         }
 

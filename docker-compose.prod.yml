@@ -141,6 +141,9 @@ services:
       # pero un servidor real tiene que traer su propia contraseña o no
       # arrancar. Sale de `.env` en esta misma carpeta (ver .env.example).
       MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?falta DB_PASSWORD — copia .env.example a .env y ponle una contraseña propia}"
+      # La de `ventas_app`, la cuenta con permisos mínimos de la aplicación
+      # (docs/sql/produccion/03_usuario_app.sh). Vacía, no se crea.
+      DB_APP_PASSWORD: "${DB_APP_PASSWORD:-}"
       TZ: America/La_Paz
     command: >
       --character-set-server=utf8mb4
@@ -155,6 +158,7 @@ services:
       # demostración (productos, clientes y empleados de ejemplo).
       - ./docs/sql/01_schema_mysql.sql:/docker-entrypoint-initdb.d/01_schema_mysql.sql:ro
       - ./docs/sql/produccion/02_datos_base.sql:/docker-entrypoint-initdb.d/02_datos_base.sql:ro
+      - ./docs/sql/produccion/03_usuario_app.sh:/docker-entrypoint-initdb.d/03_usuario_app.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 5s

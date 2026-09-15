@@ -75,7 +75,7 @@ class QrSimulado implements PasarelaQr
     }
 
     /** Sin banco no hay avisos, así que ninguno es de fiar. */
-    public function verificarAviso(array $datos, array $cabeceras): bool
+    public function verificarAviso(array $datos, array $cabeceras, string $cuerpo = ''): bool
     {
         return false;
     }

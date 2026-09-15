@@ -161,7 +161,7 @@ class QrBaneco implements PasarelaQr
      * El aviso no trae firma que comprobar. Se acepta si tiene la forma
      * esperada, y la verdad la decide la consulta que se hace a continuación.
      */
-    public function verificarAviso(array $datos, array $cabeceras): bool
+    public function verificarAviso(array $datos, array $cabeceras, string $cuerpo = ''): bool
     {
         return filled($this->idExternoDelAviso($datos));
     }

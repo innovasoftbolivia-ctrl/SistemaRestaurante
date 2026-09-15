@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ProductoController extends Controller
@@ -380,6 +381,51 @@ class ProductoController extends Controller
         ];
     }
 
+    /**
+     * Una unidad que se vende entera (UND, CAJA, PQT) no puede terminar con
+     * stock fraccionario: la venta, el ajuste y la toma exigen enteros, y ese
+     * medio que sobra no se podría vender ni corregir.
+     *
+     * Dos puertas por donde entraba: un empaque de 2,5 unidades (3 cajas
+     * metían 7,5) y pasar a UND un producto que se vendía por kilo con 68,5 kg.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function validarUnidadEntera(Request $request, ?Producto $producto, array $datos): void
+    {
+        $unidad = UnidadMedida::find($datos['unidad_medida_id']);
+
+        if (! $unidad || $unidad->permite_decimal) {
+            return;
+        }
+
+        $errores = [];
+        $contenido = $request->boolean('viene_en_empaque') ? ($datos['contenido_empaque'] ?? null) : null;
+
+        if ($contenido !== null && ! self::esEntero((float) $contenido)) {
+            $errores['contenido_empaque'] = "El producto se vende por {$unidad->nombre}, entero: el empaque tiene que traer un número entero de unidades.";
+        }
+
+        if ($producto
+            && (int) $producto->unidad_medida_id !== (int) $unidad->id
+            && ! self::esEntero((float) $producto->stock_actual)) {
+            $errores['unidad_medida_id'] = sprintf(
+                'Tiene %s en stock, con decimales. Ajusta el stock a un número entero antes de pasarlo a %s, que se vende entero.',
+                rtrim(rtrim(number_format((float) $producto->stock_actual, 3, '.', ''), '0'), '.'),
+                $unidad->nombre,
+            );
+        }
+
+        if ($errores) {
+            throw ValidationException::withMessages($errores);
+        }
+    }
+
+    private static function esEntero(float $cantidad): bool
+    {
+        return abs($cantidad - round($cantidad)) < 0.0005;
+    }
+
     /** Propone el siguiente código correlativo del tipo P-0001. */
     private function siguienteCodigo(): string
     {
@@ -531,6 +577,8 @@ class ProductoController extends Controller
             'afecto_impuesto' => 'afecto a impuesto',
             'imagen' => 'foto',
         ]);
+
+        $this->validarUnidadEntera($request, $producto, $datos);
 
         // La foto no se asigna en masa: el archivo se guarda aparte y lo que
         // llega aquí es el `UploadedFile`, no la ruta.

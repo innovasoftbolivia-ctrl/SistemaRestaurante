@@ -851,7 +851,16 @@ sus propios datos de negocio.
    ```
 
    Pon una contraseña nueva en `DB_PASSWORD` (ese mismo archivo) y en `.env` (raíz) — tienen que
-   coincidir, es la misma base. Revisa también `APP_URL` (el dominio real del cliente) y que
+   coincidir, es la misma base.
+
+   **Cuenta de base de datos de la aplicación.** Pon otra contraseña, distinta, en `DB_APP_PASSWORD`
+   del `.env` de la raíz, y en `sistema-ventas/.env.docker` cambia a `DB_USERNAME=ventas_app` con
+   esa misma contraseña en `DB_PASSWORD`. Al primer arranque, MySQL crea `ventas_app` con permisos
+   mínimos (leer y escribir datos, llamar a los procedimientos): la aplicación no se conecta como
+   `root`, y un fallo de seguridad en ella no tendría el servidor de base de datos entero. En una
+   instalación que ya corría con `root`: `./scripts/crear-usuario-app.sh`. La contraseña de `root`
+   (`DB_PASSWORD` de la raíz) la siguen usando los parches, el respaldo y la restauración por
+   consola. Revisa también `APP_URL` (el dominio real del cliente) y que
    `APP_DEBUG=false` (ya viene así en la plantilla: no lo cambies salvo para depurar algo puntual).
 
 3. **Compilar los assets** (una vez, y cada vez que cambie el código del frontend). No se
@@ -925,7 +934,9 @@ sus propios datos de negocio.
     (nginx, Caddy, un balanceador del proveedor) delante del contenedor `nginx`, con su
     certificado. Este proyecto no lo resuelve por sí solo. Una vez que HTTPS esté activo, pon
     también en `sistema-ventas/.env.docker`:
-    - `SESSION_SECURE_COOKIE=true` — si lo pones en true sin HTTPS, nadie puede iniciar sesión.
+    - `APP_URL=https://…` — con eso la cookie de sesión pasa sola a viajar solo cifrada
+      (`SESSION_SECURE_COOKIE` ya no hace falta; si tu `.env.docker` es viejo y la tiene en
+      `false`, bórrala). La cabecera `Strict-Transport-Security` ya la manda el nginx del proyecto.
     - `TRUSTED_PROXIES` con la IP de ese proxy (o `*` si está en la misma red privada) — sin
       esto la bitácora registra la IP del proxy en vez de la del cliente, y las URLs que arma
       Laravel salen en `http://` aunque el visitante haya entrado por `https://`.

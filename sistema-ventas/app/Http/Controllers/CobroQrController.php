@@ -131,7 +131,7 @@ class CobroQrController extends Controller
         $cabeceras = array_map(fn ($valores) => (string) ($valores[0] ?? ''), $request->headers->all());
 
         try {
-            $cobro = CobrosQr::procesarAviso($request->all(), $cabeceras);
+            $cobro = CobrosQr::procesarAviso($request->all(), $cabeceras, $request->getContent());
         } catch (RuntimeException $e) {
             return response()->json(['responseCode' => 1, 'message' => $e->getMessage(), 'error' => $e->getMessage()], 403);
         } catch (Throwable $e) {

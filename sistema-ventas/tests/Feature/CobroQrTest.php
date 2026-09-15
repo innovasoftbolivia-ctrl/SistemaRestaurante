@@ -10,6 +10,7 @@ use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
+use App\Services\Qr\QrBanco;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -286,6 +287,31 @@ class CobroQrTest extends TestCase
             ->assertStatus(403);
 
         $this->assertFalse($cobro->fresh()->estaPagado());
+    }
+
+    /**
+     * La firma se comprueba sobre el cuerpo tal como lo mandó el banco: el
+     * JSON vuelto a armar no tiene los mismos bytes y una firma buena fallaba.
+     */
+    public function test_la_firma_del_aviso_se_calcula_sobre_el_cuerpo_tal_como_llego(): void
+    {
+        config([
+            'qr.pasarela' => 'banco',
+            'qr.pasarelas.banco.secreto_webhook' => 'secreto-de-prueba',
+        ]);
+        $cuerpo = '{"id": "no-existe-123",  "url": "https://banco.bo/pago"}';
+        $firma = hash_hmac('sha256', $cuerpo, 'secreto-de-prueba');
+
+        $pasarela = new QrBanco('banco', ['secreto_webhook' => 'secreto-de-prueba']);
+        $datos = json_decode($cuerpo, true);
+        $this->assertTrue($pasarela->verificarAviso($datos, ['x-signature' => $firma], $cuerpo));
+        $this->assertFalse($pasarela->verificarAviso($datos, ['x-signature' => hash_hmac('sha256', json_encode($datos), 'secreto-de-prueba')], $cuerpo.' '));
+
+        $servidor = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+        $this->call('POST', route('qr.aviso'), [], [], [], $servidor + ['HTTP_X_SIGNATURE' => $firma], $cuerpo)
+            ->assertOk()->assertJson(['recibido' => true]);
+        $this->call('POST', route('qr.aviso'), [], [], [], $servidor + ['HTTP_X_SIGNATURE' => str_repeat('0', 64)], $cuerpo)
+            ->assertStatus(403);
     }
 
     // ------------------------------------------------------------ auxiliares

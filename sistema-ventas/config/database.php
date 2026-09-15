@@ -59,6 +59,12 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // La hora de Bolivia en cada conexión, sin depender de cómo venga
+            // configurado el servidor. `NOW()` de los procedimientos y `now()`
+            // de PHP tienen que dar la misma hora: en un hosting con MySQL en
+            // UTC, el cierre de caja del modo SP quedaba cuatro horas por
+            // delante de la apertura. Bolivia no tiene horario de verano.
+            'timezone' => env('DB_TIMEZONE', '-04:00'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

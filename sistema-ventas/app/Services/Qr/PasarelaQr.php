@@ -61,10 +61,12 @@ interface PasarelaQr
      * «este cobro ya está pagado». Sin comprobar la firma, regalar mercadería
      * es cuestión de mandar un POST.
      *
-     * @param  array<string, mixed>  $datos  cuerpo del aviso
+     * @param  array<string, mixed>  $datos  cuerpo del aviso, ya decodificado
      * @param  array<string, string>  $cabeceras  encabezados de la petición
+     * @param  string  $cuerpo  el cuerpo tal como llegó, byte a byte: una firma
+     *                          se calcula sobre eso, no sobre el JSON vuelto a armar
      */
-    public function verificarAviso(array $datos, array $cabeceras): bool;
+    public function verificarAviso(array $datos, array $cabeceras, string $cuerpo = ''): bool;
 
     /**
      * Saca del aviso el identificador del cobro al que se refiere.

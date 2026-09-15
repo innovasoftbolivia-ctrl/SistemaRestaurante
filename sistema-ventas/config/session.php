@@ -169,7 +169,9 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // Sin valor explícito, se deduce de APP_URL: si el sistema se publica por
+    // https, la cookie de sesión no viaja nunca por http plano.
+    'secure' => env('SESSION_SECURE_COOKIE', str_starts_with((string) env('APP_URL'), 'https://')),
 
     /*
     |--------------------------------------------------------------------------
