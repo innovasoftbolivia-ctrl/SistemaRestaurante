@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Permiso;
 use App\Models\Rol;
 use App\Services\Auditor;
+use App\Support\Administracion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -51,6 +52,13 @@ class RolController extends Controller
     {
         $datos = $this->validar($request, $rol);
 
+        $conservaAdministracion = ($datos['activo'] ?? $rol->activo)
+            && in_array(Permiso::where('codigo', Administracion::PERMISO)->value('id'), array_map('intval', $datos['permisos'] ?? []), true);
+
+        if (! $conservaAdministracion && Administracion::restantes(rolSinPermiso: $rol->id) === 0) {
+            return back()->with('error', Administracion::MENSAJE)->withInput();
+        }
+
         $rol->update([
             'nombre' => $datos['nombre'],
             'descripcion' => $datos['descripcion'] ?? null,
@@ -70,6 +78,10 @@ class RolController extends Controller
     public function destroy(Rol $rol): RedirectResponse
     {
         if ($rol->usuarios()->exists()) {
+            if (Administracion::restantes(rolSinPermiso: $rol->id) === 0) {
+                return back()->with('error', Administracion::MENSAJE);
+            }
+
             $rol->update(['activo' => false]);
 
             Auditor::registrar('ROL_DESACTIVADO', 'roles', $rol->id);

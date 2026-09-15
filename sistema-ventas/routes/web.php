@@ -55,7 +55,10 @@ Route::post('logout', [LoginController::class, 'destroy'])
 | el usuario seguía navegando (por ejemplo, si se cesa al empleado).
 */
 
-Route::middleware(['auth', 'cuenta.vigente', 'password.propia'])->group(function () {
+// `auth.session`: si la contraseña cambia, las demás sesiones abiertas de esa
+// cuenta se cierran en su próxima petición. Una contraseña filtrada se cambia
+// para echar a quien la tiene, no para que siga dentro dos horas más.
+Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])->group(function () {
     // La raíz manda a cada quien a su pantalla de trabajo: el cajero al
     // mostrador, el resto a la portada.
     Route::get('/', fn () => redirect(Menu::inicio()))->name('raiz');

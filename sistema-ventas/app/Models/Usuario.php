@@ -85,10 +85,18 @@ class Usuario extends Authenticatable
         });
     }
 
-    /** Códigos de permiso que otorga el rol de esta cuenta. */
+    /**
+     * Códigos de permiso que otorga el rol de esta cuenta. Un rol desactivado
+     * no otorga nada: «desactivar» un rol con cuentas tiene que quitarles el
+     * acceso, no dejarlo igual con otra etiqueta.
+     */
     public function permisos(): array
     {
-        return $this->rol?->permisos->pluck('codigo')->all() ?? [];
+        if (! $this->rol?->activo) {
+            return [];
+        }
+
+        return $this->rol->permisos->pluck('codigo')->all();
     }
 
     public function tienePermiso(string $codigo): bool
@@ -102,7 +110,7 @@ class Usuario extends Authenticatable
      */
     public function puedeIngresar(): bool
     {
-        return $this->activo && $this->empleado?->estado === 'ACTIVO';
+        return $this->activo && $this->empleado?->estado === 'ACTIVO' && (bool) $this->rol?->activo;
     }
 
     public function getNombreCompletoAttribute(): string

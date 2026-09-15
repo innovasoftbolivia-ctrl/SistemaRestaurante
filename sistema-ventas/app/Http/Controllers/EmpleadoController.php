@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Cargo;
 use App\Models\Empleado;
 use App\Services\Auditor;
+use App\Support\Administracion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -108,6 +109,10 @@ class EmpleadoController extends Controller
     {
         $datos = $this->validar($request, $empleado);
 
+        if ($datos['estado'] !== 'ACTIVO' && Administracion::restantes(empleadoFuera: $empleado->id) === 0) {
+            return back()->with('error', Administracion::MENSAJE)->withInput();
+        }
+
         $estadoAnterior = $empleado->estado;
         $empleado->update($datos);
 
@@ -136,6 +141,10 @@ class EmpleadoController extends Controller
             'fecha_cese' => 'fecha de cese',
             'motivo_cese' => 'motivo de cese',
         ]);
+
+        if (Administracion::restantes(empleadoFuera: $empleado->id) === 0) {
+            return back()->with('error', Administracion::MENSAJE);
+        }
 
         $empleado->update([
             'estado' => 'CESADO',
