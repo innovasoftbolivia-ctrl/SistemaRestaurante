@@ -15,6 +15,7 @@ use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -787,5 +788,56 @@ class DevolucionesTest extends TestCase
             [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Dentro del plazo justo');
 
         $this->assertNotNull($devolucion->id);
+    }
+
+    // ================================================================ al centavo
+
+    /**
+     * Casos reales en que la suma de las líneas devueltas no daba lo cobrado:
+     * [cantidad P-0004, cantidad P-0009, descuento].
+     *
+     * @return array<string, array{0: int, 1: int, 2: float}>
+     */
+    public static function ventasConDescuento(): array
+    {
+        return [
+            'sobraba un centavo' => [2, 3, 0.37],
+            'faltaba un centavo' => [3, 1, 0.50],
+            'faltaban dos centavos' => [5, 2, 0.10],
+        ];
+    }
+
+    #[DataProvider('ventasConDescuento')]
+    public function test_devolver_toda_la_venta_devuelve_lo_cobrado_al_centavo(int $a, int $b, float $descuento): void
+    {
+        $sesion = $this->turno(inicial: 500);
+        $venta = Ventas::registrar(
+            sesion: $sesion,
+            usuario: $sesion->usuarioApertura,
+            lineas: [
+                ['producto_id' => $this->producto('P-0004')->id, 'cantidad' => $a],
+                ['producto_id' => $this->producto('P-0009')->id, 'cantidad' => $b],
+            ],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+            descuento: $descuento,
+        );
+        $lineas = $venta->detalle->values();
+
+        // Primero una parte y después el resto: el ajuste va en la que cierra.
+        Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion->fresh(),
+            [['venta_detalle_id' => $lineas[0]->id, 'cantidad' => 1]], 'Primera parte');
+        $ultima = Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion->fresh(), [
+            ['venta_detalle_id' => $lineas[0]->id, 'cantidad' => $a - 1],
+            ['venta_detalle_id' => $lineas[1]->id, 'cantidad' => $b],
+        ], 'El resto de la compra');
+
+        $venta->refresh();
+        $this->assertSame('DEVUELTA', $venta->estado);
+        $this->assertSame($venta->total, $venta->total_devuelto);
+        $this->assertSame((float) $venta->total, round((float) $venta->devoluciones()->sum('total'), 2));
+        $this->assertSame((float) $ultima->total, (float) $ultima->efectivo);
+
+        // Lo que entró y lo que salió del cajón se cancelan: queda el fondo.
+        $this->assertSame(500.0, $sesion->fresh()->efectivoEsperado());
     }
 }

@@ -118,6 +118,7 @@ class Devoluciones
             }
 
             // El trigger deja la venta en DEVUELTA si ya no queda nada por devolver.
+            self::cuadrarAlCentavo($venta, $devolucion);
             $devolucion->refresh();
             $efectivo = self::efectivoDelCajon($venta, (float) $devolucion->total, $reembolso);
 
@@ -151,6 +152,38 @@ class Devoluciones
 
             return $devolucion->load('detalle.producto');
         }, self::REINTENTOS);
+    }
+
+    /**
+     * Si esta devolución deja la venta devuelta por completo, lo devuelto en
+     * total tiene que ser, al centavo, lo que se cobró.
+     *
+     * Cada línea se devuelve con su precio neto redondeado y su impuesto
+     * redondeado línea por línea, mientras que la venta redondeó el impuesto
+     * una sola vez sobre el total con descuento. La suma se iba uno o dos
+     * centavos para arriba o para abajo (2 × 3,54 + 3 × 2,48 con 0,37 de
+     * descuento cobraba 15,99 y devolvía 16,00). La diferencia se ajusta en
+     * la devolución que cierra la venta, que es la que sale del cajón.
+     */
+    private static function cuadrarAlCentavo(Venta $venta, Devolucion $devolucion): void
+    {
+        $venta = Venta::query()->whereKey($venta->id)->first(['id', 'estado', 'total', 'total_devuelto']);
+
+        if ($venta->estado !== 'DEVUELTA') {
+            return;
+        }
+
+        $diferencia = round((float) $venta->total - (float) $venta->total_devuelto, 2);
+
+        // Más de diez centavos no es redondeo: algo distinto pasó y no se tapa.
+        if ($diferencia == 0 || abs($diferencia) > 0.10) {
+            return;
+        }
+
+        DB::table('devoluciones')->where('id', $devolucion->id)
+            ->update(['total' => DB::raw('ROUND(total + '.number_format($diferencia, 2, '.', '').', 2)')]);
+        DB::table('ventas')->where('id', $venta->id)
+            ->update(['total_devuelto' => $venta->total]);
     }
 
     /**
