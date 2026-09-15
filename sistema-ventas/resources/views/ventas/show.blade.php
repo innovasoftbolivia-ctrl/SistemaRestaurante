@@ -66,6 +66,10 @@
                     @puede('ventas.anular')
                         @if ($venta->puedeAnularse())
                             <x-ui.button size="sm" variant="danger" @click="anulando = true">Anular venta</x-ui.button>
+                        @elseif ($venta->estado === 'COMPLETADA')
+                            <p class="w-full text-theme-xs text-gray-500 dark:text-gray-400" data-anulacion="turno-cerrado">
+                                No se puede anular: el turno de caja de esta venta ya cerró. Si hay que devolver algo, registra una devolución.
+                            </p>
                         @endif
                     @endpuede
                 </div>

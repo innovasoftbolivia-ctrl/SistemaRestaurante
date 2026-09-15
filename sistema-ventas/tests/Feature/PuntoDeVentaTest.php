@@ -484,6 +484,51 @@ class PuntoDeVentaTest extends TestCase
         $this->assertSame(100.0, $sesion->efectivoEsperado());
     }
 
+    /**
+     * Anular es para el error del momento. La venta de un turno ya cerrado se
+     * contó en su arqueo: anularla cambiaba los reportes de ese día y dejaba
+     * sin registrar la plata devuelta. Para eso está la devolución.
+     */
+    public function test_no_se_anula_una_venta_de_un_turno_ya_cerrado(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $producto = $this->producto();
+        $venta = $this->vender($sesion, $producto, 2);
+        Cajas::cerrar($sesion->fresh(), $this->admin(), (float) $sesion->fresh()->efectivoEsperado());
+        $stock = (float) $producto->fresh()->stock_actual;
+
+        $this->assertFalse($venta->fresh()->puedeAnularse());
+
+        $this->actingAs($this->admin())
+            ->post("/ventas/{$venta->id}/anular", ['motivo_anulacion' => 'Error de cobro de ayer'])
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'ya cerró'));
+
+        $this->assertSame('COMPLETADA', $venta->fresh()->estado);
+        $this->assertSame($stock, (float) $producto->fresh()->stock_actual);
+
+        $this->actingAs($this->admin())->get("/ventas/{$venta->id}")
+            ->assertOk()
+            ->assertSee('data-anulacion="turno-cerrado"', false)
+            ->assertDontSee('Anular venta</x-ui.button>', false);
+    }
+
+    /** El mostrador agrupa; un producto repetido en dos líneas se rechaza. */
+    public function test_un_producto_no_puede_ir_en_dos_lineas(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+
+        $this->actingAs($this->cajero())->post('/pos', [
+            'lineas' => [
+                ['producto_id' => $producto->id, 'cantidad' => 2],
+                ['producto_id' => $producto->id, 'cantidad' => 3],
+            ],
+            'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
+        ])->assertSessionHasErrors('lineas.1.producto_id');
+
+        $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
+    }
+
     // ------------------------------------------------------------ mostrador
 
     // ------------------------------------------------- la unidad en el papel

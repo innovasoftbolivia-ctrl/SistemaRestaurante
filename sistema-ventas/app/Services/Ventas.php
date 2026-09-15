@@ -384,7 +384,7 @@ class Ventas
      */
     public static function anular(Venta $venta, Usuario $usuario, string $motivo): Venta
     {
-        if (! $venta->puedeAnularse()) {
+        if ($venta->estado !== 'COMPLETADA') {
             throw new RuntimeException('Solo se puede anular una venta completada.');
         }
 
@@ -397,6 +397,15 @@ class Ventas
         //
         // sp_anular_venta ya escribe su propia entrada en `auditoria`.
         DB::transaction(function () use ($venta, $usuario, $motivo) {
+            // El turno bloqueado: una anulación y el cierre de esa caja no
+            // pueden cruzarse, y lo que se decidió en pantalla se vuelve a
+            // comprobar aquí.
+            $turno = SesionCaja::whereKey($venta->sesion_caja_id)->lockForUpdate()->first();
+
+            if ($turno?->estado !== 'ABIERTA') {
+                throw new RuntimeException('El turno de caja de esta venta ya cerró, así que no se puede anular: ese dinero ya se contó en su arqueo. Si hay que devolver algo, registra una devolución.');
+            }
+
             ReglasEnPhp::activa()
                 ? ReglasEnPhp::anularVenta($venta->id, $usuario->id, $motivo)
                 : DB::statement('CALL sp_anular_venta(?, ?, ?)', [$venta->id, $usuario->id, $motivo]);

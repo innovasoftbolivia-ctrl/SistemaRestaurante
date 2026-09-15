@@ -143,7 +143,9 @@ class PosController extends Controller
             'observacion' => ['nullable', 'string', 'max:255'],
 
             'lineas' => ['required', 'array', 'min:1'],
-            'lineas.*.producto_id' => ['required', Rule::exists('productos', 'id')],
+            // Un producto, una línea: el mostrador ya las agrupa, y repetidas
+            // descuadraban el stock al anular con procedimientos.
+            'lineas.*.producto_id' => ['required', 'distinct', Rule::exists('productos', 'id')],
             // Tres decimales como máximo: los que guarda la base.
             'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'decimal:0,3'],
             // El precio SIEMPRE sale del catálogo en `Ventas::registrar`, nunca

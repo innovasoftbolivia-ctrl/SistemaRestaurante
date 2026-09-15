@@ -95,9 +95,21 @@ class Venta extends Model
         return $query->where('estado', 'COMPLETADA');
     }
 
+    /**
+     * Anular es para el error del momento: solo mientras el turno de caja de
+     * la venta sigue abierto. Si el turno ya cerró, ese dinero ya se contó en
+     * su arqueo; anular cambiaría los reportes de ese día y la plata devuelta
+     * saldría de un cajón que no la registra. Para eso está la devolución,
+     * que queda en el turno de hoy.
+     */
     public function puedeAnularse(): bool
     {
-        return $this->estado === 'COMPLETADA';
+        return $this->estado === 'COMPLETADA' && $this->turnoAbierto();
+    }
+
+    public function turnoAbierto(): bool
+    {
+        return $this->sesionCaja?->estado === 'ABIERTA';
     }
 
     /**
