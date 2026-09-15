@@ -128,6 +128,10 @@
                     <td class="tenue">Contó</td>
                     <td>________________________________ &nbsp; Sector: ____________________</td>
                 </tr>
+                <tr>
+                    <td class="tenue">Hora del conteo</td>
+                    <td>______ : ______ &nbsp; <span class="tenue">Anótala: al cargar la planilla se indica en «Contado a las».</span></td>
+                </tr>
             @endif
         </table>
 

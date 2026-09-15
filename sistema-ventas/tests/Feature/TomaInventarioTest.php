@@ -14,6 +14,7 @@ use App\Services\Inventario;
 use App\Services\TomasInventario;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -312,5 +313,66 @@ class TomaInventarioTest extends TestCase
             ->assertSee('Planilla de conteo')
             ->assertSee($this->producto('P-0004')->nombre)
             ->assertDontSee('>Sistema<', false);
+    }
+    // ============================================================ auditoría
+
+    /**
+     * Contado −2 y, además, ajustado a mano −2 fuera de la toma: el cierre
+     * aplicaba la diferencia otra vez y quedaba −4. El ajuste borra el conteo.
+     */
+    public function test_un_ajuste_durante_la_toma_borra_el_conteo_y_no_se_aplica_dos_veces(): void
+    {
+        $antes = $this->stock('P-0004');
+        $toma = $this->abrir();
+        $this->contar($toma, 'P-0004', $antes - 2);
+        $this->contar($toma, 'P-0006', $this->stock('P-0006'));
+
+        Inventario::ajuste($this->producto('P-0004'), $antes - 2, 'El encargado lo corrigió a mano');
+
+        $this->assertNull($this->linea($toma, 'P-0004')->contado, 'el conteo viejo tenía que borrarse');
+
+        TomasInventario::cerrar($toma, $this->admin());
+
+        $this->assertSame($antes - 2, $this->stock('P-0004'));
+    }
+
+    /**
+     * La planilla se contó a una hora y se cargó más tarde, con ventas en el
+     * medio. Se compara con el stock de la hora del conteo: antes quedaba por
+     * encima de lo real en lo vendido entretanto.
+     */
+    public function test_la_planilla_en_papel_se_compara_con_el_stock_de_la_hora_del_conteo(): void
+    {
+        $antes = $this->stock('P-0004');
+        $toma = $this->abrir();
+        $toma->forceFill(['fecha_apertura' => now()->subHours(2)])->save();
+        // La base de pruebas se siembra en el momento: se fecha su carga inicial
+        // antes, como tendría cualquier tienda con historia.
+        DB::table('movimientos_inventario')
+            ->where('producto_id', $this->producto('P-0004')->id)
+            ->update(['fecha' => now()->subHours(3)]);
+        $horaDelConteo = now()->subHour();
+
+        $this->vender('P-0004', 3);                         // después de contar el estante
+
+        TomasInventario::contar($this->linea($toma, 'P-0004'), $this->admin(), $antes - 2, $horaDelConteo);
+        $this->assertSame(-2.0, (float) $this->linea($toma, 'P-0004')->diferencia);
+
+        TomasInventario::cerrar($toma, $this->admin());
+
+        $this->assertSame($antes - 3 - 2, $this->stock('P-0004'));
+    }
+
+    public function test_la_hora_del_conteo_no_puede_ser_futura_ni_anterior_a_la_toma(): void
+    {
+        $toma = $this->abrir();
+
+        $this->postJson(route('tomas.contar', [$toma, $this->linea($toma, 'P-0004')]), [
+            'contado' => 1, 'contado_en' => now()->addHour()->format('Y-m-d H:i:s'),
+        ])->assertUnprocessable()->assertJsonValidationErrors('contado_en');
+
+        $this->postJson(route('tomas.contar', [$toma, $this->linea($toma, 'P-0004')]), [
+            'contado' => 1, 'contado_en' => now()->subDays(3)->format('Y-m-d H:i:s'),
+        ])->assertStatus(409);
     }
 }

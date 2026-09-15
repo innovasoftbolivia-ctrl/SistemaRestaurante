@@ -10,6 +10,7 @@ use App\Support\Config;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -120,7 +121,11 @@ class TomaInventarioController extends Controller
     {
         $datos = $request->validate([
             'contado' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-        ], [], ['contado' => 'conteo']);
+            // La hora en que se contó el estante, si se carga después (planilla en papel).
+            'contado_en' => ['nullable', 'date', 'before_or_equal:now'],
+        ], [
+            'contado_en.before_or_equal' => 'La hora del conteo no puede ser posterior a ahora.',
+        ], ['contado' => 'conteo', 'contado_en' => 'hora del conteo']);
 
         $linea->loadMissing('producto.unidadMedida');
         $contado = isset($datos['contado']) ? (float) $datos['contado'] : null;
@@ -132,7 +137,12 @@ class TomaInventarioController extends Controller
         }
 
         try {
-            $linea = TomasInventario::contar($linea, Auth::user(), $contado);
+            $linea = TomasInventario::contar(
+                $linea,
+                Auth::user(),
+                $contado,
+                filled($datos['contado_en'] ?? null) ? Carbon::parse($datos['contado_en']) : null,
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }

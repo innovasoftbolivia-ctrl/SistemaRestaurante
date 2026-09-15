@@ -112,6 +112,24 @@
                 </div>
             </form>
 
+            @if ($editable)
+                {{-- Conteo en papel: lo que se contó a las 9:00 y se carga a las
+                     18:00 se compara con el stock que había a las 9:00, no con el de
+                     ahora. Vacío = se está contando en este momento. --}}
+                <div class="flex flex-col gap-2 border-b border-gray-100 px-5 py-3 text-theme-sm sm:flex-row sm:items-center dark:border-gray-800">
+                    <label for="contado_en" class="text-gray-500 dark:text-gray-400">
+                        ¿Cargas una planilla contada antes? Contado a las
+                    </label>
+                    <input id="contado_en" type="datetime-local" x-model="horaConteo"
+                        min="{{ $toma->fecha_apertura->format('Y-m-d\TH:i') }}" max="{{ now()->format('Y-m-d\TH:i') }}"
+                        class="h-10 rounded-lg border border-gray-300 bg-transparent px-2 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                    <span x-show="horaConteo" class="text-theme-xs text-gray-500 dark:text-gray-400">
+                        Cada conteo se compara con el stock que había a esa hora.
+                        <button type="button" @click="horaConteo = ''" class="font-medium text-brand-500">Contar ahora</button>
+                    </span>
+                </div>
+            @endif
+
             <div class="max-w-full overflow-x-auto overscroll-x-contain">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
@@ -249,6 +267,7 @@
             return {
                 resumen,
                 confirmar: null,
+                horaConteo: '',
 
                 get porcentaje() {
                     return this.resumen.total > 0 ? Math.floor(this.resumen.contados / this.resumen.total * 100) : 0;
@@ -306,7 +325,7 @@
                                     'Content-Type': 'application/json',
                                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
                                 },
-                                body: JSON.stringify({ contado: texto === '' ? null : texto }),
+                                body: JSON.stringify({ contado: texto === '' ? null : texto, contado_en: this.horaConteo || null }),
                             });
                             const json = await respuesta.json().catch(() => ({}));
 

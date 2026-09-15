@@ -8,6 +8,7 @@ use App\Models\Categoria;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\TomaInventarioDetalle;
 use App\Models\Usuario;
 use App\Services\Auditor;
 use App\Services\Inventario;
@@ -210,6 +211,11 @@ class InventarioController extends Controller
         $producto = Producto::with('unidadMedida')->findOrFail($datos['producto_id']);
         $this->exigirCantidadEntera($producto, (float) $datos['stock_contado'], 'stock_contado');
 
+        $toma = TomaInventarioDetalle::where('producto_id', $producto->id)
+            ->whereNotNull('contado')
+            ->whereHas('toma', fn ($q) => $q->where('estado', 'ABIERTA'))
+            ->value('toma_id');
+
         $movimiento = Inventario::ajuste($producto, (float) $datos['stock_contado'], $datos['motivo']);
 
         if (! $movimiento) {
@@ -228,6 +234,7 @@ class InventarioController extends Controller
         return back()->with(
             'exito',
             "Ajustado «{$producto->nombre}»: {$movimiento->stock_anterior} → {$movimiento->stock_resultante} ({$signo}{$movimiento->variacion})."
+            .($toma ? " Su conteo en la toma de inventario #{$toma} se borró: vuelve a contarlo." : '')
         );
     }
 

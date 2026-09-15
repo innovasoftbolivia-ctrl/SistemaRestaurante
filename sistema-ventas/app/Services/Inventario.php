@@ -190,6 +190,9 @@ class Inventario
 
             Lotes::consumirDe($producto, $cantidad, $lote);
 
+            // Lo mismo que el ajuste: el conteo de una toma abierta ya no vale.
+            TomasInventario::olvidarConteoDe($producto);
+
             return $movimiento;
         }, self::REINTENTOS);
     }
@@ -201,7 +204,17 @@ class Inventario
      */
     public static function ajuste(Producto $producto, float $stockContado, string $motivo): ?MovimientoInventario
     {
-        return self::ajustarA($producto, fn () => $stockContado, $motivo);
+        return DB::transaction(function () use ($producto, $stockContado, $motivo) {
+            $movimiento = self::ajustarA($producto, fn () => $stockContado, $motivo);
+
+            // Si el producto ya se contó en una toma abierta, ese conteo quedó
+            // viejo: el cierre aplicaría la diferencia por segunda vez.
+            if ($movimiento) {
+                TomasInventario::olvidarConteoDe($producto);
+            }
+
+            return $movimiento;
+        }, self::REINTENTOS);
     }
 
     /**

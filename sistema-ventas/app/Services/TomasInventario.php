@@ -8,6 +8,7 @@ use App\Models\TomaInventario;
 use App\Models\TomaInventarioDetalle;
 use App\Models\Usuario;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -79,14 +80,23 @@ class TomasInventario
      *
      * Contarlo otra vez vuelve a tomar la foto del sistema: lo que vale es lo
      * que había en el estante y en el sistema en el ÚLTIMO conteo.
+     *
+     * `$contadoEn` es para el conteo en papel que se carga después: la foto
+     * del sistema se toma a la hora en que se contó el estante, reconstruida
+     * con el kardex, y no a la hora en que se teclea. Sin eso, lo vendido
+     * entre contar y cargar se sumaba al stock al cerrar.
      */
-    public static function contar(TomaInventarioDetalle $linea, Usuario $usuario, ?float $contado): TomaInventarioDetalle
+    public static function contar(TomaInventarioDetalle $linea, Usuario $usuario, ?float $contado, ?Carbon $contadoEn = null): TomaInventarioDetalle
     {
         if ($contado !== null && $contado < 0) {
             throw new RuntimeException('El conteo no puede ser negativo.');
         }
 
-        return DB::transaction(function () use ($linea, $usuario, $contado) {
+        if ($contadoEn !== null && $contadoEn->isFuture()) {
+            throw new RuntimeException('La hora del conteo no puede ser posterior a ahora.');
+        }
+
+        return DB::transaction(function () use ($linea, $usuario, $contado, $contadoEn) {
             // Bloqueo compartido: varios pueden contar a la vez, pero nadie
             // mientras se cierra (el cierre la bloquea en exclusiva).
             $toma = TomaInventario::whereKey($linea->toma_id)->sharedLock()->firstOrFail();
@@ -98,14 +108,18 @@ class TomasInventario
                     'usuario_id' => null, 'fecha_conteo' => null,
                 ]);
             } else {
-                $producto = Producto::whereKey($linea->producto_id)->firstOrFail(['stock_actual', 'precio_compra']);
+                $producto = Producto::whereKey($linea->producto_id)->firstOrFail(['id', 'stock_actual', 'precio_compra']);
+
+                if ($contadoEn !== null && $contadoEn->lt($toma->fecha_apertura)) {
+                    throw new RuntimeException('La hora del conteo es anterior a la apertura de la toma.');
+                }
 
                 $linea->update([
                     'contado' => round($contado, 3),
-                    'stock_sistema' => $producto->stock_actual,
+                    'stock_sistema' => $contadoEn ? self::stockA($producto, $contadoEn) : $producto->stock_actual,
                     'costo_unitario' => $producto->precio_compra,
                     'usuario_id' => $usuario->id,
-                    'fecha_conteo' => now(),
+                    'fecha_conteo' => $contadoEn ?? now(),
                 ]);
             }
 
@@ -214,6 +228,61 @@ class TomasInventario
             'faltante' => round((float) $fila->faltante, 2),
             'sobrante' => round((float) $fila->sobrante, 2),
         ];
+    }
+
+    /**
+     * El stock que tenía un producto a una hora dada, según el kardex: el
+     * saldo del último movimiento hasta esa hora, o el saldo previo del primero
+     * que vino después. Sin movimientos, el stock de ahora.
+     */
+    public static function stockA(Producto $producto, Carbon $momento): float
+    {
+        $antes = DB::table('movimientos_inventario')
+            ->where('producto_id', $producto->id)
+            ->where('fecha', '<=', $momento)
+            ->orderByDesc('fecha')->orderByDesc('id')
+            ->value('stock_resultante');
+
+        if ($antes !== null) {
+            return (float) $antes;
+        }
+
+        $despues = DB::table('movimientos_inventario')
+            ->where('producto_id', $producto->id)
+            ->where('fecha', '>', $momento)
+            ->orderBy('fecha')->orderBy('id')
+            ->value('stock_anterior');
+
+        return $despues !== null ? (float) $despues : (float) $producto->stock_actual;
+    }
+
+    /**
+     * Un ajuste o una baja fuera de la toma, sobre un producto que ya se contó
+     * en una toma abierta, deja ese conteo sin valor: el cierre aplicaría la
+     * misma diferencia otra vez. Se borra el conteo para que se vuelva a
+     * contar. Devuelve el número de la toma afectada, si la hubo.
+     *
+     * No lo llama el cierre de la propia toma, que corrige por
+     * {@see Inventario::corregir()}.
+     */
+    public static function olvidarConteoDe(Producto $producto): ?int
+    {
+        $linea = TomaInventarioDetalle::query()
+            ->where('producto_id', $producto->id)
+            ->whereNotNull('contado')
+            ->whereHas('toma', fn ($q) => $q->where('estado', 'ABIERTA'))
+            ->first();
+
+        if (! $linea) {
+            return null;
+        }
+
+        $linea->update([
+            'contado' => null, 'stock_sistema' => null, 'costo_unitario' => null,
+            'usuario_id' => null, 'fecha_conteo' => null,
+        ]);
+
+        return (int) $linea->toma_id;
     }
 
     private static function exigirAbierta(TomaInventario $toma, string $para): void
