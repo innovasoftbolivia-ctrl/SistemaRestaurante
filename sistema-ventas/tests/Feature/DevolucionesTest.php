@@ -12,7 +12,9 @@ use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Devoluciones;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -550,7 +552,7 @@ class DevolucionesTest extends TestCase
             sesion: $sesion,
             usuario: $sesion->usuarioApertura,
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => 10]],
-            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', $codigoMetodo)->value('id'), 'monto' => null]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', $codigoMetodo)->value('id'), 'monto' => null, 'referencia' => 'OP-001']],
         );
 
         $antes = $sesion->fresh()->efectivoEsperado();
@@ -622,7 +624,7 @@ class DevolucionesTest extends TestCase
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => 10]],
             pagos: [
                 ['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => 4],
-                ['metodo_pago_id' => $tarjeta->id, 'monto' => null],
+                ['metodo_pago_id' => $tarjeta->id, 'monto' => null, 'referencia' => 'VOUCHER-001'],
             ],
         );
 
@@ -643,7 +645,7 @@ class DevolucionesTest extends TestCase
             sesion: $sesion->fresh(),
             usuario: $sesion->usuarioApertura,
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => $cantidad]],
-            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', $codigoMetodo)->value('id'), 'monto' => null]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', $codigoMetodo)->value('id'), 'monto' => null, 'referencia' => 'OP-001']],
         );
     }
 
@@ -741,5 +743,49 @@ class DevolucionesTest extends TestCase
         ])->assertRedirect(route('caja.index'))->assertSessionHas('error', fn ($m) => str_contains($m, 'ninguna caja abierta'));
 
         $this->assertSame(0, Devolucion::where('venta_id', $venta->id)->count());
+    }
+
+    // ================================================================ plazo
+
+    /** Pasado el plazo configurado, la devolución ya no se registra. */
+    public function test_pasado_el_plazo_no_se_registra_la_devolucion(): void
+    {
+        DB::table('configuracion')->where('clave', 'dias_max_devolucion')->update(['valor' => '7']);
+        Config::olvidar();
+
+        $sesion = $this->turno();
+        $venta = $this->ventaConDosLineas($sesion);
+        Venta::whereKey($venta->id)->update(['fecha' => now()->subDays(8)]);
+        $venta->refresh();
+
+        $this->assertFalse($venta->dentroDelPlazoDeDevolucion());
+
+        try {
+            Devoluciones::registrar($venta, $this->admin(), $sesion,
+                [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Llegó tarde con el producto');
+            $this->fail('Se registró una devolución fuera de plazo.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Pasó el plazo', $e->getMessage());
+        }
+
+        $this->actingAs($this->admin())->get(route('devoluciones.create', $venta))
+            ->assertRedirect(route('ventas.show', $venta));
+        $this->actingAs($this->admin())->get(route('ventas.show', $venta))
+            ->assertOk()->assertSee('data-devolucion="fuera-de-plazo"', false);
+    }
+
+    public function test_el_ultimo_dia_del_plazo_todavia_se_devuelve(): void
+    {
+        DB::table('configuracion')->where('clave', 'dias_max_devolucion')->update(['valor' => '7']);
+        Config::olvidar();
+
+        $sesion = $this->turno();
+        $venta = $this->ventaConDosLineas($sesion);
+        Venta::whereKey($venta->id)->update(['fecha' => now()->subDays(7)]);
+
+        $devolucion = Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Dentro del plazo justo');
+
+        $this->assertNotNull($devolucion->id);
     }
 }

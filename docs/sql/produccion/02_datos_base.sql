@@ -125,6 +125,8 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('egreso_max_cajero',   '200.00',                'Egreso máximo (Bs) que el cajero registra sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
+    ('dias_max_devolucion', '7',                     'Días máximos tras la venta para aceptar una devolución'),
+    ('exigir_referencia_pago', '1',                  'Pedir el número de operación en pagos con tarjeta, billetera o transferencia (1 = sí)'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
     ('serie_factura',       '1',                     'ID de serie F001 usada para facturas (persona jurídica)'),
     ('serie_recibo',        '2',                     'ID de serie R001 usada para recibos (persona natural)');

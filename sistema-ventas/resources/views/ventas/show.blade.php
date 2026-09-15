@@ -56,10 +56,14 @@
                     @endpuede
 
                     @puede('devoluciones.registrar')
-                        @if ($venta->admiteDevolucion())
+                        @if ($venta->admiteDevolucion() && $venta->dentroDelPlazoDeDevolucion())
                             <x-ui.button size="sm" variant="outline" :href="route('devoluciones.create', $venta)">
                                 Registrar devolución
                             </x-ui.button>
+                        @elseif ($venta->admiteDevolucion())
+                            <p class="w-full text-theme-xs text-gray-500 dark:text-gray-400" data-devolucion="fuera-de-plazo">
+                                Pasó el plazo para devolver: se aceptan devoluciones hasta {{ $venta::diasParaDevolver() }} día(s) después de la venta.
+                            </p>
                         @endif
                     @endpuede
 

@@ -174,7 +174,7 @@ class CajaTest extends TestCase
             sesion: $sesion,
             usuario: $sesion->usuarioApertura,
             lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'precio_unitario' => (float) $producto->precio_venta]],
-            pagos: [['metodo_pago_id' => $tarjeta->id, 'monto' => null]],
+            pagos: [['metodo_pago_id' => $tarjeta->id, 'monto' => null, 'referencia' => 'VOUCHER-001']],
         );
         Cajas::cerrar($sesion->fresh(), $this->admin(), $sesion->fresh()->efectivoEsperado());
 

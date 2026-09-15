@@ -86,6 +86,21 @@
                             min="0" max="30" inputmode="numeric" :value="$actual['dias_max_sustitucion']" required />
                     </x-form.campo>
 
+                    <x-form.campo label="Días para aceptar una devolución" for="dias_max_devolucion"
+                        name="dias_max_devolucion" required
+                        help="Pasado este plazo desde la venta, el sistema ya no registra devoluciones. 0 = solo el mismo día.">
+                        <x-form.input id="dias_max_devolucion" name="dias_max_devolucion" type="number" step="1"
+                            min="0" max="365" inputmode="numeric" :value="$actual['dias_max_devolucion']" required />
+                    </x-form.campo>
+
+                    <div class="sm:col-span-2">
+                        <x-form.check name="exigir_referencia_pago" :checked="$actual['exigir_referencia_pago'] === '1'"
+                            label="Pedir el número de operación en pagos con tarjeta, billetera o transferencia" />
+                        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            El del voucher o comprobante: sin él no se puede conciliar lo cobrado con el extracto del banco.
+                        </p>
+                    </div>
+
                     <x-form.campo label="Nombre del cliente sin registrar" for="cliente_generico_nombre"
                         name="cliente_generico_nombre" required class="sm:col-span-2"
                         help="Lo que dice el comprobante cuando se vende sin elegir un cliente.">

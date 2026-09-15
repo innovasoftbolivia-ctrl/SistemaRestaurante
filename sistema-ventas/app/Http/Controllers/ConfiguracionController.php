@@ -76,6 +76,8 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => ['required', 'numeric', 'min:0', 'max:99999999', 'decimal:0,2'],
             'cliente_generico_nombre' => ['required', 'string', 'max:60'],
             'dias_max_sustitucion' => ['required', 'integer', 'min:0', 'max:30'],
+            'dias_max_devolucion' => ['required', 'integer', 'min:0', 'max:365'],
+            'exigir_referencia_pago' => ['boolean'],
             'serie_factura' => ['required', 'integer', $this->serieDeTipo('FAC')],
             'serie_recibo' => ['required', 'integer', $this->serieDeTipo('REC')],
         ], [
@@ -93,6 +95,7 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => 'egreso máximo del cajero',
             'cliente_generico_nombre' => 'nombre del cliente sin registrar',
             'dias_max_sustitucion' => 'días para sustituir un comprobante',
+            'dias_max_devolucion' => 'días para aceptar una devolución',
             'serie_factura' => 'serie de facturas',
             'serie_recibo' => 'serie de recibos',
         ]);
@@ -111,6 +114,8 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => number_format((float) $datos['egreso_max_cajero'], 2, '.', ''),
             'cliente_generico_nombre' => trim($datos['cliente_generico_nombre']),
             'dias_max_sustitucion' => (string) (int) $datos['dias_max_sustitucion'],
+            'dias_max_devolucion' => (string) (int) $datos['dias_max_devolucion'],
+            'exigir_referencia_pago' => $request->boolean('exigir_referencia_pago') ? '1' : '0',
             'serie_factura' => (string) (int) $datos['serie_factura'],
             'serie_recibo' => (string) (int) $datos['serie_recibo'],
         ];
@@ -172,6 +177,8 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => (string) Config::get('egreso_max_cajero', '0'),
             'cliente_generico_nombre' => (string) Config::get('cliente_generico_nombre', 'Cliente varios'),
             'dias_max_sustitucion' => (string) Config::get('dias_max_sustitucion', '1'),
+            'dias_max_devolucion' => (string) Config::get('dias_max_devolucion', '7'),
+            'exigir_referencia_pago' => (string) Config::get('exigir_referencia_pago', '1'),
             'serie_factura' => (string) Config::get('serie_factura', ''),
             'serie_recibo' => (string) Config::get('serie_recibo', ''),
         ];

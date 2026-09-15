@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Config;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -116,6 +117,18 @@ class Venta extends Model
      * Una venta anulada ya devolvió su stock y su dinero; una totalmente
      * devuelta no tiene nada más que devolver.
      */
+    /** Días después de la venta en que todavía se acepta una devolución. */
+    public static function diasParaDevolver(): int
+    {
+        return max(0, (int) Config::get('dias_max_devolucion', '7'));
+    }
+
+    /** Del día de la venta a hoy, en días de calendario. */
+    public function dentroDelPlazoDeDevolucion(): bool
+    {
+        return $this->fecha->copy()->startOfDay()->diffInDays(now()->startOfDay()) <= self::diasParaDevolver();
+    }
+
     public function admiteDevolucion(): bool
     {
         return in_array($this->estado, ['COMPLETADA', 'DEVUELTA_PARCIAL'], true);

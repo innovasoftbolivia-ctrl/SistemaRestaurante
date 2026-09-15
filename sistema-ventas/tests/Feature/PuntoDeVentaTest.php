@@ -14,6 +14,7 @@ use App\Services\Cajas;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -867,7 +868,7 @@ class PuntoDeVentaTest extends TestCase
             lineas: [['producto_id' => $producto->id, 'cantidad' => 2]],
             pagos: [
                 ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 5.00, 'monto_recibido' => 10.00],
-                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null, 'referencia' => 'OP-001'],
             ],
         );
 
@@ -896,7 +897,7 @@ class PuntoDeVentaTest extends TestCase
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
             pagos: [
                 ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 3.00],
-                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null, 'referencia' => 'OP-001'],
             ],
         );
 
@@ -917,7 +918,7 @@ class PuntoDeVentaTest extends TestCase
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
             pagos: [
                 ['metodo_pago_id' => $this->efectivo()->id, 'monto' => null],
-                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null, 'referencia' => 'OP-001'],
             ],
         );
     }
@@ -937,7 +938,7 @@ class PuntoDeVentaTest extends TestCase
             lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 2]],
             pagos: [
                 ['metodo_pago_id' => $this->efectivo()->id, 'monto' => 4.00],
-                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null],
+                ['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null, 'referencia' => 'OP-001'],
             ],
         );
 
@@ -968,5 +969,38 @@ class PuntoDeVentaTest extends TestCase
         // 2 × 7.26 = 14.52 → 1.89; descuento 12.10 → 1.89 × 2.42 / 14.52 = 0.315 → 0.32
         $segunda = $this->vender($sesion, $this->producto('P-0002'), 2, ['descuento' => 12.10])->fresh();
         $this->assertSame('0.32', $segunda->impuesto);
+    }
+
+    // ================================================================ número de operación
+
+    /** Sin el número del voucher no se puede conciliar con el banco. */
+    public function test_el_pago_con_tarjeta_pide_el_numero_de_operacion(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+        $pagar = fn (?string $referencia) => Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => $this->noEfectivo()->id, 'monto' => null, 'referencia' => $referencia]],
+        );
+
+        // Fuera del try: el fail() de PHPUnit también es un RuntimeException.
+        $rechazo = null;
+        try {
+            $pagar('   ');
+        } catch (RuntimeException $e) {
+            $rechazo = $e->getMessage();
+        }
+        $this->assertNotNull($rechazo, 'Se aceptó un pago con tarjeta sin el voucher.');
+        $this->assertStringContainsString('número de operación', $rechazo);
+
+        $venta = $pagar('VOUCHER-4521');
+        $this->assertSame('VOUCHER-4521', $venta->pagos->first()->referencia);
+
+        // Si el negocio no lo quiere exigir, se apaga en Configuración.
+        DB::table('configuracion')->where('clave', 'exigir_referencia_pago')->update(['valor' => '0']);
+        Config::olvidar();
+        $this->assertNull($pagar(null)->pagos->first()->referencia);
     }
 }

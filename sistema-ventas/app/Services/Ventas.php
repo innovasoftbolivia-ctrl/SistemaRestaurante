@@ -276,12 +276,20 @@ class Ventas
                 throw new RuntimeException('El efectivo recibido es menor que el importe a cobrar.');
             }
 
+            $referencia = trim((string) ($pago['referencia'] ?? ''));
+
+            if ($referencia === '' && $metodo->requiereReferencia()) {
+                throw new RuntimeException(
+                    "Falta el número de operación del pago con {$metodo->nombre}: sin él no se puede conciliar con el banco."
+                );
+            }
+
             VentaPago::create([
                 'venta_id' => $venta->id,
                 'metodo_pago_id' => $metodo->id,
                 'monto' => $monto,
                 'monto_recibido' => $recibido,
-                'referencia' => $pago['referencia'] ?? $cobro?->referencia_bancaria,
+                'referencia' => $referencia !== '' ? $referencia : $cobro?->referencia_bancaria,
             ]);
 
             $cobro?->update(['venta_id' => $venta->id]);

@@ -71,8 +71,15 @@ class DevolucionController extends Controller
     }
 
     /** Formulario de devolución, montado sobre las líneas de una venta. */
-    public function create(Venta $venta): View
+    public function create(Venta $venta): View|RedirectResponse
     {
+        if (! $venta->dentroDelPlazoDeDevolucion()) {
+            return redirect()->route('ventas.show', $venta)->with('error', sprintf(
+                'Pasó el plazo para devolver: se aceptan devoluciones hasta %d día(s) después de la venta.',
+                Venta::diasParaDevolver(),
+            ));
+        }
+
         $venta->load([
             'cliente:id,nombre',
             'comprobante:id,venta_id,numero_completo',

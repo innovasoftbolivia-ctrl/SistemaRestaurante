@@ -52,6 +52,14 @@ class Devoluciones
             });
         }
 
+        if (! $venta->dentroDelPlazoDeDevolucion()) {
+            throw new RuntimeException(sprintf(
+                'Pasó el plazo para devolver: la venta es del %s y se aceptan devoluciones hasta %d día(s) después.',
+                $venta->fecha->format('d/m/Y'),
+                Venta::diasParaDevolver(),
+            ));
+        }
+
         if (! $sesion->estaAbierta()) {
             throw new RuntimeException('Necesitas una caja abierta: el dinero de la devolución sale del cajón.');
         }

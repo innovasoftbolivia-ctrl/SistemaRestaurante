@@ -529,7 +529,7 @@ class ReportesTest extends TestCase
         Ventas::registrar(
             sesion: $sesion, usuario: $sesion->usuarioApertura,
             lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'precio_unitario' => (float) $producto->precio_venta]],
-            pagos: [['metodo_pago_id' => MetodoPago::where('afecta_caja', 0)->value('id'), 'monto' => null]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('afecta_caja', 0)->value('id'), 'monto' => null, 'referencia' => 'VOUCHER-001']],
         );
         Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
             [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota', Devolucion::EFECTIVO);

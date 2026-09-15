@@ -71,6 +71,8 @@ class ConfiguracionTest extends TestCase
             'egreso_max_cajero' => $valor('egreso_max_cajero'),
             'cliente_generico_nombre' => $valor('cliente_generico_nombre'),
             'dias_max_sustitucion' => $valor('dias_max_sustitucion'),
+            'dias_max_devolucion' => $valor('dias_max_devolucion'),
+            'exigir_referencia_pago' => $valor('exigir_referencia_pago'),
             'serie_factura' => $valor('serie_factura'),
             'serie_recibo' => $valor('serie_recibo'),
         ];
@@ -138,6 +140,8 @@ class ConfiguracionTest extends TestCase
             'tasa_impuesto' => '13',
             'descuento_max_cajero' => '5',
             'dias_max_sustitucion' => '3',
+            'dias_max_devolucion' => '15',
+            'exigir_referencia_pago' => '0',
         ])->assertRedirect(route('configuracion.edit'))->assertSessionHas('exito');
 
         $guardado = DB::table('configuracion')->pluck('valor', 'clave');
@@ -148,6 +152,8 @@ class ConfiguracionTest extends TestCase
         $this->assertSame('3 344 5566', $guardado['negocio_telefono']);
         $this->assertSame('5', $guardado['descuento_max_cajero']);
         $this->assertSame('3', $guardado['dias_max_sustitucion']);
+        $this->assertSame('15', $guardado['dias_max_devolucion']);
+        $this->assertSame('0', $guardado['exigir_referencia_pago']);
 
         // La tasa se escribe como porcentaje y se guarda como la fracción que
         // ya leía el resto del sistema.

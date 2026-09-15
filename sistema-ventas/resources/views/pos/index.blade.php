@@ -455,7 +455,9 @@
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
                                         Número de operación
                                     </label>
-                                    <input type="text" x-model="pago.referencia" placeholder="Opcional"
+                                    <input type="text" x-model="pago.referencia"
+                                        :placeholder="exigeReferencia ? 'El del voucher o comprobante' : 'Opcional'"
+                                        :aria-invalid="faltaReferencia(pago) ? 'true' : 'false'"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
                                 </div>
 
@@ -779,6 +781,7 @@
                             qrError: '',
                         }],
                         metodosQr: @js($metodosQr),
+                        exigeReferencia: @js(\App\Models\MetodoPago::exigeReferencia()),
                         qrSimulado: {{ $qrSimulado ? 'true' : 'false' }},
                         qrSegundos: {{ $qrSegundosConsulta }},
                         rutaQrCrear: '{{ route('qr.crear') }}',
@@ -1143,6 +1146,12 @@
                             return this.metodosQr.includes(pago.metodoId);
                         },
 
+                        /* Tarjeta, billetera o transferencia sin el número del voucher. */
+                        faltaReferencia(pago) {
+                            return this.exigeReferencia && !this.esEfectivo(pago) && !this.esQr(pago)
+                                && !String(pago.referencia || '').trim();
+                        },
+
                         /* Una línea de QR solo sirve si su cobro está pagado. */
                         qrPendiente(pago) {
                             return this.esQr(pago) && !(pago.qr && pago.qr.pagado);
@@ -1313,6 +1322,7 @@
                             if (this.pagos.some(p => this.efectivoCorto(p))) return false;
                             if (this.pagos.some(p => this.qrPendiente(p))) return false;
                             if (this.pagos.some(p => this.qrDesfasado(p))) return false;
+                            if (this.pagos.some(p => this.faltaReferencia(p))) return false;
 
                             return true;
                         },
@@ -1331,6 +1341,7 @@
                             if (this.pagos.some(p => this.efectivoCorto(p))) return 'El efectivo recibido no alcanza.';
                             if (this.pagos.some(p => this.qrDesfasado(p))) return 'El total cambió después de generar el QR.';
                             if (this.pagos.some(p => this.qrPendiente(p))) return 'Falta que se confirme el pago por QR.';
+                            if (this.pagos.some(p => this.faltaReferencia(p))) return 'Falta el número de operación del voucher.';
                             return '';
                         },
 
