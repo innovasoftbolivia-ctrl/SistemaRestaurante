@@ -33,9 +33,23 @@ export function impuestoDe(importe, tasa) {
     return Math.floor((c * t + 5000) / 10000) / 100;
 }
 
+/**
+ * El impuesto que queda después del descuento de cabecera:
+ * ROUND(bruto × (base − descuento) / base, 2), exacto, igual que
+ * sp_recalcular_venta y ReglasEnPhp::recalcularVenta.
+ */
+export function impuestoConDescuento(bruto, base, descuento) {
+    const b = centavos(base);
+    if (b <= 0) return 0;
+
+    const numerador = centavos(bruto) * (b - centavos(descuento));
+
+    return Math.floor((2 * numerador + b) / (2 * b)) / 100;
+}
+
 /** Suma importes sin arrastrar error de coma flotante. */
 export function sumar(importes) {
     return importes.reduce((total, importe) => total + centavos(importe), 0) / 100;
 }
 
-window.montos = { centavos, importeLinea, impuestoDe, sumar };
+window.montos = { centavos, importeLinea, impuestoDe, impuestoConDescuento, sumar };

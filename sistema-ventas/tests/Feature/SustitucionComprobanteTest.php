@@ -13,6 +13,7 @@ use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Comprobantes;
 use App\Services\Devoluciones;
+use App\Services\ReglasEnPhp;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use RuntimeException;
@@ -428,5 +429,44 @@ class SustitucionComprobanteTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('comprobantes.imprimir', [$comprobante, 'formato' => 'a4']))
             ->assertSee('size: A4', false);
+    }
+
+    /**
+     * La causa más común de sustitución: la factura salió con el NIT mal y se
+     * corrige en la ficha del MISMO cliente. Comparando solo ids quedaba
+     * bloqueada como «idéntica».
+     */
+    public function test_se_sustituye_para_corregir_el_nit_del_mismo_cliente(): void
+    {
+        $sesion = $this->turno();
+        $empresa = $this->empresa();
+        $factura = $this->ventaConRecibo($sesion, $empresa)->comprobante;
+        $empresa->forceFill(['documento' => '99887766'])->save();
+
+        $nuevo = Comprobantes::sustituir($factura->fresh()->load('venta'), $this->admin(), $empresa->fresh(), 'NIT mal escrito');
+
+        $this->assertSame('99887766', $nuevo->cliente_documento);
+        $this->assertSame('SUSTITUIDO', $factura->fresh()->estado);
+    }
+
+    public function test_sin_corregir_nada_el_mismo_cliente_sigue_siendo_identico(): void
+    {
+        $sesion = $this->turno();
+        $empresa = $this->empresa();
+        $factura = $this->ventaConRecibo($sesion, $empresa)->comprobante;
+
+        $this->expectExceptionMessage('idéntico');
+        Comprobantes::sustituir($factura->fresh()->load('venta'), $this->admin(), $empresa->fresh(), 'Nada');
+    }
+
+    /** En el modo sin procedimientos, el plazo no vencía nunca (días negativos). */
+    public function test_el_plazo_tambien_vence_en_el_modo_php(): void
+    {
+        $sesion = $this->turno();
+        $venta = $this->ventaConRecibo($sesion);
+        Venta::whereKey($venta->id)->update(['fecha' => now()->subDays(Comprobantes::plazoDias() + 2)]);
+
+        $this->expectExceptionMessage('plazo');
+        ReglasEnPhp::sustituirComprobante($venta->comprobante->id, $venta->comprobante->serie_id, null, $this->admin()->id, 'Tarde');
     }
 }

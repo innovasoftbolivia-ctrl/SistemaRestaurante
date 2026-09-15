@@ -1241,7 +1241,6 @@ BEGIN
     DECLARE v_base_total     DECIMAL(12,2);
     DECLARE v_impuesto_bruto DECIMAL(12,2);
     DECLARE v_descuento      DECIMAL(12,2);
-    DECLARE v_factor         DECIMAL(12,6);
     DECLARE v_impuesto       DECIMAL(12,2);
 
     -- el impuesto por línea ya está calculado y guardado en venta_detalle
@@ -1257,9 +1256,13 @@ BEGIN
             SET MESSAGE_TEXT = 'El descuento no puede superar el subtotal de la venta';
     END IF;
 
-    -- proporción de la base que queda después del descuento de cabecera
-    SET v_factor   = IF(v_base_total > 0, (v_base_total - v_descuento) / v_base_total, 0);
-    SET v_impuesto = ROUND(v_impuesto_bruto * v_factor, 2);
+    -- El impuesto baja en la proporción de la base que deja el descuento de
+    -- cabecera. En una sola cuenta, sin guardar antes el factor: con el factor
+    -- en una variable de 6 decimales, 0.51 × 3.30 / 3.96 daba 0.42 y no 0.43, y
+    -- el procedimiento y el modo PHP no cobraban el mismo impuesto.
+    SET v_impuesto = IF(v_base_total > 0,
+                        ROUND(v_impuesto_bruto * (v_base_total - v_descuento) / v_base_total, 2),
+                        0);
 
     -- `total` es columna generada: se recalcula sola a partir de estos tres valores
     UPDATE ventas

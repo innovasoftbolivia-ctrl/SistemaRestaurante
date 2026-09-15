@@ -1037,9 +1037,7 @@
                                 ? montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), this.tasa)
                                 : 0));
                             /* El descuento de cabecera se prorratea, igual que en sp_recalcular_venta. */
-                            const factor = this.subtotal > 0 ? (this.subtotal - this.descuentoValido) / this.subtotal : 0;
-
-                            return this.redondear(bruto * factor);
+                            return montos.impuestoConDescuento(bruto, this.subtotal, this.descuentoValido);
                         },
 
                         /* Siempre el monto, aunque se haya tecleado en %. El

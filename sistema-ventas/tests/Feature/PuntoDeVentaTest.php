@@ -949,4 +949,24 @@ class PuntoDeVentaTest extends TestCase
         $this->assertEqualsWithDelta(104.00, (float) $cerrada->monto_esperado, 0.01);
         $this->assertEqualsWithDelta(0.0, (float) $cerrada->diferencia, 0.01);
     }
+
+    /**
+     * Impuesto con descuento de cabecera, al centavo y igual en los dos modos.
+     * El procedimiento daba 0.42 donde van 0.43 (factor guardado con 6
+     * decimales) y PHP, 0.31 donde van 0.32 (coma flotante).
+     */
+    public function test_el_impuesto_con_descuento_es_exacto_en_los_dos_modos(): void
+    {
+        $sesion = $this->turno();
+        $leche = $this->producto('P-0004');
+        $leche->forceFill(['precio_venta' => 3.96])->save();
+
+        // 3.96 → impuesto 0.51; descuento 0.66 → 0.51 × 3.30 / 3.96 = 0.425 → 0.43
+        $primera = $this->vender($sesion, $leche->fresh(), 1, ['descuento' => 0.66])->fresh();
+        $this->assertSame('0.43', $primera->impuesto);
+
+        // 2 × 7.26 = 14.52 → 1.89; descuento 12.10 → 1.89 × 2.42 / 14.52 = 0.315 → 0.32
+        $segunda = $this->vender($sesion, $this->producto('P-0002'), 2, ['descuento' => 12.10])->fresh();
+        $this->assertSame('0.32', $segunda->impuesto);
+    }
 }

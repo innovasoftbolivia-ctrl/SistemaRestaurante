@@ -280,11 +280,17 @@ class ReglasEnPhp
             throw new RuntimeException('El descuento no puede superar el subtotal de la venta');
         }
 
-        $factor = $base > 0 ? ($base - $descuento) / $base : 0;
+        // En centavos enteros y en una sola cuenta, con redondeo a la mitad
+        // hacia arriba: lo mismo que ROUND de MySQL en sp_recalcular_venta. En
+        // coma flotante 1.89 × (2.42 / 14.52) daba 0.31 y no 0.32.
+        $baseC = (int) round($base * 100);
+        $brutoC = (int) round($impuestoBruto * 100);
+        $descuentoC = (int) round($descuento * 100);
+        $impuestoC = $baseC > 0 ? intdiv(2 * $brutoC * ($baseC - $descuentoC) + $baseC, 2 * $baseC) : 0;
 
         DB::table('ventas')->where('id', $ventaId)->update([
             'subtotal' => $base,
-            'impuesto' => round($impuestoBruto * $factor, 2),
+            'impuesto' => $impuestoC / 100,
         ]);
     }
 
@@ -371,7 +377,9 @@ class ReglasEnPhp
 
         $diasMax = (int) self::config('dias_max_sustitucion', '1');
 
-        if (now()->startOfDay()->diffInDays(Carbon::parse($venta->fecha)->startOfDay()) > $diasMax) {
+        // Del día de la venta a hoy: al revés, Carbon 3 da días negativos y el
+        // plazo nunca vencía en este modo.
+        if (Carbon::parse($venta->fecha)->startOfDay()->diffInDays(now()->startOfDay()) > $diasMax) {
             throw new RuntimeException('La venta excede el plazo permitido para sustituir su comprobante');
         }
 

@@ -81,6 +81,20 @@ class Comprobantes
      * `$cliente` es a quién queda asociada la venta: una persona jurídica hace
      * que salga factura; sin cliente o con persona natural, recibo.
      */
+    /** ¿El documento lleva los mismos datos que tiene hoy la ficha del cliente? */
+    private static function datosCongeladosVigentes(Comprobante $comprobante, ?Cliente $cliente): bool
+    {
+        if (! $cliente) {
+            return true;
+        }
+
+        $normalizar = fn (?string $texto) => mb_strtolower(trim((string) $texto));
+
+        return $normalizar($comprobante->cliente_nombre) === $normalizar($cliente->nombre)
+            && $normalizar($comprobante->cliente_documento) === $normalizar($cliente->documento)
+            && $normalizar($comprobante->cliente_direccion) === $normalizar($cliente->direccion);
+    }
+
     public static function sustituir(
         Comprobante $comprobante,
         Usuario $usuario,
@@ -99,9 +113,15 @@ class Comprobantes
 
         $serie = Ventas::seriePara($cliente);
 
-        if ($serie->id === $comprobante->serie_id && $cliente?->id === $venta->cliente_id) {
+        // Idéntico de verdad: misma serie, mismo cliente Y los datos que quedaron
+        // congelados en el documento siguen siendo los de la ficha. Corregir el
+        // NIT o la razón social del mismo cliente es la causa más común de
+        // sustitución, y comparando solo ids quedaba bloqueada.
+        if ($serie->id === $comprobante->serie_id
+            && $cliente?->id === $venta->cliente_id
+            && self::datosCongeladosVigentes($comprobante, $cliente)) {
             throw new RuntimeException(
-                'El documento nuevo saldría idéntico al actual. Elige otro cliente o revisa qué quieres corregir.'
+                'El documento nuevo saldría idéntico al actual. Elige otro cliente, o corrige primero sus datos en la ficha del cliente.'
             );
         }
 
