@@ -45,10 +45,12 @@
                         :opciones="array_combine($estados, array_map(fn ($e) => ucfirst(str_replace('_', ' ', mb_strtolower($e))), $estados))" />
                 </x-form.campo>
 
-                <x-form.campo label="Cajero" for="usuario">
-                    <x-form.select id="usuario" name="usuario" :value="$filtros['usuario']" placeholder="Todos"
-                        :opciones="$cajeros" />
-                </x-form.campo>
+                @unless ($soloPropias)
+                    <x-form.campo label="Cajero" for="usuario">
+                        <x-form.select id="usuario" name="usuario" :value="$filtros['usuario']" placeholder="Todos"
+                            :opciones="$cajeros" />
+                    </x-form.campo>
+                @endunless
 
                 <x-form.campo label="Desde" for="desde">
                     <x-form.input id="desde" name="desde" type="date" :value="$filtros['desde']" />

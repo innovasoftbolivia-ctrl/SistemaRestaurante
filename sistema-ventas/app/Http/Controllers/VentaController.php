@@ -24,7 +24,9 @@ class VentaController extends Controller
         $filtros = [
             'buscar' => $request->string('buscar')->toString(),
             'estado' => $request->string('estado')->toString(),
-            'usuario' => $request->integer('usuario') ?: null,
+            // Sin permiso de reportes, solo las propias: el listado general y
+            // sus totales son información del negocio, no del mostrador.
+            'usuario' => self::soloPropias() ? Auth::id() : ($request->integer('usuario') ?: null),
             'desde' => $request->date('desde')?->format('Y-m-d'),
             'hasta' => $request->date('hasta')?->format('Y-m-d'),
         ];
@@ -60,7 +62,8 @@ class VentaController extends Controller
             ->withQueryString();
 
         return view('ventas.index', [
-            'title' => 'Ventas',
+            'title' => self::soloPropias() ? 'Mis ventas' : 'Ventas',
+            'soloPropias' => self::soloPropias(),
             'ventas' => $ventas,
             'filtros' => $filtros,
             'estados' => Venta::ESTADOS,
@@ -69,8 +72,16 @@ class VentaController extends Controller
         ]);
     }
 
+    /** Quien no ve reportes solo ve sus propias ventas y sus comprobantes. */
+    public static function soloPropias(): bool
+    {
+        return ! Auth::user()?->tienePermiso('reportes.ver');
+    }
+
     public function show(Venta $venta): View
     {
+        abort_if(self::soloPropias() && $venta->usuario_id !== Auth::id(), 403, 'Esa venta la registró otra persona.');
+
         $venta->load([
             'cliente',
             'usuario:id,usuario,empleado_id',

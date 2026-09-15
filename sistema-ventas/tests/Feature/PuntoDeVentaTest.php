@@ -529,6 +529,37 @@ class PuntoDeVentaTest extends TestCase
         $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
     }
 
+    /**
+     * El listado general y sus totales son información del negocio. Quien no
+     * ve reportes ve sus propias ventas y sus comprobantes, nada más.
+     */
+    public function test_el_cajero_solo_ve_sus_ventas_y_sus_comprobantes(): void
+    {
+        $turnoAdmin = $this->turno($this->admin());
+        $ajena = $this->vender($turnoAdmin, $this->producto(), 1);
+        Cajas::cerrar($turnoAdmin->fresh(), $this->admin(), (float) $turnoAdmin->fresh()->efectivoEsperado());
+        $propia = $this->vender($this->turno(), $this->producto(), 1);
+
+        $this->actingAs($this->cajero())->get('/ventas')->assertOk()->assertSee('Mis ventas');
+        $listado = $this->actingAs($this->cajero())->get('/ventas')->viewData('ventas');
+        $this->assertSame([$propia->id], $listado->pluck('id')->all());
+
+        $this->actingAs($this->cajero())->get("/ventas/{$propia->id}")->assertOk();
+        $this->actingAs($this->cajero())->get("/ventas/{$ajena->id}")->assertForbidden();
+        $this->actingAs($this->cajero())->get(route('comprobantes.imprimir', $propia->comprobante))->assertOk();
+        $this->actingAs($this->cajero())->get(route('comprobantes.imprimir', $ajena->comprobante))->assertForbidden();
+        $this->assertSame(
+            [$propia->comprobante->id],
+            $this->actingAs($this->cajero())->get('/comprobantes')->viewData('comprobantes')->pluck('id')->all(),
+        );
+
+        // Quien ve reportes, todas.
+        $this->assertEqualsCanonicalizing(
+            [$ajena->id, $propia->id],
+            $this->actingAs($this->admin())->get('/ventas')->viewData('ventas')->pluck('id')->intersect([$ajena->id, $propia->id])->values()->all(),
+        );
+    }
+
     // ------------------------------------------------------------ mostrador
 
     // ------------------------------------------------- la unidad en el papel

@@ -26,6 +26,12 @@ class ComprobanteController extends Controller
      */
     public function imprimir(Request $request, Comprobante $comprobante): View
     {
+        abort_if(
+            VentaController::soloPropias() && $comprobante->venta?->usuario_id !== Auth::id(),
+            403,
+            'Ese comprobante es de una venta de otra persona.',
+        );
+
         $formato = $request->string('formato')->toString();
 
         if (! in_array($formato, ['ticket', 'a4'], true)) {
@@ -81,7 +87,8 @@ class ComprobanteController extends Controller
                     ->orWhere('cliente_documento', 'like', "%{$texto}%"));
             })
             ->when($filtros['estado'], fn ($q, $estado) => $q->where('estado', $estado))
-            ->when($filtros['serie'], fn ($q, $id) => $q->where('serie_id', $id)),
+            ->when($filtros['serie'], fn ($q, $id) => $q->where('serie_id', $id))
+            ->when(VentaController::soloPropias(), fn ($q) => $q->whereHas('venta', fn ($v) => $v->where('usuario_id', Auth::id()))),
             $orden
         )
             ->paginate(15)
