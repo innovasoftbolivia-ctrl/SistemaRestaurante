@@ -144,7 +144,8 @@ class PosController extends Controller
 
             'lineas' => ['required', 'array', 'min:1'],
             'lineas.*.producto_id' => ['required', Rule::exists('productos', 'id')],
-            'lineas.*.cantidad' => ['required', 'numeric', 'gt:0'],
+            // Tres decimales como máximo: los que guarda la base.
+            'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'decimal:0,3'],
             // El precio SIEMPRE sale del catálogo en `Ventas::registrar`, nunca
             // de aquí: no se valida ni se usa, aunque el formulario lo mande.
 
@@ -215,7 +216,12 @@ class PosController extends Controller
         // 10,000000000000002 %, y el descuento de exactamente el máximo —el que
         // pone el botón «10 %»— se rechazaba.
         $base = array_sum(array_map(
-            fn ($l) => (int) round((float) $l['cantidad'] * (float) ($precios[$l['producto_id']] ?? 0) * 100),
+            // Enteros antes de multiplicar, igual que ROUND de MySQL: en coma
+            // flotante 1.45 × 1.5 da 2.1749999… y redondeaba a 2.17.
+            fn ($l) => intdiv(
+                (int) round((float) ($precios[$l['producto_id']] ?? 0) * 100) * (int) round((float) $l['cantidad'] * 1000) + 500,
+                1000,
+            ),
             $lineas,
         ));
 

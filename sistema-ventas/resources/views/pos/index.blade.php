@@ -260,7 +260,7 @@
                                             class="h-11 w-11 text-base rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">+</button>
                                     </div>
                                     <span class="text-theme-sm font-semibold text-gray-800 dark:text-white/90"
-                                        x-text="'{{ $moneda }} ' + (l.precio_estante * l.cantidad).toFixed(2)"></span>
+                                        x-text="'{{ $moneda }} ' + montos.importeLinea(l.precio_estante, l.cantidad).toFixed(2)"></span>
                                 </div>
 
                                 <p x-show="l.cantidad > l.stock" class="mt-1 text-theme-xs text-error-600 dark:text-error-400">
@@ -977,7 +977,9 @@
                             const l = this.carrito[i];
                             let c = Number(l.cantidad) || 0;
 
-                            if (!l.decimal) c = Math.round(c);
+                            // Tres decimales, los que guarda la base: con más, el
+                            // navegador calcularía con una cantidad que no se registra.
+                            c = l.decimal ? Math.round(c * 1000) / 1000 : Math.round(c);
                             if (c <= 0) return this.quitar(i);
 
                             l.cantidad = Math.min(c, l.stock);
@@ -1025,19 +1027,15 @@
 
                         /* Los precios se guardan sin impuesto; el total lo lleva encima. */
                         get subtotal() {
-                            return this.redondear(
-                                this.carrito.reduce((s, l) => s + this.redondear(l.precio * l.cantidad), 0)
-                            );
+                            return montos.sumar(this.carrito.map(l => montos.importeLinea(l.precio, l.cantidad)));
                         },
 
                         get impuesto() {
                             /* Se redondea POR LÍNEA, igual que la columna generada
                                `impuesto_linea`: sumar sin redondear daría otro total. */
-                            const bruto = this.carrito.reduce(
-                                (s, l) => s + (l.afecto
-                                    ? this.redondear(this.redondear(l.precio * l.cantidad) * this.tasa)
-                                    : 0), 0
-                            );
+                            const bruto = montos.sumar(this.carrito.map(l => l.afecto
+                                ? montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), this.tasa)
+                                : 0));
                             /* El descuento de cabecera se prorratea, igual que en sp_recalcular_venta. */
                             const factor = this.subtotal > 0 ? (this.subtotal - this.descuentoValido) / this.subtotal : 0;
 

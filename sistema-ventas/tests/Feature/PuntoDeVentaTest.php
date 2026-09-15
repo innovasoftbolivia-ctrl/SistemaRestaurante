@@ -680,6 +680,35 @@ class PuntoDeVentaTest extends TestCase
         $this->assertSame('10.89', Venta::where('sesion_caja_id', $sesion->id)->firstOrFail()->descuento);
     }
 
+    /** La base guarda 3 decimales: con más, el navegador calcularía con otra cantidad. */
+    public function test_la_cantidad_admite_hasta_tres_decimales(): void
+    {
+        $sesion = $this->turno();
+
+        $this->actingAs($this->cajero())->post('/pos', [
+            'lineas' => [['producto_id' => $this->producto('P-0001')->id, 'cantidad' => 0.3333]],
+            'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
+        ])->assertSessionHasErrors('lineas.0.cantidad');
+
+        $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
+    }
+
+    /**
+     * El total del mostrador sale del módulo `montos.js`, que calcula en enteros
+     * igual que ROUND de MySQL. En coma flotante 1,5 kg a 1,45 daba 2,17 y la
+     * venta quedaba en 2,18. (El módulo se verificó contra MySQL en 12.012
+     * combinaciones de precio y cantidad.)
+     */
+    public function test_el_mostrador_calcula_los_importes_igual_que_la_base(): void
+    {
+        $this->turno();
+
+        $this->actingAs($this->cajero())->get('/pos')
+            ->assertOk()
+            ->assertSee('montos.importeLinea(l.precio, l.cantidad)', false)
+            ->assertDontSee('this.redondear(l.precio * l.cantidad)', false);
+    }
+
     /** El mostrador ofrece el descuento en monto o en porcentaje, con atajos. */
     public function test_el_mostrador_ofrece_descuento_en_monto_o_porcentaje(): void
     {

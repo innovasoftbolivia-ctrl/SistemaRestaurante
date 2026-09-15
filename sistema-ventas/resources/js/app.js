@@ -13,6 +13,9 @@ import { iniciarGraficos } from './graficos';
 // Igual que los gráficos: el dibujante de QR se trae solo donde se usa.
 import './qr';
 
+// Importes exactos, igual que la base: los usan el mostrador y las devoluciones.
+import './montos';
+
 window.Alpine = Alpine;
 window.flatpickr = flatpickr;
 

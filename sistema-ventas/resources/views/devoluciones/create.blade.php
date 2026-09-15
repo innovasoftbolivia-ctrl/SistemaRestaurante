@@ -103,7 +103,7 @@
                                         La mercadería vuelve al estante
                                     </label>
                                     <span class="text-theme-sm font-semibold text-gray-800 dark:text-white/90"
-                                        x-text="'{{ $moneda }} ' + (l.cantidad * l.precio).toFixed(2)"></span>
+                                        x-text="'{{ $moneda }} ' + montos.importeLinea(l.precio, l.cantidad).toFixed(2)"></span>
                                 </div>
 
                                 <p x-show="l.cantidad > 0 && !l.reingresa" x-cloak
@@ -234,17 +234,13 @@
                         },
 
                         get base() {
-                            return this.redondear(
-                                this.lineas.reduce((s, l) => s + this.redondear(l.cantidad * l.precio), 0)
-                            );
+                            return montos.sumar(this.lineas.map(l => montos.importeLinea(l.precio, l.cantidad)));
                         },
 
                         get impuesto() {
                             /* Redondeo por línea, igual que la columna generada
                                `impuesto_linea`. */
-                            return this.redondear(this.lineas.reduce(
-                                (s, l) => s + this.redondear(this.redondear(l.cantidad * l.precio) * l.tasa), 0
-                            ));
+                            return montos.sumar(this.lineas.map(l => montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), l.tasa)));
                         },
 
                         /* Lo que la base guardará como total: con impuesto. */
