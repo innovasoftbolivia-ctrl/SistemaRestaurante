@@ -57,7 +57,10 @@
             @php
                 $tarjetas = [
                     ['Productos en catálogo', number_format($inventario['productos']), 'text-gray-800 dark:text-white/90', null],
-                    ['Tienes invertido en estante', Config::importe($inventario['costo']), 'text-gray-800 dark:text-white/90', null],
+                    ['Tienes invertido en estante', Config::importe($inventario['costo']), 'text-gray-800 dark:text-white/90',
+                        $inventario['inactivos_con_stock'] > 0
+                            ? "incluye {$inventario['inactivos_con_stock']} producto(s) dado(s) de baja que aún tienen stock"
+                            : null],
                     ['Si vendieras todo esto, ganarías', Config::importe($inventario['margen']), 'text-success-700 dark:text-success-500', null],
                 ];
             @endphp

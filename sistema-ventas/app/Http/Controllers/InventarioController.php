@@ -245,12 +245,14 @@ class InventarioController extends Controller
      */
     private function resumen(): array
     {
+        // El valor, sobre todo lo que hay en estante: un producto dado de baja
+        // que todavía tiene stock sigue siendo plata invertida. Los conteos,
+        // solo sobre el catálogo vigente.
         $totales = DB::table('productos')
-            ->where('activo', 1)
-            ->selectRaw('COUNT(*) AS total')
+            ->selectRaw('COALESCE(SUM(activo = 1), 0) AS total')
             ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS valor')
-            ->selectRaw('COALESCE(SUM(stock_actual <= stock_minimo), 0) AS bajo_minimo')
-            ->selectRaw('COALESCE(SUM(stock_actual <= 0), 0) AS agotados')
+            ->selectRaw('COALESCE(SUM(activo = 1 AND stock_actual <= stock_minimo), 0) AS bajo_minimo')
+            ->selectRaw('COALESCE(SUM(activo = 1 AND stock_actual <= 0), 0) AS agotados')
             ->first();
 
         return [

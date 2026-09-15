@@ -87,6 +87,17 @@
             </div>
         </div>
 
+        {{-- La cifra que se compara con los arqueos: lo vendido mezcla tarjeta,
+             QR y transferencia, que nunca pasan por un cajón. --}}
+        <p class="text-theme-sm text-gray-600 dark:text-gray-400" data-efectivo-en-cajas>
+            Efectivo que pasó por las cajas:
+            <b class="text-gray-800 dark:text-white/90">{{ Config::importe($resumen['efectivo']) }}</b>
+            <span class="text-theme-xs text-gray-500 dark:text-gray-400">
+                — ventas y devoluciones en efectivo, más ingresos y menos egresos de caja. Cuadra con los arqueos
+                de los turnos del período, sin su monto inicial.
+            </span>
+        </p>
+
         @if (Config::tasaImpuesto() > 0)
             <p class="text-theme-xs text-gray-500 dark:text-gray-400">
                 Impuesto del período: {{ Config::importe($resumen['impuesto']) }} (incluido en lo vendido).

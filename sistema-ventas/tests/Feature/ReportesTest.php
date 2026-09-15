@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
+use App\Models\Devolucion;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\SesionCaja;
@@ -475,13 +476,13 @@ class ReportesTest extends TestCase
         );
     }
 
-    public function test_el_valor_del_inventario_se_calcula_sobre_el_catalogo_vigente(): void
+    public function test_el_valor_del_inventario_se_calcula_sobre_todo_lo_que_hay_en_estante(): void
     {
         $inventario = $this->actingAs($this->admin())
             ->get(route('reportes.productos', $this->hoy()))
             ->viewData('inventario');
 
-        $esperado = (float) DB::table('productos')->where('activo', 1)
+        $esperado = (float) DB::table('productos')
             ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS costo')
             ->value('costo');
 
@@ -490,6 +491,61 @@ class ReportesTest extends TestCase
             round($inventario['venta'] - $inventario['costo'], 2),
             $inventario['margen'],
         );
+    }
+
+    /** Dar de baja un producto con stock no hace desaparecer lo que costó. */
+    public function test_un_producto_dado_de_baja_con_stock_sigue_valiendo_en_el_inventario(): void
+    {
+        $inventario = fn () => $this->actingAs($this->admin())
+            ->get(route('reportes.productos', $this->hoy()))->viewData('inventario');
+        $producto = Producto::where('activo', 1)->where('stock_actual', '>', 0)->where('precio_compra', '>', 0)->firstOrFail();
+
+        $antes = $inventario();
+        DB::table('productos')->where('id', $producto->id)->update(['activo' => 0]);
+        $despues = $inventario();
+
+        $this->assertSame($antes['costo'], $despues['costo']);
+        $this->assertSame($antes['productos'] - 1, $despues['productos']);
+        $this->assertSame($antes['inactivos_con_stock'] + 1, $despues['inactivos_con_stock']);
+
+        // Las tres pantallas dan la misma cifra.
+        $this->assertSame($despues['costo'], $this->actingAs($this->admin())->get(route('inventario.index'))->viewData('resumen')['valor']);
+        $this->assertSame($despues['costo'], $this->actingAs($this->admin())->get(route('productos.index'))->viewData('resumen')['valor']);
+    }
+
+    /**
+     * «Vendido» mezcla tarjeta y QR; la línea de efectivo tiene que dar lo
+     * mismo que los arqueos, sin el monto inicial.
+     */
+    public function test_el_efectivo_en_cajas_cuadra_con_el_arqueo(): void
+    {
+        $resumen = fn () => $this->actingAs($this->admin())
+            ->get(route('reportes.ventas', $this->hoy()))->viewData('resumen');
+        $antes = $resumen()['efectivo'];
+
+        $sesion = $this->turno();
+        $venta = $this->vender($sesion, 3);
+        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
+        Ventas::registrar(
+            sesion: $sesion, usuario: $sesion->usuarioApertura,
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'precio_unitario' => (float) $producto->precio_venta]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('afecta_caja', 0)->value('id'), 'monto' => null]],
+        );
+        Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota', Devolucion::EFECTIVO);
+        Cajas::movimiento($sesion->fresh(), $this->admin(), 'INGRESO', 'Cambio del banco', 30);
+        Cajas::movimiento($sesion->fresh(), $this->admin(), 'EGRESO', 'Bolsas', 10);
+        Cajas::cerrar($sesion->fresh(), $this->admin(), $sesion->fresh()->efectivoEsperado());
+
+        $cerrada = $sesion->fresh();
+        $despues = $resumen();
+
+        $this->assertSame(
+            round((float) $cerrada->monto_esperado - (float) $cerrada->monto_inicial, 2),
+            round($despues['efectivo'] - $antes, 2),
+        );
+        $this->assertNotSame($despues['neto'], $despues['efectivo']);
+        $this->actingAs($this->admin())->get(route('reportes.ventas', $this->hoy()))->assertSee('Efectivo que pasó por las cajas');
     }
 
     // ------------------------------------------------------------- interfaz

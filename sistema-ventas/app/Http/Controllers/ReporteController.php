@@ -130,6 +130,7 @@ class ReporteController extends Controller
             ['etiqueta' => 'Vendido', 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'],
             ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'a clientes, por devoluciones'],
             ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'vendido menos devuelto', 'destacar' => true],
+            ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas y devoluciones en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
             ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'revirtieron su stock'],
         ];
@@ -201,7 +202,9 @@ class ReporteController extends Controller
 
         $indicadores = [
             ['etiqueta' => 'Productos activos', 'valor' => $inventario['productos'], 'formato' => 'entero', 'nota' => 'en catálogo'],
-            ['etiqueta' => 'Inventario a costo', 'valor' => $inventario['costo'], 'formato' => 'moneda', 'nota' => 'lo que costó lo que hay en estante'],
+            ['etiqueta' => 'Inventario a costo', 'valor' => $inventario['costo'], 'formato' => 'moneda', 'nota' => $inventario['inactivos_con_stock'] > 0
+                ? "lo que costó lo que hay en estante, con {$inventario['inactivos_con_stock']} producto(s) dado(s) de baja que aún tienen stock"
+                : 'lo que costó lo que hay en estante'],
             ['etiqueta' => 'Inventario a venta', 'valor' => $inventario['venta'], 'formato' => 'moneda', 'nota' => 'lo que se cobraría por todo'],
             ['etiqueta' => 'Margen potencial', 'valor' => $inventario['margen'], 'formato' => 'moneda', 'nota' => 'diferencia entre ambos', 'destacar' => true],
             ['etiqueta' => 'Productos por reponer', 'valor' => $alertas->count(), 'formato' => 'entero', 'nota' => 'en su stock mínimo o por debajo'],
@@ -360,6 +363,7 @@ class ReporteController extends Controller
 
         $operaciones = (int) $ventas->operaciones;
         $vendido = (float) $ventas->vendido;
+        $efectivo = $this->efectivoACaja($desde, $hasta);
 
         return [
             'operaciones' => $operaciones,
@@ -368,9 +372,49 @@ class ReporteController extends Controller
             'anuladas' => (int) $ventas->anuladas,
             'devuelto' => $devuelto,
             'neto' => round($vendido - $devuelto, 2),
+            'efectivo' => $efectivo,
             'ganancia' => round(($base - (float) $devuelta->base) - ($costo - (float) $devuelta->costo), 2),
             'ticket' => $operaciones > 0 ? round($vendido / $operaciones, 2) : 0.0,
         ];
+    }
+
+    /**
+     * El efectivo que pasó por las cajas en el período: ventas cobradas en
+     * efectivo − devoluciones pagadas del cajón + ingresos − egresos de caja.
+     *
+     * Es la cuenta del arqueo sin el monto inicial (ver sp_cerrar_caja y
+     * SesionCaja::desgloseDelEfectivo): con turnos que empiezan y terminan
+     * dentro del rango, da lo mismo que sumar «esperado − inicial» de todos.
+     * El «neto» de arriba mezcla tarjeta, QR y transferencia, y no cuadra con
+     * ningún cajón.
+     */
+    private function efectivoACaja(Carbon $desde, Carbon $hasta): float
+    {
+        $ventas = (float) DB::table('venta_pagos as vp')
+            ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
+            ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
+            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->where('v.estado', '<>', 'ANULADA')
+            ->where('mp.afecta_caja', 1)
+            ->sum('vp.monto');
+
+        $movimientos = DB::table('movimientos_caja')
+            ->whereBetween('fecha', [$desde, $hasta])
+            ->selectRaw("COALESCE(SUM(IF(tipo = 'INGRESO', monto, 0)), 0) AS ingresos")
+            ->selectRaw("COALESCE(SUM(IF(tipo = 'EGRESO', monto, 0)), 0) AS egresos")
+            ->first();
+
+        $devuelto = (float) DB::table('devoluciones as d')
+            ->join('ventas as v', 'v.id', '=', 'd.venta_id')
+            ->whereBetween('d.fecha', [$desde, $hasta])
+            ->selectRaw('COALESCE(SUM(IFNULL(d.efectivo, ROUND(d.total * IFNULL((
+                    SELECT SUM(vp.monto) FROM venta_pagos vp
+                      JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
+                     WHERE vp.venta_id = d.venta_id AND mp.afecta_caja = 1
+                 ) / NULLIF(v.total, 0), 0), 2))), 0) AS devuelto')
+            ->value('devuelto');
+
+        return round($ventas + (float) $movimientos->ingresos - (float) $movimientos->egresos - $devuelto, 2);
     }
 
     /**
@@ -539,15 +583,18 @@ class ReporteController extends Controller
     /** @return array<string, float|int> */
     private function valorInventario(): array
     {
+        // Sobre todo lo que hay en estante, activo o no: dar de baja un
+        // producto con stock no hace desaparecer lo que costó.
         $totales = DB::table('productos')
-            ->where('activo', 1)
-            ->selectRaw('COUNT(*) AS productos')
+            ->selectRaw('COALESCE(SUM(activo = 1), 0) AS productos')
+            ->selectRaw('COALESCE(SUM(activo = 0 AND stock_actual > 0), 0) AS inactivos_con_stock')
             ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS costo')
             ->selectRaw('COALESCE(SUM(stock_actual * precio_venta), 0) AS venta')
             ->first();
 
         return [
             'productos' => (int) $totales->productos,
+            'inactivos_con_stock' => (int) $totales->inactivos_con_stock,
             'costo' => (float) $totales->costo,
             'venta' => (float) $totales->venta,
             'margen' => round((float) $totales->venta - (float) $totales->costo, 2),
