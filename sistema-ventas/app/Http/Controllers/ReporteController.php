@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Producto;
 use App\Services\Hojas;
 use App\Support\Config;
+use App\Support\TopePdf;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
@@ -71,14 +73,14 @@ class ReporteController extends Controller
             ->descargar($this->nombreFichero('productos', $desde, $hasta, 'xlsx'));
     }
 
-    public function ventasPdf(Request $request): Response
+    public function ventasPdf(Request $request): Response|RedirectResponse
     {
         [$desde, $hasta] = $this->rango($request);
 
         return $this->pdf($this->documentoVentas($desde, $hasta), $this->nombreFichero('ventas', $desde, $hasta, 'pdf'));
     }
 
-    public function productosPdf(Request $request): Response
+    public function productosPdf(Request $request): Response|RedirectResponse
     {
         [$desde, $hasta] = $this->rango($request);
 
@@ -89,8 +91,12 @@ class ReporteController extends Controller
      * El PDF sale de la misma estructura que el Excel, así que las dos
      * descargas no se pueden separar con el tiempo.
      */
-    private function pdf(array $documento, string $nombreFichero): Response
+    private function pdf(array $documento, string $nombreFichero): Response|RedirectResponse
     {
+        if ($aviso = TopePdf::excedido($documento)) {
+            return back()->with('error', $aviso);
+        }
+
         return Pdf::loadView('reportes.pdf', ['doc' => $documento])
             ->setPaper('a4', $documento['orientacion'] ?? 'portrait')
             ->download($nombreFichero);

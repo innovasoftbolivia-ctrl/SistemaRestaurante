@@ -49,4 +49,11 @@ return [
         'ruta' => env('RESPALDOS_RUTA'),
     ],
 
+    /*
+    | Filas máximas de un PDF (ver App\Support\TopePdf). 250 entra holgado en
+    | 256 MB de memoria; con más memoria se puede subir.
+    */
+
+    'pdf_max_filas' => (int) env('PDF_MAX_FILAS', 250),
+
 ];

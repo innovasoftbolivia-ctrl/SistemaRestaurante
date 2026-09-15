@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Services\Hojas;
 use App\Services\LibroDeVentas;
 use App\Support\Config;
+use App\Support\TopePdf;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\View\View;
@@ -55,11 +57,16 @@ class LibroVentasController extends Controller
             ->descargar(sprintf('libro-ventas-iva_%04d-%02d.xlsx', $anio, $mes));
     }
 
-    public function pdf(Request $request): Response
+    public function pdf(Request $request): Response|RedirectResponse
     {
         [$anio, $mes] = $this->periodo($request);
+        $documento = $this->documento(LibroDeVentas::mes($anio, $mes));
 
-        return Pdf::loadView('reportes.pdf', ['doc' => $this->documento(LibroDeVentas::mes($anio, $mes))])
+        if ($aviso = TopePdf::excedido($documento)) {
+            return back()->with('error', $aviso);
+        }
+
+        return Pdf::loadView('reportes.pdf', ['doc' => $documento])
             ->setPaper('a4', 'landscape')
             ->download(sprintf('libro-ventas-iva_%04d-%02d.pdf', $anio, $mes));
     }

@@ -222,4 +222,30 @@ class LibroDeVentasTest extends TestCase
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
     }
+
+    /**
+     * Con muchas facturas dompdf se queda sin memoria y el mes entero da error
+     * 500. Pasado el tope no se genera: se ofrece el Excel, que trae lo mismo.
+     */
+    public function test_un_libro_demasiado_largo_para_pdf_ofrece_el_excel(): void
+    {
+        $this->vender([['P-0001', 2]], $this->empresa());
+        $this->vender([['P-0004', 1]], $this->empresa());
+        config(['ventas.pdf_max_filas' => 1]);
+        $mes = now()->format('Y-m');
+
+        $this->actingAs($this->admin())
+            ->from(route('reportes.libro-ventas', ['mes' => $mes]))
+            ->get(route('reportes.libro-ventas.pdf', ['mes' => $mes]))
+            ->assertRedirect(route('reportes.libro-ventas', ['mes' => $mes]))
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'Descarga el Excel'));
+
+        $this->actingAs($this->admin())
+            ->get(route('reportes.libro-ventas.excel', ['mes' => $mes]))
+            ->assertOk();
+
+        $this->actingAs($this->admin())
+            ->get(route('reportes.ventas.pdf'))
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'el PDF admite hasta 1'));
+    }
 }
