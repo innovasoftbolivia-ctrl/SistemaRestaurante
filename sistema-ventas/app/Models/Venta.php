@@ -30,6 +30,7 @@ class Venta extends Model
     protected $fillable = [
         'cliente_id', 'usuario_id', 'sesion_caja_id', 'fecha',
         'descuento', 'estado', 'observacion',
+        'impuesto_incluido', 'descuento_precio_final',
     ];
 
     protected function casts(): array
@@ -40,6 +41,8 @@ class Venta extends Model
             'subtotal' => 'decimal:2',
             'descuento' => 'decimal:2',
             'impuesto' => 'decimal:2',
+            'impuesto_incluido' => 'boolean',
+            'descuento_precio_final' => 'decimal:2',
             'total' => 'decimal:2',
             'total_devuelto' => 'decimal:2',
         ];
@@ -117,6 +120,21 @@ class Venta extends Model
      * Una venta anulada ya devolvió su stock y su dinero; una totalmente
      * devuelta no tiene nada más que devolver.
      */
+    /**
+     * El descuento como lo vio el cliente: con el impuesto incluido, sobre el
+     * precio final; si no, sobre la base.
+     */
+    public function getDescuentoVisibleAttribute(): float
+    {
+        return $this->impuesto_incluido ? (float) $this->descuento_precio_final : (float) $this->descuento;
+    }
+
+    /** Lo cobrado por los productos antes del descuento, con el impuesto incluido. */
+    public function getTotalAntesDelDescuentoAttribute(): float
+    {
+        return round((float) $this->total + $this->descuento_visible, 2);
+    }
+
     /** Días después de la venta en que todavía se acepta una devolución. */
     public static function diasParaDevolver(): int
     {

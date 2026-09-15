@@ -26,6 +26,29 @@ class Config
         return (float) self::get('tasa_impuesto', '0');
     }
 
+    /**
+     * ¿El precio de venta ya trae el impuesto? En Bolivia es lo habitual: el
+     * precio de estante es lo que paga el cliente y el IVA va por dentro.
+     */
+    public static function preciosIncluyenImpuesto(): bool
+    {
+        return (string) self::get('precios_incluyen_impuesto', '0') === '1';
+    }
+
+    /**
+     * El impuesto que lleva adentro un importe con impuesto incluido:
+     * ROUND(importe × tasa / (1 + tasa), 2), en centavos enteros, igual que
+     * la columna generada `venta_detalle.impuesto_linea`.
+     */
+    public static function impuestoDentroDe(float $importe, ?float $tasa = null): float
+    {
+        $centavos = (int) round($importe * 100);
+        $t = (int) round(($tasa ?? self::tasaImpuesto()) * 10000);
+        $d = 10000 + $t;
+
+        return intdiv(2 * $centavos * $t + $d, 2 * $d) / 100;
+    }
+
     public static function moneda(): string
     {
         return self::get('moneda_simbolo', 'Bs');

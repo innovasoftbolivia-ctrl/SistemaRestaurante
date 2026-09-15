@@ -404,12 +404,18 @@ CREATE TABLE ventas (
     usuario_id          INT UNSIGNED NOT NULL,      -- cajero que vendió
     sesion_caja_id      INT UNSIGNED NOT NULL,
     fecha               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- El precio de venta NO incluye impuesto:
+    -- En los dos modos de precio, las columnas guardan lo mismo:
     --   subtotal = base imponible (suma del detalle, sin impuesto)
+    --   descuento = la parte del descuento que baja la base
     --   total    = subtotal - descuento + impuesto
+    -- Con `impuesto_incluido` = 1 el precio de cada línea ya trae el impuesto y
+    -- el cliente ve el descuento sobre el precio final (`descuento_precio_final`):
+    -- sp_recalcular_venta reparte ese descuento entre base e impuesto.
     subtotal            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     descuento           DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     impuesto            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    impuesto_incluido   TINYINT(1)    NOT NULL DEFAULT 0,
+    descuento_precio_final DECIMAL(12,2) NULL,
     -- derivada de las tres anteriores: columna generada (3FN)
     total               DECIMAL(12,2) GENERATED ALWAYS AS
                         (ROUND(subtotal - descuento + impuesto, 2)) STORED,
@@ -448,19 +454,22 @@ CREATE TABLE venta_detalle (
     -- cambia porque el proveedor subió el precio después. NULL solo en ventas
     -- anteriores al 15/09/2026 que no se pudieron completar.
     costo_unitario      DECIMAL(12,2) NULL,
+    -- Base de la línea, sin impuesto. Con el impuesto incluido en el precio,
+    -- es lo cobrado menos el impuesto que lleva adentro.
     importe             DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario - descuento, 2)) STORED,
+                        (ROUND(cantidad * precio_unitario - descuento, 2) - IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), 0)) STORED,
     -- Desglose de impuesto por línea: es lo que imprime la FACTURA.
-    -- Se copian del producto y de la configuración al insertar (ver trigger BEFORE INSERT).
+    -- Se copian del producto, de la configuración y de la venta al insertar
+    -- (ver trigger BEFORE INSERT).
     afecto_impuesto     TINYINT(1)    NOT NULL DEFAULT 1,
     tasa_impuesto       DECIMAL(6,4)  NOT NULL DEFAULT 0.0000,
+    -- 1 = el precio unitario ya incluye el impuesto (se calcula «por dentro»).
+    impuesto_incluido   TINYINT(1)    NOT NULL DEFAULT 0,
     impuesto_linea      DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(ROUND(cantidad * precio_unitario - descuento, 2)
-                               * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2)) STORED,
+                        (IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
+    -- Lo que paga el cliente por la línea.
     total_linea         DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario - descuento, 2)
-                         + ROUND(ROUND(cantidad * precio_unitario - descuento, 2)
-                                 * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2)) STORED,
+                        (ROUND(cantidad * precio_unitario - descuento, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     cantidad_devuelta   DECIMAL(12,3) NOT NULL DEFAULT 0.000,
     PRIMARY KEY (id),
     KEY ix_detalle_venta    (venta_id),
@@ -1033,6 +1042,9 @@ FOR EACH ROW
 BEGIN
     DECLARE v_afecto TINYINT(1);
 
+    -- La línea sigue el modo de precio de su venta: todas iguales.
+    SET NEW.impuesto_incluido = IFNULL((SELECT impuesto_incluido FROM ventas WHERE id = NEW.venta_id), 0);
+
     IF NEW.tasa_impuesto = 0 THEN
         SELECT afecto_impuesto INTO v_afecto FROM productos WHERE id = NEW.producto_id;
         SET NEW.afecto_impuesto = IFNULL(v_afecto, 0);
@@ -1238,44 +1250,70 @@ BEGIN
 END$$
 
 -- 11.2 Recalcular los totales de una venta a partir de su detalle.
---      El precio de venta NO incluye impuesto: el impuesto se agrega sobre la base.
+--      En los dos modos:
 --          subtotal  = suma de importes del detalle (base imponible, sin impuesto)
---          impuesto  = base afecta, neta de descuento, x tasa
 --          total     = subtotal - descuento + impuesto
+--      Impuesto encima del precio: impuesto = impuesto de las líneas, en la
+--      proporción de la base que deja el descuento.
+--      Impuesto incluido: el total es lo cobrado por las líneas menos el
+--      descuento que vio el cliente; el impuesto baja en la misma proporción y
+--      `descuento` guarda la parte de ese descuento que corresponde a la base.
 --      El descuento de cabecera se prorratea entre la base afecta y la inafecta.
 CREATE PROCEDURE sp_recalcular_venta (IN p_venta_id BIGINT UNSIGNED)
 BEGIN
     DECLARE v_base_total     DECIMAL(12,2);
     DECLARE v_impuesto_bruto DECIMAL(12,2);
+    DECLARE v_total_lineas   DECIMAL(12,2);
     DECLARE v_descuento      DECIMAL(12,2);
     DECLARE v_impuesto       DECIMAL(12,2);
+    DECLARE v_incluido       TINYINT(1);
+    DECLARE v_desc_final     DECIMAL(12,2);
 
     -- el impuesto por línea ya está calculado y guardado en venta_detalle
-    SELECT IFNULL(SUM(importe), 0), IFNULL(SUM(impuesto_linea), 0)
-      INTO v_base_total, v_impuesto_bruto
+    SELECT IFNULL(SUM(importe), 0), IFNULL(SUM(impuesto_linea), 0), IFNULL(SUM(total_linea), 0)
+      INTO v_base_total, v_impuesto_bruto, v_total_lineas
       FROM venta_detalle
      WHERE venta_id = p_venta_id;
 
-    SELECT descuento INTO v_descuento FROM ventas WHERE id = p_venta_id;
+    SELECT descuento, impuesto_incluido, IFNULL(descuento_precio_final, 0)
+      INTO v_descuento, v_incluido, v_desc_final
+      FROM ventas WHERE id = p_venta_id;
 
-    IF v_descuento > v_base_total THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'El descuento no puede superar el subtotal de la venta';
+    IF v_incluido = 1 THEN
+        IF v_desc_final > v_total_lineas THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'El descuento no puede superar el total de la venta';
+        END IF;
+
+        SET v_impuesto = IF(v_total_lineas > 0,
+                            ROUND(v_impuesto_bruto * (v_total_lineas - v_desc_final) / v_total_lineas, 2),
+                            0);
+
+        UPDATE ventas
+           SET subtotal  = v_base_total,
+               descuento = v_desc_final - v_impuesto_bruto + v_impuesto,
+               impuesto  = v_impuesto
+         WHERE id = p_venta_id;
+    ELSE
+        IF v_descuento > v_base_total THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'El descuento no puede superar el subtotal de la venta';
+        END IF;
+
+        -- El impuesto baja en la proporción de la base que deja el descuento de
+        -- cabecera. En una sola cuenta, sin guardar antes el factor: con el factor
+        -- en una variable de 6 decimales, 0.51 × 3.30 / 3.96 daba 0.42 y no 0.43, y
+        -- el procedimiento y el modo PHP no cobraban el mismo impuesto.
+        SET v_impuesto = IF(v_base_total > 0,
+                            ROUND(v_impuesto_bruto * (v_base_total - v_descuento) / v_base_total, 2),
+                            0);
+
+        -- `total` es columna generada: se recalcula sola a partir de estos tres valores
+        UPDATE ventas
+           SET subtotal = v_base_total,
+               impuesto = v_impuesto
+         WHERE id = p_venta_id;
     END IF;
-
-    -- El impuesto baja en la proporción de la base que deja el descuento de
-    -- cabecera. En una sola cuenta, sin guardar antes el factor: con el factor
-    -- en una variable de 6 decimales, 0.51 × 3.30 / 3.96 daba 0.42 y no 0.43, y
-    -- el procedimiento y el modo PHP no cobraban el mismo impuesto.
-    SET v_impuesto = IF(v_base_total > 0,
-                        ROUND(v_impuesto_bruto * (v_base_total - v_descuento) / v_base_total, 2),
-                        0);
-
-    -- `total` es columna generada: se recalcula sola a partir de estos tres valores
-    UPDATE ventas
-       SET subtotal = v_base_total,
-           impuesto = v_impuesto
-     WHERE id = p_venta_id;
 END$$
 
 -- 11.2.b Emitir el comprobante de una venta: FACTURA para persona jurídica,

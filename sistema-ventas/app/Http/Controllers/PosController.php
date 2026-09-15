@@ -49,6 +49,7 @@ class PosController extends Controller
                     'juridica' => $c->llevaFactura(),
                 ]),
             'tasaImpuesto' => Config::tasaImpuesto(),
+            'impuestoIncluido' => Config::preciosIncluyenImpuesto(),
             'moneda' => Config::moneda(),
             'descuentoMaximo' => (float) Config::get('descuento_max_cajero', '0'),
             'puedeDescontar' => Auth::user()->tienePermiso('ventas.descuento'),

@@ -34,6 +34,19 @@ export function impuestoDe(importe, tasa) {
 }
 
 /**
+ * El impuesto que lleva adentro un importe con impuesto incluido:
+ * ROUND(importe × tasa / (1 + tasa), 2), exacto, igual que la columna
+ * generada `venta_detalle.impuesto_linea` y Config::impuestoDentroDe.
+ */
+export function impuestoIncluido(importe, tasa) {
+    const c = centavos(importe);
+    const t = Math.round(Number(tasa || 0) * 10000);
+    const d = 10000 + t;
+
+    return Math.floor((2 * c * t + d) / (2 * d)) / 100;
+}
+
+/**
  * El impuesto que queda después del descuento de cabecera:
  * ROUND(bruto × (base − descuento) / base, 2), exacto, igual que
  * sp_recalcular_venta y ReglasEnPhp::recalcularVenta.
@@ -52,4 +65,4 @@ export function sumar(importes) {
     return importes.reduce((total, importe) => total + centavos(importe), 0) / 100;
 }
 
-window.montos = { centavos, importeLinea, impuestoDe, impuestoConDescuento, sumar };
+window.montos = { centavos, importeLinea, impuestoDe, impuestoIncluido, impuestoConDescuento, sumar };

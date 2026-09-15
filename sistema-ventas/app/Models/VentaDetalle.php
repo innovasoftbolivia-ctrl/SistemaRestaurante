@@ -29,7 +29,7 @@ class VentaDetalle extends Model
     protected $fillable = [
         'venta_id', 'producto_id', 'descripcion', 'unidad',
         'cantidad', 'precio_unitario', 'descuento', 'costo_unitario',
-        'afecto_impuesto', 'tasa_impuesto',
+        'afecto_impuesto', 'tasa_impuesto', 'impuesto_incluido',
     ];
 
     protected function casts(): array

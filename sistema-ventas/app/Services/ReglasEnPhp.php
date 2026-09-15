@@ -50,6 +50,9 @@ class ReglasEnPhp
      */
     public static function antesDeInsertarLineaVenta(array $linea): array
     {
+        // La línea sigue el modo de precio de su venta: todas iguales.
+        $linea['impuesto_incluido'] = (int) DB::table('ventas')->where('id', $linea['venta_id'])->value('impuesto_incluido');
+
         if ((float) ($linea['tasa_impuesto'] ?? 0) != 0) {
             return $linea;
         }
@@ -271,12 +274,37 @@ class ReglasEnPhp
     {
         $totales = DB::table('venta_detalle')
             ->where('venta_id', $ventaId)
-            ->selectRaw('IFNULL(SUM(importe),0) AS base, IFNULL(SUM(impuesto_linea),0) AS impuesto')
+            ->selectRaw('IFNULL(SUM(importe),0) AS base, IFNULL(SUM(impuesto_linea),0) AS impuesto, IFNULL(SUM(total_linea),0) AS cobrado')
             ->first();
 
         $base = (float) $totales->base;
         $impuestoBruto = (float) $totales->impuesto;
-        $descuento = (float) DB::table('ventas')->where('id', $ventaId)->value('descuento');
+        $venta = DB::table('ventas')->where('id', $ventaId)->first(['descuento', 'impuesto_incluido', 'descuento_precio_final']);
+        $descuento = (float) $venta->descuento;
+
+        // Con el impuesto incluido, el descuento lo vio el cliente sobre el
+        // precio final: el total es lo cobrado menos ese descuento, el
+        // impuesto baja en la misma proporción y `descuento` guarda la parte
+        // que corresponde a la base. Igual que sp_recalcular_venta.
+        if ($venta->impuesto_incluido) {
+            $cobradoC = (int) round((float) $totales->cobrado * 100);
+            $finalC = (int) round((float) $venta->descuento_precio_final * 100);
+            $brutoC = (int) round($impuestoBruto * 100);
+
+            if ($finalC > $cobradoC) {
+                throw new RuntimeException('El descuento no puede superar el total de la venta');
+            }
+
+            $impuestoC = $cobradoC > 0 ? intdiv(2 * $brutoC * ($cobradoC - $finalC) + $cobradoC, 2 * $cobradoC) : 0;
+
+            DB::table('ventas')->where('id', $ventaId)->update([
+                'subtotal' => $base,
+                'descuento' => ($finalC - $brutoC + $impuestoC) / 100,
+                'impuesto' => $impuestoC / 100,
+            ]);
+
+            return;
+        }
 
         if ($descuento > $base) {
             throw new RuntimeException('El descuento no puede superar el subtotal de la venta');

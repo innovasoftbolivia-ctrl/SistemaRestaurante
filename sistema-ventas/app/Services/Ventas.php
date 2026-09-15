@@ -95,6 +95,9 @@ class Ventas
                 'sesion_caja_id' => $sesion->id,
                 'fecha' => now(),
                 'descuento' => 0, // se aplica después: la base exige descuento <= subtotal
+                // El modo de precio queda con la venta: si mañana cambia la
+                // configuración, esta venta se sigue calculando igual.
+                'impuesto_incluido' => Config::preciosIncluyenImpuesto(),
                 'estado' => 'COMPLETADA',
                 'observacion' => $observacion,
             ]);
@@ -107,11 +110,21 @@ class Ventas
             if ($descuento > 0) {
                 $venta->refresh();
 
-                if ($descuento > (float) $venta->subtotal) {
-                    throw new RuntimeException('El descuento no puede superar el subtotal de la venta.');
-                }
+                if ($venta->impuesto_incluido) {
+                    // El cliente ve el descuento sobre el precio final: el
+                    // recálculo lo reparte entre base e impuesto.
+                    if ($descuento > (float) $venta->total) {
+                        throw new RuntimeException('El descuento no puede superar el total de la venta.');
+                    }
 
-                $venta->update(['descuento' => $descuento]);
+                    $venta->update(['descuento_precio_final' => $descuento]);
+                } else {
+                    if ($descuento > (float) $venta->subtotal) {
+                        throw new RuntimeException('El descuento no puede superar el subtotal de la venta.');
+                    }
+
+                    $venta->update(['descuento' => $descuento]);
+                }
 
                 // Segundo recálculo: el impuesto baja en proporción al descuento.
                 self::recalcular($venta->id);

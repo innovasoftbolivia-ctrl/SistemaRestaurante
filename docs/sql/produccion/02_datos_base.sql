@@ -121,7 +121,11 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('negocio_telefono',    '',                      'Teléfono de contacto'),
     ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
-    ('tasa_impuesto',       '0.1300',                'Tasa del IVA (en Bolivia, 13 %)'),
+    -- Un negocio nuevo arranca sin cobrar impuesto y con los precios como el
+    -- cliente los ve. Si factura con IVA, se activa en Configuración: con el
+    -- precio incluido, lo que paga el cliente no cambia.
+    ('tasa_impuesto',       '0.0000',                'Tasa del IVA (en Bolivia, 13 %); 0 = el negocio no cobra impuesto'),
+    ('precios_incluyen_impuesto', '1',               'Los precios de venta ya incluyen el impuesto (1 = sí; 0 = se suma encima)'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('egreso_max_cajero',   '200.00',                'Egreso máximo (Bs) que el cajero registra sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),

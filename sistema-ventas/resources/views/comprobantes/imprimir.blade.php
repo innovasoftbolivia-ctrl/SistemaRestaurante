@@ -14,6 +14,10 @@
     // 80 mm que el cliente mira para comprobar lo que pagó, y el desglose
     // fiscal es asunto del A4.
     $llevaImpuesto = (float) $comprobante->impuesto > 0;
+
+    // El modo de precio es el de la venta, no el de hoy.
+    $ventaDoc = $comprobante->venta;
+    $incluido = (bool) $ventaDoc?->impuesto_incluido;
     // El símbolo sale del código congelado en el documento, no de la
     // configuración de hoy: si el negocio cambió de moneda, lo ya emitido no.
     $moneda = Config::simbolo($comprobante->moneda);
@@ -380,7 +384,8 @@
                             <td class="cifra derecha">{{ $linea->cantidad_con_unidad }}</td>
                             <td class="cifra derecha">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
                         @endunless
-                        <td class="cifra derecha">{{ number_format((float) $linea->importe, 2) }}</td>
+                        {{-- Con el impuesto incluido, la línea vale lo que pagó el cliente. --}}
+                        <td class="cifra derecha">{{ number_format((float) ($incluido ? $linea->total_linea : $linea->importe), 2) }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -389,6 +394,32 @@
         <hr class="regla">
 
         <table class="totales">
+            @if ($incluido)
+            <tr>
+                <td class="tenue">Productos</td>
+                <td class="derecha">{{ $moneda }} {{ number_format($ventaDoc->total_antes_del_descuento, 2) }}</td>
+            </tr>
+            @if ($ventaDoc->descuento_visible > 0)
+                <tr>
+                    <td class="tenue">Descuento</td>
+                    <td class="derecha">− {{ $moneda }} {{ number_format($ventaDoc->descuento_visible, 2) }}</td>
+                </tr>
+            @endif
+            <tr class="total-final">
+                <td>TOTAL</td>
+                <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->total, 2) }}</td>
+            </tr>
+            @if ((float) $comprobante->impuesto > 0)
+                <tr data-iva-incluido>
+                    <td class="tenue">IVA incluido</td>
+                    <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->impuesto, 2) }}</td>
+                </tr>
+                <tr>
+                    <td class="tenue">Importe base</td>
+                    <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->total - (float) $comprobante->impuesto, 2) }}</td>
+                </tr>
+            @endif
+            @else
             <tr>
                 <td class="tenue">Subtotal (base imponible)</td>
                 <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->subtotal, 2) }}</td>
@@ -412,6 +443,7 @@
                 <td>TOTAL</td>
                 <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->total, 2) }}</td>
             </tr>
+            @endif
         </table>
 
         <hr class="regla">

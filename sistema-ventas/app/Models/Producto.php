@@ -15,9 +15,10 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Un artículo del catálogo.
  *
- * Sobre los precios: `precio_compra` y `precio_venta` se guardan SIN impuesto.
- * El precio que ve el cliente en el estante es `precio_venta * (1 + tasa)`, y
- * se calcula al vuelo con la tasa vigente en `configuracion`.
+ * Sobre los precios: `precio_compra` se guarda SIN impuesto. `precio_venta`
+ * depende de cómo trabaja el negocio (Configuración → precios con impuesto
+ * incluido): si el precio ya trae el impuesto, es lo que paga el cliente; si
+ * no, es la base y el cliente paga `precio_venta * (1 + tasa)`.
  *
  * Sobre el stock: `stock_actual` NO se edita a mano. Cambia solo a través de
  * {@see Inventario}, que deja siempre un movimiento con su
@@ -265,26 +266,38 @@ class Producto extends Model
 
     // ------------------------------------------------------------- derivados
 
-    /** Precio que ve el cliente: base + impuesto, si el producto está afecto. */
+    /** Precio que ve el cliente: con el impuesto, si el producto está afecto. */
     public function getPrecioEstanteAttribute(): float
     {
-        $base = (float) $this->precio_venta;
+        $precio = (float) $this->precio_venta;
 
-        return $this->afecto_impuesto
-            ? round($base * (1 + Config::tasaImpuesto()), 2)
-            : round($base, 2);
+        if (Config::preciosIncluyenImpuesto() || ! $this->afecto_impuesto) {
+            return round($precio, 2);
+        }
+
+        return round($precio * (1 + Config::tasaImpuesto()), 2);
+    }
+
+    /** Precio de venta sin impuesto: sobre él se calcula el margen. */
+    public function getPrecioBaseAttribute(): float
+    {
+        $precio = (float) $this->precio_venta;
+
+        return Config::preciosIncluyenImpuesto() && $this->afecto_impuesto
+            ? round($precio - Config::impuestoDentroDe($precio), 2)
+            : round($precio, 2);
     }
 
     /** Ganancia por unidad sobre la base imponible. */
     public function getMargenAttribute(): float
     {
-        return round((float) $this->precio_venta - (float) $this->precio_compra, 2);
+        return round($this->precio_base - (float) $this->precio_compra, 2);
     }
 
-    /** Margen en porcentaje del precio de venta. */
+    /** Margen en porcentaje del precio de venta sin impuesto. */
     public function getMargenPorcentajeAttribute(): ?float
     {
-        $venta = (float) $this->precio_venta;
+        $venta = $this->precio_base;
 
         return $venta > 0 ? round($this->margen / $venta * 100, 1) : null;
     }

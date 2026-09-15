@@ -193,6 +193,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
     ('tasa_impuesto',       '0.1300',                'Tasa del IVA (en Bolivia, 13 %)'),
+    ('precios_incluyen_impuesto', '0',               'Los precios de venta ya incluyen el impuesto (1 = sí; 0 = se suma encima)'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('egreso_max_cajero',   '200.00',                'Egreso máximo (Bs) que el cajero registra sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),

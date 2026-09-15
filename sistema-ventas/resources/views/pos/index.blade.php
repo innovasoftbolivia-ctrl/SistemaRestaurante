@@ -372,8 +372,8 @@
                         </p>
 
                         @if ($tasaImpuesto > 0)
-                            <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
-                                <span>Impuesto ({{ number_format($tasaImpuesto * 100, 0) }}%)</span>
+                            <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400" data-impuesto-del-total>
+                                <span>{{ $impuestoIncluido ? 'IVA incluido' : 'Impuesto' }} ({{ rtrim(rtrim(number_format($tasaImpuesto * 100, 2), '0'), '.') }}%)</span>
                                 <span x-text="'{{ $moneda }} ' + impuesto.toFixed(2)"></span>
                             </div>
                         @endif
@@ -805,6 +805,7 @@
                         categorias: @js($categorias->pluck('nombre', 'id')),
 
                         tasa: {{ $tasaImpuesto }},
+                        incluido: @js($impuestoIncluido),
                         maxDescuento: {{ $descuentoMaximo }},
                         puedeDescontar: {{ $puedeDescontar ? 'true' : 'false' }},
                         efectivos: @js($metodosPago->where('codigo', 'EFECTIVO')->pluck('id')->values()),
@@ -1029,7 +1030,9 @@
                             return id ? tonos[id % tonos.length] : 'bg-gray-100 text-gray-500 dark:bg-white/[0.06] dark:text-gray-400';
                         },
 
-                        /* Los precios se guardan sin impuesto; el total lo lleva encima. */
+                        /* Lo que se descuenta: la suma de las líneas a su precio. Con el
+                           impuesto encima es la base; con el impuesto incluido, lo
+                           que paga el cliente por los productos. */
                         get subtotal() {
                             return montos.sumar(this.carrito.map(l => montos.importeLinea(l.precio, l.cantidad)));
                         },
@@ -1037,9 +1040,11 @@
                         get impuesto() {
                             /* Se redondea POR LÍNEA, igual que la columna generada
                                `impuesto_linea`: sumar sin redondear daría otro total. */
-                            const bruto = montos.sumar(this.carrito.map(l => l.afecto
-                                ? montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), this.tasa)
-                                : 0));
+                            const bruto = montos.sumar(this.carrito.map(l => {
+                                if (!l.afecto) return 0;
+                                const importe = montos.importeLinea(l.precio, l.cantidad);
+                                return this.incluido ? montos.impuestoIncluido(importe, this.tasa) : montos.impuestoDe(importe, this.tasa);
+                            }));
                             /* El descuento de cabecera se prorratea, igual que en sp_recalcular_venta. */
                             return montos.impuestoConDescuento(bruto, this.subtotal, this.descuentoValido);
                         },
@@ -1065,7 +1070,10 @@
                         },
 
                         get total() {
-                            return this.redondear(this.subtotal - this.descuentoValido + this.impuesto);
+                            /* Con el impuesto incluido ya está dentro del precio. */
+                            return this.incluido
+                                ? this.redondear(this.subtotal - this.descuentoValido)
+                                : this.redondear(this.subtotal - this.descuentoValido + this.impuesto);
                         },
 
                         get excedeDescuento() {

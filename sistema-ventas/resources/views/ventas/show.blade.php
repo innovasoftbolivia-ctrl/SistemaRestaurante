@@ -150,24 +150,49 @@
                     </div>
 
                     <div class="space-y-2 border-t border-gray-100 px-6 py-5 dark:border-gray-800">
-                        <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
-                            <span>Subtotal (base imponible)</span>
-                            <span>{{ Config::importe($venta->subtotal) }}</span>
-                        </div>
-                        @if ((float) $venta->descuento > 0)
-                            <div class="flex justify-between text-theme-sm text-error-600 dark:text-error-400">
-                                <span>Descuento</span>
-                                <span>− {{ Config::importe($venta->descuento) }}</span>
+                        @if ($venta->impuesto_incluido)
+                            {{-- Precio con el impuesto adentro: el cliente vio productos,
+                                 descuento y total; el impuesto se informa aparte. --}}
+                            <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
+                                <span>Productos</span>
+                                <span>{{ Config::importe($venta->total_antes_del_descuento) }}</span>
+                            </div>
+                            @if ($venta->descuento_visible > 0)
+                                <div class="flex justify-between text-theme-sm text-error-600 dark:text-error-400">
+                                    <span>Descuento</span>
+                                    <span>− {{ Config::importe($venta->descuento_visible) }}</span>
+                                </div>
+                            @endif
+                            <div class="flex items-baseline justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
+                                <span class="font-medium text-gray-800 dark:text-white/90">Total</span>
+                                <span class="text-title-sm font-semibold text-brand-500 dark:text-brand-400">{{ Config::importe($venta->total) }}</span>
+                            </div>
+                            @if ((float) $venta->impuesto > 0)
+                                <div class="flex justify-between text-theme-xs text-gray-500 dark:text-gray-400" data-iva-incluido>
+                                    <span>Incluye IVA · base {{ Config::importe((float) $venta->total - (float) $venta->impuesto) }}</span>
+                                    <span>{{ Config::importe($venta->impuesto) }}</span>
+                                </div>
+                            @endif
+                        @else
+                            <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
+                                <span>Subtotal (base imponible)</span>
+                                <span>{{ Config::importe($venta->subtotal) }}</span>
+                            </div>
+                            @if ((float) $venta->descuento > 0)
+                                <div class="flex justify-between text-theme-sm text-error-600 dark:text-error-400">
+                                    <span>Descuento</span>
+                                    <span>− {{ Config::importe($venta->descuento) }}</span>
+                                </div>
+                            @endif
+                            <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
+                                <span>Impuesto</span>
+                                <span>{{ Config::importe($venta->impuesto) }}</span>
+                            </div>
+                            <div class="flex items-baseline justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
+                                <span class="font-medium text-gray-800 dark:text-white/90">Total</span>
+                                <span class="text-title-sm font-semibold text-brand-500 dark:text-brand-400">{{ Config::importe($venta->total) }}</span>
                             </div>
                         @endif
-                        <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
-                            <span>Impuesto</span>
-                            <span>{{ Config::importe($venta->impuesto) }}</span>
-                        </div>
-                        <div class="flex items-baseline justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
-                            <span class="font-medium text-gray-800 dark:text-white/90">Total</span>
-                            <span class="text-title-sm font-semibold text-brand-500 dark:text-brand-400">{{ Config::importe($venta->total) }}</span>
-                        </div>
 
                         @if ((float) $venta->total_devuelto > 0)
                             <div class="flex justify-between text-theme-sm text-error-600 dark:text-error-400">
