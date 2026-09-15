@@ -506,11 +506,13 @@ class ReglasEnPhp
         $devuelto = (float) DB::table('devoluciones as d')
             ->join('ventas as v', 'v.id', '=', 'd.venta_id')
             ->where('d.sesion_caja_id', $sesionId)
-            ->selectRaw('IFNULL(SUM(ROUND(d.total * IFNULL((
+            // `efectivo` lo guarda la devolución desde el 14/09/2026; las
+            // anteriores siguen con la proporción, igual que sp_cerrar_caja.
+            ->selectRaw('IFNULL(SUM(IFNULL(d.efectivo, ROUND(d.total * IFNULL((
                     SELECT SUM(vp.monto) FROM venta_pagos vp
                       JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
                      WHERE vp.venta_id = d.venta_id AND mp.afecta_caja = 1
-                 ) / NULLIF(v.total, 0), 0), 2)), 0) AS devuelto')
+                 ) / NULLIF(v.total, 0), 0), 2))), 0) AS devuelto')
             ->value('devuelto');
 
         $esperado = (float) $sesion->monto_inicial

@@ -38,7 +38,12 @@ class Devoluciones
         SesionCaja $sesion,
         array $lineas,
         string $motivo,
+        string $reembolso = Devolucion::MISMO_MEDIO,
     ): Devolucion {
+        if (! in_array($reembolso, [Devolucion::EFECTIVO, Devolucion::MISMO_MEDIO], true)) {
+            throw new RuntimeException('El medio de reembolso no es válido.');
+        }
+
         if (! $venta->admiteDevolucion()) {
             throw new RuntimeException(match ($venta->estado) {
                 'ANULADA' => 'La venta está anulada: su stock y su dinero ya se revirtieron.',
@@ -57,7 +62,17 @@ class Devoluciones
             throw new RuntimeException('No se indicó ninguna cantidad a devolver.');
         }
 
-        return DB::transaction(function () use ($venta, $usuario, $sesion, $lineas, $motivo) {
+        return DB::transaction(function () use ($venta, $usuario, $sesion, $lineas, $motivo, $reembolso) {
+            // El turno bloqueado y comprobado de nuevo: el dinero sale de ese
+            // cajón, y no puede cerrarse mientras tanto.
+            $sesion = SesionCaja::whereKey($sesion->id)->lockForUpdate()->firstOrFail();
+
+            if (! $sesion->estaAbierta()) {
+                throw new RuntimeException('Necesitas una caja abierta: el dinero de la devolución sale del cajón.');
+            }
+
+            $disponible = round($sesion->efectivoEsperado(), 2);
+
             // El chequeo de arriba se hizo sobre el `$venta` que cargó el
             // controlador, sin bloquear la fila: si una anulación de esta
             // misma venta está corriendo en paralelo (también dentro de su
@@ -95,8 +110,21 @@ class Devoluciones
             }
 
             // El trigger deja la venta en DEVUELTA si ya no queda nada por devolver.
+            $devolucion->refresh();
+            $efectivo = self::efectivoDelCajon($venta, (float) $devolucion->total, $reembolso);
+
+            if ($efectivo > $disponible) {
+                throw new RuntimeException(sprintf(
+                    'Para devolver %s en efectivo no alcanza lo que debería haber en el cajón (%s). Devuelve por el mismo medio del pago o registra antes el ingreso.',
+                    Config::importe($efectivo),
+                    Config::importe(max(0, $disponible)),
+                ));
+            }
+
             $devolucion->update([
                 'tipo' => $venta->fresh()->estado === 'DEVUELTA' ? 'TOTAL' : 'PARCIAL',
+                'reembolso' => $reembolso,
+                'efectivo' => $efectivo,
             ]);
 
             $devolucion->refresh();
@@ -107,11 +135,46 @@ class Devoluciones
                 'venta_id' => $venta->id,
                 'tipo' => $devolucion->tipo,
                 'total' => $devolucion->total,
+                'reembolso' => $reembolso,
+                'efectivo' => $devolucion->efectivo,
+                'turno' => $sesion->id,
                 'motivo' => $motivo,
             ], $usuario->id);
 
             return $devolucion->load('detalle.producto');
         }, self::REINTENTOS);
+    }
+
+    /**
+     * Qué parte de lo cobrado entró al cajón: la proporción pagada en efectivo.
+     */
+    public static function proporcionEnEfectivo(Venta $venta): float
+    {
+        $total = (float) $venta->total;
+
+        if ($total <= 0) {
+            return 0.0;
+        }
+
+        $efectivo = (float) DB::table('venta_pagos as vp')
+            ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
+            ->where('vp.venta_id', $venta->id)
+            ->where('mp.afecta_caja', 1)
+            ->sum('vp.monto');
+
+        return min(1.0, $efectivo / $total);
+    }
+
+    /**
+     * Lo que sale del cajón: todo, si se devuelve en efectivo; si se devuelve
+     * por el mismo medio, solo la parte que en su día entró en efectivo
+     * (la misma cuenta que hacía el arqueo antes de guardar este dato).
+     */
+    public static function efectivoDelCajon(Venta $venta, float $total, string $reembolso): float
+    {
+        return $reembolso === Devolucion::EFECTIVO
+            ? round($total, 2)
+            : round($total * self::proporcionEnEfectivo($venta), 2);
     }
 
     /**

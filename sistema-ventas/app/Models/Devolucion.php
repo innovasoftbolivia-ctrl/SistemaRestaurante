@@ -27,14 +27,19 @@ class Devolucion extends Model
 
     protected $fillable = [
         'venta_id', 'usuario_id', 'autorizado_por', 'sesion_caja_id',
-        'fecha', 'tipo', 'motivo',
+        'fecha', 'tipo', 'motivo', 'reembolso', 'efectivo',
     ];
+
+    public const EFECTIVO = 'EFECTIVO';
+
+    public const MISMO_MEDIO = 'MISMO_MEDIO';
 
     protected function casts(): array
     {
         return [
             'fecha' => 'datetime',
             'total' => 'decimal:2',
+            'efectivo' => 'decimal:2',
         ];
     }
 

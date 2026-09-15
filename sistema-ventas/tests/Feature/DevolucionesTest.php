@@ -190,7 +190,9 @@ class DevolucionesTest extends TestCase
         // especiales escapados como \uXXXX (JSON_HEX_*), para poder ir dentro
         // de un atributo HTML entre comillas dobles sin romperlo. Se revierte
         // ese escape para volver a tener el JSON original y decodificarlo.
-        preg_match("/devolucion\(JSON\.parse\('(.+?)'\)\)/s", $respuesta->getContent(), $m);
+        // El primer argumento son las opciones (proporción en efectivo); el
+        // segundo, las líneas.
+        preg_match("/devolucion\(JSON\.parse\('.+?'\), JSON\.parse\('(.+?)'\)\)/s", $respuesta->getContent(), $m);
         $this->assertNotEmpty($m, 'no se encontró el x-data del formulario de devolución');
 
         $lineas = json_decode(json_decode('"'.$m[1].'"'), true);
@@ -632,5 +634,112 @@ class DevolucionesTest extends TestCase
 
         $this->assertEqualsWithDelta(4, $antes - $sesion->fresh()->efectivoEsperado(), 0.01,
             'del cajón solo salen los 4 cobrados en efectivo; el resto se reembolsa por tarjeta');
+    }
+    // ================================================= una sola caja y reembolso
+
+    private function ventaCon(SesionCaja $sesion, string $codigoMetodo, float $cantidad = 2): Venta
+    {
+        return Ventas::registrar(
+            sesion: $sesion->fresh(),
+            usuario: $sesion->usuarioApertura,
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => $cantidad]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', $codigoMetodo)->value('id'), 'monto' => null]],
+        );
+    }
+
+    /**
+     * El minimarket tiene una caja. El cajero la tiene abierta y el
+     * administrador —único con permiso— registra la devolución: el dinero sale
+     * del cajón del cajero y se descuenta de ese turno.
+     */
+    public function test_con_una_sola_caja_el_administrador_devuelve_en_el_turno_del_cajero(): void
+    {
+        $this->assertSame(1, Caja::count());
+        $turnoCajero = $this->turno($this->cajero(), 200);
+        $venta = $this->ventaCon($turnoCajero, 'EFECTIVO');
+        $antes = $turnoCajero->fresh()->efectivoEsperado();
+
+        $this->actingAs($this->admin())->get("/ventas/{$venta->id}/devolver")
+            ->assertOk()->assertSee('turno de cajero1');
+
+        $this->actingAs($this->admin())->post("/ventas/{$venta->id}/devolver", [
+            'motivo' => 'Producto vencido en la góndola',
+            'lineas' => [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2, 'reingresa_stock' => 0]],
+        ])->assertSessionHasNoErrors()->assertSessionMissing('error');
+
+        $devolucion = Devolucion::where('venta_id', $venta->id)->firstOrFail();
+        $this->assertSame($turnoCajero->id, $devolucion->sesion_caja_id);
+        $this->assertSame($this->admin()->id, $devolucion->usuario_id);
+        $this->assertEqualsWithDelta($antes - (float) $venta->total, $turnoCajero->fresh()->efectivoEsperado(), 0.001);
+    }
+
+    /**
+     * Lo pagado con tarjeta, QR o billetera casi siempre se devuelve en
+     * efectivo. Antes el arqueo no lo restaba y el cajero cerraba con faltante.
+     */
+    public function test_lo_pagado_con_tarjeta_y_devuelto_en_efectivo_sale_del_cajon(): void
+    {
+        $sesion = $this->turno(inicial: 200);
+        $venta = $this->ventaCon($sesion, 'TARJETA');
+
+        $devolucion = Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Cliente arrepentido', Devolucion::EFECTIVO);
+
+        $this->assertSame('EFECTIVO', $devolucion->reembolso);
+        $this->assertSame((string) $devolucion->total, (string) $devolucion->efectivo);
+        $esperado = round(200 - (float) $devolucion->total, 2);
+        $this->assertEqualsWithDelta($esperado, $sesion->fresh()->efectivoEsperado(), 0.001);
+
+        // Y el cierre firma lo mismo que la pantalla, con procedimientos y en PHP.
+        Cajas::cerrar($sesion->fresh(), $this->admin(), $esperado);
+        $this->assertEqualsWithDelta(0, (float) $sesion->fresh()->diferencia, 0.001);
+    }
+
+    public function test_por_el_mismo_medio_solo_sale_la_parte_cobrada_en_efectivo(): void
+    {
+        $sesion = $this->turno(inicial: 200);
+        $venta = $this->ventaCon($sesion, 'TARJETA');
+
+        $this->actingAs($this->admin())->post("/ventas/{$venta->id}/devolver", [
+            'motivo' => 'Se reembolsa a la tarjeta',
+            'reembolso' => 'MISMO_MEDIO',
+            'lineas' => [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2, 'reingresa_stock' => 1]],
+        ])->assertSessionMissing('error');
+
+        $devolucion = Devolucion::where('venta_id', $venta->id)->firstOrFail();
+        $this->assertSame('MISMO_MEDIO', $devolucion->reembolso);
+        $this->assertSame('0.00', (string) $devolucion->efectivo);
+        $this->assertEqualsWithDelta(200, $sesion->fresh()->efectivoEsperado(), 0.001);
+    }
+
+    public function test_no_se_devuelve_en_efectivo_mas_de_lo_que_hay_en_el_cajon(): void
+    {
+        $sesion = $this->turno(inicial: 0);
+        $venta = $this->ventaCon($sesion, 'TARJETA');
+
+        try {
+            Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
+                [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Sin efectivo', Devolucion::EFECTIVO);
+            $this->fail('se devolvió en efectivo sin efectivo en el cajón');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('no alcanza', $e->getMessage());
+        }
+
+        $this->assertSame(0, Devolucion::where('venta_id', $venta->id)->count());
+        $this->assertSame('COMPLETADA', $venta->fresh()->estado);
+    }
+
+    public function test_sin_ninguna_caja_abierta_no_se_registra(): void
+    {
+        $sesion = $this->turno(inicial: 200);
+        $venta = $this->ventaCon($sesion, 'EFECTIVO');
+        Cajas::cerrar($sesion->fresh(), $this->admin(), $sesion->fresh()->efectivoEsperado());
+
+        $this->actingAs($this->admin())->post("/ventas/{$venta->id}/devolver", [
+            'motivo' => 'Sin caja abierta',
+            'lineas' => [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1, 'reingresa_stock' => 1]],
+        ])->assertRedirect(route('caja.index'))->assertSessionHas('error', fn ($m) => str_contains($m, 'ninguna caja abierta'));
+
+        $this->assertSame(0, Devolucion::where('venta_id', $venta->id)->count());
     }
 }

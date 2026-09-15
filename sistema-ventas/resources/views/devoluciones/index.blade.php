@@ -11,7 +11,7 @@
             @php
                 $tarjetas = [
                     ['Devoluciones', number_format($resumen['operaciones']), 'text-gray-800 dark:text-white/90', null],
-                    ['Dinero devuelto', Config::importe($resumen['devuelto']), 'text-error-600 dark:text-error-400', 'salió del cajón'],
+                    ['Dinero devuelto', Config::importe($resumen['devuelto']), 'text-error-600 dark:text-error-400', 'a clientes'],
                     ['Totales', number_format($resumen['totales']), 'text-gray-800 dark:text-white/90', 'la venta completa'],
                 ];
             @endphp

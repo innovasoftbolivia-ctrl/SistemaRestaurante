@@ -105,11 +105,11 @@ class SesionCaja extends Model
         $devuelto = (float) $this->devoluciones()
             ->join('ventas', 'ventas.id', '=', 'devoluciones.venta_id')
             ->selectRaw(
-                'IFNULL(SUM(ROUND(devoluciones.total * IFNULL('.
+                'IFNULL(SUM(IFNULL(devoluciones.efectivo, ROUND(devoluciones.total * IFNULL('.
                 '(SELECT SUM(vp.monto) FROM venta_pagos vp '.
                 'JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id '.
                 'WHERE vp.venta_id = devoluciones.venta_id AND mp.afecta_caja = 1)'.
-                ' / NULLIF(ventas.total, 0), 0), 2)), 0) AS efectivo'
+                ' / NULLIF(ventas.total, 0), 0), 2))), 0) AS efectivo'
             )
             ->value('efectivo');
 

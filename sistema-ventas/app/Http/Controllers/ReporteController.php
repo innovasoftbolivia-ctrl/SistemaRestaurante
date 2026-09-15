@@ -122,7 +122,7 @@ class ReporteController extends Controller
         $indicadores = [
             ['etiqueta' => 'Operaciones', 'valor' => $resumen['operaciones'], 'formato' => 'entero', 'nota' => 'ventas cobradas, sin contar anuladas'],
             ['etiqueta' => 'Vendido', 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'],
-            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'salió del cajón por devoluciones'],
+            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'a clientes, por devoluciones'],
             ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'vendido menos devuelto', 'destacar' => true],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
             ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'revirtieron su stock'],

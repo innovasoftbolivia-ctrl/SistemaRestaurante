@@ -8,13 +8,16 @@
 
     // Solo tienen sentido las líneas con algo pendiente de devolver.
     $lineas = $venta->detalle->filter(fn ($l) => $l->pendiente_devolucion > 0)->values();
+
+    // Si la venta no fue toda en efectivo hay que decir cómo se devuelve.
+    $pagoMixto = $proporcionEfectivo < 1;
 @endphp
 
 @section('content')
-    @unless ($sesion)
+    @if ($turnos->isEmpty())
         <div class="mx-auto max-w-xl">
-            <x-common.component-card title="No tienes una caja abierta"
-                desc="El dinero de la devolución sale del cajón, así que necesita un turno abierto donde imputarse.">
+            <x-common.component-card title="No hay ninguna caja abierta"
+                desc="El dinero de la devolución sale de un cajón, así que necesita un turno abierto donde imputarse.">
                 <x-ui.button :href="route('caja.index')" class="w-full">Ir a caja</x-ui.button>
             </x-common.component-card>
         </div>
@@ -29,7 +32,7 @@
         </div>
     @else
         <form method="POST" action="{{ route('devoluciones.store', $venta) }}"
-            x-data="devolucion(@js($lineas->map(fn ($l) => [
+            x-data="devolucion(@js(['proporcion' => $proporcionEfectivo]), @js($lineas->map(fn ($l) => [
                 'id' => $l->id,
                 'nombre' => $l->descripcion,
                 'codigo' => $l->producto?->codigo,
@@ -171,6 +174,27 @@
                 </x-common.component-card>
 
                 <x-common.component-card title="A devolver">
+                    @if ($pagoMixto)
+                        {{-- Lo pagado por QR, tarjeta o billetera casi siempre se
+                             devuelve en efectivo en el mostrador: por eso es lo que se
+                             propone. Lo que se elija es lo que descuenta el arqueo. --}}
+                        <fieldset class="space-y-2">
+                            <legend class="mb-1 text-theme-sm font-medium text-gray-700 dark:text-gray-400">¿Cómo le devuelves la plata?</legend>
+                            <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-theme-sm dark:border-gray-800">
+                                <input type="radio" name="reembolso" value="EFECTIVO" x-model="reembolso" class="mt-1">
+                                <span><b class="text-gray-800 dark:text-white/90">En efectivo, del cajón</b>
+                                    <span class="block text-theme-xs text-gray-500 dark:text-gray-400">Todo sale del cajón y el arqueo lo descuenta.</span></span>
+                            </label>
+                            <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-theme-sm dark:border-gray-800">
+                                <input type="radio" name="reembolso" value="MISMO_MEDIO" x-model="reembolso" class="mt-1">
+                                <span><b class="text-gray-800 dark:text-white/90">Por el mismo medio del pago</b>
+                                    <span class="block text-theme-xs text-gray-500 dark:text-gray-400">Del cajón sale solo la parte que se cobró en efectivo; el resto se devuelve por QR, tarjeta o transferencia.</span></span>
+                            </label>
+                        </fieldset>
+                    @else
+                        <input type="hidden" name="reembolso" value="EFECTIVO">
+                    @endif
+
                     <div class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
                         <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             Dinero que entregas al cliente
@@ -179,8 +203,10 @@
                             {{ $moneda }} <span x-text="total.toFixed(2)"></span>
                         </p>
                         <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">
-                            <span x-text="lineasElegidas"></span> línea(s) ·
-                            {{ $sesion->caja?->nombre }}
+                            <span x-text="lineasElegidas"></span> línea(s)
+                        </p>
+                        <p class="mt-1 text-theme-sm text-gray-700 dark:text-gray-300" data-sale-del-cajon>
+                            Sale del cajón: <b>{{ $moneda }} <span x-text="efectivo.toFixed(2)"></span></b>
                         </p>
 
                         <div x-show="impuesto > 0" x-cloak
@@ -196,9 +222,23 @@
                         </div>
                     </div>
 
+                    {{-- De qué cajón sale: con una sola caja, el turno abierto del
+                         cajero aunque registre la devolución el administrador. --}}
+                    @if ($sesion)
+                        <input type="hidden" name="sesion_caja_id" value="{{ $sesion->id }}">
+                        <p class="text-theme-xs text-gray-500 dark:text-gray-400">
+                            Del cajón de <b>{{ $sesion->caja?->nombre }}</b> · turno de {{ $sesion->usuarioApertura?->usuario }}.
+                        </p>
+                    @else
+                        <x-form.campo label="Caja de la que sale el dinero" for="sesion_caja_id" name="sesion_caja_id" required>
+                            <x-form.select id="sesion_caja_id" name="sesion_caja_id" required placeholder="Elige la caja"
+                                :opciones="$turnos->mapWithKeys(fn ($t) => [$t->id => $t->caja?->nombre.' · '.$t->usuarioApertura?->usuario])" />
+                        </x-form.campo>
+                    @endif
+
                     <p class="text-theme-xs text-gray-500 dark:text-gray-400">
                         Se devuelve lo que el cliente pagó: el precio y la tasa de impuesto del día de la venta, no los
-                        de hoy. El arqueo de caja descuenta ese mismo importe. Esta versión no emite nota de crédito:
+                        de hoy. El arqueo de caja descuenta lo que sale del cajón. Esta versión no emite nota de crédito:
                         la devolución revierte stock y dinero, y queda auditada.
                     </p>
 
@@ -214,9 +254,18 @@
 
         @push('scripts')
             <script>
-                function devolucion(lineas) {
+                function devolucion(opciones, lineas) {
                     return {
                         lineas: lineas.map(l => ({ ...l, cantidad: 0, reingresa: true })),
+                        reembolso: 'EFECTIVO',
+                        proporcion: Number(opciones.proporcion),
+
+                        /* Lo que sale del cajón, igual que Devoluciones::efectivoDelCajon. */
+                        get efectivo() {
+                            return this.reembolso === 'EFECTIVO'
+                                ? this.total
+                                : Math.round(this.total * this.proporcion * 100) / 100;
+                        },
 
                         /* Nunca por encima de lo pendiente, y sin fracciones si la
                            unidad no las admite. */
@@ -259,5 +308,5 @@
                 }
             </script>
         @endpush
-    @endunless
+    @endif
 @endsection

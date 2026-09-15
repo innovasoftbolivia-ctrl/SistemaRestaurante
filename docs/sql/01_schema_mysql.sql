@@ -632,13 +632,20 @@ CREATE TABLE devoluciones (
     tipo                ENUM('TOTAL','PARCIAL') NOT NULL,
     motivo              VARCHAR(255)  NOT NULL,
     total               DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    -- Cómo se le devolvió la plata al cliente y cuánto salió del cajón. En un
+    -- minimarket lo pagado por QR o billetera casi siempre se devuelve en
+    -- efectivo: sin esto el arqueo solo restaba la parte cobrada en efectivo y
+    -- el cajero cerraba con faltante. NULL en las anteriores al 14/09/2026.
+    reembolso           ENUM('EFECTIVO','MISMO_MEDIO') NULL,
+    efectivo            DECIMAL(12,2) NULL,
     PRIMARY KEY (id),
     KEY ix_devol_venta (venta_id),
     KEY ix_devol_fecha (fecha),
     CONSTRAINT fk_devol_venta   FOREIGN KEY (venta_id)       REFERENCES ventas (id),
     CONSTRAINT fk_devol_usuario FOREIGN KEY (usuario_id)     REFERENCES usuarios (id),
     CONSTRAINT fk_devol_autoriz FOREIGN KEY (autorizado_por) REFERENCES usuarios (id),
-    CONSTRAINT fk_devol_sesion  FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id)
+    CONSTRAINT fk_devol_sesion  FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id),
+    CONSTRAINT ck_devol_efectivo CHECK (efectivo IS NULL OR (efectivo >= 0 AND efectivo <= total))
 ) ENGINE=InnoDB;
 
 -- Se devuelve lo que el cliente pagó, impuesto incluido. Por eso la línea
@@ -1474,14 +1481,17 @@ BEGIN
     -- De cada devolución sale del cajón solo la fracción que en su día entró
     -- en efectivo. Una venta cobrada con tarjeta se reembolsa por el mismo
     -- medio: descontarla del cajón dejaría al cajero con un sobrante.
-    SELECT IFNULL(SUM(
+    -- Desde el 14/09/2026 cada devolución guarda en `efectivo` lo que salió
+    -- del cajón según el medio de reembolso elegido. Las anteriores no lo
+    -- tienen y siguen con la proporción de siempre.
+    SELECT IFNULL(SUM(IFNULL(d.efectivo,
                ROUND(d.total * IFNULL(
                    (SELECT SUM(vp.monto)
                       FROM venta_pagos vp
                       JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
                      WHERE vp.venta_id = d.venta_id
                        AND mp.afecta_caja = 1)
-                   / NULLIF(v.total, 0), 0), 2)
+                   / NULLIF(v.total, 0), 0), 2))
            ), 0) INTO v_devuelto
       FROM devoluciones d
       JOIN ventas v ON v.id = d.venta_id

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Devolucion;
+use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
@@ -11,6 +12,7 @@ use App\Services\Devoluciones;
 use App\Support\Config;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -78,11 +80,15 @@ class DevolucionController extends Controller
             'detalle.producto.unidadMedida:id,codigo,permite_decimal',
         ]);
 
+        $turnos = $this->turnosPosibles();
+
         return view('devoluciones.create', [
             'title' => 'Devolución de la venta #'.$venta->id,
             'trail' => ['Devoluciones' => route('devoluciones.index')],
             'venta' => $venta,
-            'sesion' => Cajas::sesionDe(Auth::user()),
+            'sesion' => $turnos->count() === 1 ? $turnos->first() : null,
+            'turnos' => $turnos,
+            'proporcionEfectivo' => Devoluciones::proporcionEnEfectivo($venta),
         ]);
     }
 
@@ -97,6 +103,8 @@ class DevolucionController extends Controller
             ],
             'lineas.*.cantidad' => ['nullable', 'numeric', 'min:0'],
             'lineas.*.reingresa_stock' => ['boolean'],
+            'reembolso' => ['nullable', Rule::in([Devolucion::EFECTIVO, Devolucion::MISMO_MEDIO])],
+            'sesion_caja_id' => ['nullable', 'integer'],
         ], [
             'motivo.required' => 'La devolución necesita un motivo: queda registrada con tu nombre.',
             'motivo.min' => 'Explica el motivo con un poco más de detalle.',
@@ -105,11 +113,18 @@ class DevolucionController extends Controller
             'motivo' => 'motivo',
         ]);
 
-        $sesion = Cajas::sesionDe(Auth::user());
+        $turnos = $this->turnosPosibles();
+        $sesion = $turnos->count() === 1
+            ? $turnos->first()
+            : $turnos->firstWhere('id', (int) ($datos['sesion_caja_id'] ?? 0));
+
+        if ($turnos->isEmpty()) {
+            return redirect()->route('caja.index')
+                ->with('error', 'No hay ninguna caja abierta: el dinero de la devolución sale de un cajón.');
+        }
 
         if (! $sesion) {
-            return redirect()->route('caja.index')
-                ->with('error', 'Abre tu caja antes de registrar una devolución: el dinero sale del cajón.');
+            return back()->with('error', 'Elige de qué caja sale el dinero de la devolución.')->withInput();
         }
 
         try {
@@ -119,6 +134,9 @@ class DevolucionController extends Controller
                 sesion: $sesion,
                 lineas: $datos['lineas'],
                 motivo: $datos['motivo'],
+                // En un minimarket lo habitual es devolver en efectivo, aunque
+                // se haya pagado por QR: el formulario lo propone así.
+                reembolso: $datos['reembolso'] ?? Devolucion::EFECTIVO,
             );
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage())->withInput();
@@ -127,6 +145,28 @@ class DevolucionController extends Controller
         return redirect()->route('devoluciones.show', $devolucion)
             ->with('exito', 'Devolución registrada por '.Config::importe($devolucion->total).
                 '. El stock que volvió al estante ya está en el kardex.');
+    }
+
+    /**
+     * De qué turno puede salir el dinero.
+     *
+     * El propio, si quien devuelve tiene la caja abierta. Si no —el caso de
+     * todos los días con una sola caja: el cajero la tiene y el administrador
+     * autoriza la devolución—, el turno abierto de la caja física, que es de
+     * donde sale la plata. Con varias cajas abiertas se elige.
+     *
+     * @return Collection<int, SesionCaja>
+     */
+    private function turnosPosibles(): Collection
+    {
+        if ($propio = Cajas::sesionDe(Auth::user())) {
+            return collect([$propio->load('caja:id,nombre', 'usuarioApertura:id,usuario')]);
+        }
+
+        return SesionCaja::with('caja:id,nombre', 'usuarioApertura:id,usuario')
+            ->where('estado', 'ABIERTA')
+            ->orderBy('caja_id')
+            ->get();
     }
 
     public function show(Devolucion $devolucion): View

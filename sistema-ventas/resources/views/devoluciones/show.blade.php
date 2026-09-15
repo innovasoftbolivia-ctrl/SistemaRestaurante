@@ -39,7 +39,12 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
             @php
                 $cifras = [
-                    ['Devuelto', Config::importe($devolucion->total), 'text-error-600 dark:text-error-400', 'salió del cajón'],
+                    ['Devuelto', Config::importe($devolucion->total), 'text-error-600 dark:text-error-400',
+                        $devolucion->efectivo === null
+                            ? 'al cliente'
+                            : ((float) $devolucion->efectivo >= (float) $devolucion->total
+                                ? 'en efectivo, del cajón'
+                                : Config::importe($devolucion->efectivo).' del cajón, el resto por el mismo medio')],
                     ['Líneas', $devolucion->detalle->count(), 'text-gray-800 dark:text-white/90', null],
                     ['Volvió al estante', $devolucion->detalle->count() - $sinReingreso->count(),
                         'text-success-700 dark:text-success-500', 'reingresó al inventario'],
