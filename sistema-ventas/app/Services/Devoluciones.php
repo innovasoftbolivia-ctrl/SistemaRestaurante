@@ -168,16 +168,18 @@ class Devoluciones
     private static function cuadrarAlCentavo(Venta $venta, Devolucion $devolucion): void
     {
         $venta = Venta::query()->whereKey($venta->id)->first(['id', 'estado', 'total', 'total_devuelto']);
-
-        if ($venta->estado !== 'DEVUELTA') {
-            return;
-        }
-
         $diferencia = round((float) $venta->total - (float) $venta->total_devuelto, 2);
 
-        // Más de diez centavos no es redondeo: algo distinto pasó y no se tapa.
-        if ($diferencia == 0 || abs($diferencia) > 0.10) {
-            return;
+        // Nunca se devuelve más de lo cobrado: el exceso se recorta siempre,
+        // aunque la venta quede con líneas pendientes. Es dinero del cajón.
+        $recorte = $diferencia < 0;
+
+        if (! $recorte) {
+            // Completar hasta lo cobrado solo tiene sentido cuando ya no queda
+            // nada por devolver, y solo si el hueco es de redondeo.
+            if ($venta->estado !== 'DEVUELTA' || $diferencia == 0 || $diferencia > 0.10) {
+                return;
+            }
         }
 
         DB::table('devoluciones')->where('id', $devolucion->id)
@@ -297,15 +299,25 @@ class Devoluciones
      */
     public static function precioNetoUnitario(Venta $venta, VentaDetalle $original): float
     {
-        $subtotal = (float) $venta->subtotal;
-        $factorCabecera = $subtotal > 0 ? ($subtotal - (float) $venta->descuento) / $subtotal : 1.0;
+        // Con el impuesto incluido en el precio, lo que se devuelve por unidad
+        // es lo que el cliente pagó por ella —impuesto adentro— y la línea de
+        // devolución lo vuelve a separar igual que la de venta. Si el impuesto
+        // iba encima, se devuelve la base y la línea le suma el impuesto.
+        $cobrado = $venta->impuesto_incluido
+            ? (float) $original->total_linea
+            : (float) $original->importe;
 
-        // `importe` ya descuenta el descuento de línea (si lo hubiera); dividir
-        // entre la cantidad da el precio neto por unidad antes de prorratear
-        // el descuento de cabecera.
-        $precioNetoDeLinea = (float) $original->importe / (float) $original->cantidad;
+        $referencia = $venta->impuesto_incluido
+            ? (float) $venta->total + $venta->descuento_visible
+            : (float) $venta->subtotal;
 
-        return round($precioNetoDeLinea * $factorCabecera, 2);
+        $descontado = $venta->impuesto_incluido
+            ? (float) $venta->total
+            : (float) $venta->subtotal - (float) $venta->descuento;
+
+        $factorCabecera = $referencia > 0 ? $descontado / $referencia : 1.0;
+
+        return round($cobrado / (float) $original->cantidad * $factorCabecera, 2);
     }
 
     /**

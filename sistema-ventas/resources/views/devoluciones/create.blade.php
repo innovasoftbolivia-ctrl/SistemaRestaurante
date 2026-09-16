@@ -45,6 +45,7 @@
                 // dinero del que el sistema realmente registra.
                 'precio' => Devoluciones::precioNetoUnitario($venta, $l),
                 'tasa' => $l->afecto_impuesto ? (float) $l->tasa_impuesto : 0,
+                'incluido' => (bool) $venta->impuesto_incluido,
                 'vendida' => (float) $l->cantidad,
                 'devuelta' => (float) $l->cantidad_devuelta,
                 'pendiente' => $l->pendiente_devolucion,
@@ -282,14 +283,22 @@
                             return Number(n).toFixed(3).replace(/\.?0+$/, '');
                         },
 
+                        /* La base sin impuesto: con el precio que ya lo incluye,
+                           es lo cobrado menos el impuesto que lleva adentro. */
                         get base() {
-                            return montos.sumar(this.lineas.map(l => montos.importeLinea(l.precio, l.cantidad)));
+                            const cobrado = montos.sumar(this.lineas.map(l => montos.importeLinea(l.precio, l.cantidad)));
+
+                            return this.lineas[0]?.incluido ? this.redondear(cobrado - this.impuesto) : cobrado;
                         },
 
+                        /* Con el impuesto incluido, el precio de la línea ya lo trae:
+                           se separa por dentro, igual que la columna generada. */
                         get impuesto() {
                             /* Redondeo por línea, igual que la columna generada
                                `impuesto_linea`. */
-                            return montos.sumar(this.lineas.map(l => montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), l.tasa)));
+                            return montos.sumar(this.lineas.map(l => l.incluido
+                                ? montos.impuestoIncluido(montos.importeLinea(l.precio, l.cantidad), l.tasa)
+                                : montos.impuestoDe(montos.importeLinea(l.precio, l.cantidad), l.tasa)));
                         },
 
                         /* Lo que la base guardará como total: con impuesto. */

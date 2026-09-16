@@ -110,11 +110,15 @@ class ReglasEnPhp
      */
     public static function antesDeInsertarLineaDevolucion(array $linea): array
     {
+        $original = DB::table('venta_detalle')->where('id', $linea['venta_detalle_id'])->first();
+
+        // El modo de precio de la venta, siempre: si el precio llevaba el
+        // impuesto adentro, la devolución lo separa igual.
+        $linea['impuesto_incluido'] = (int) ($original->impuesto_incluido ?? 0);
+
         if ((float) ($linea['tasa_impuesto'] ?? 0) != 0) {
             return $linea;
         }
-
-        $original = DB::table('venta_detalle')->where('id', $linea['venta_detalle_id'])->first();
 
         $afecto = (bool) ($original->afecto_impuesto ?? false);
         $linea['afecto_impuesto'] = $afecto;

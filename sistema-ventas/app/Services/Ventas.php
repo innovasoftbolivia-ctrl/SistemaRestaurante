@@ -158,6 +158,15 @@ class Ventas
      */
     private static function agregarLineas(Venta $venta, array $lineas): void
     {
+        // Un producto, una línea. El mostrador ya las agrupa; esto cubre a los
+        // demás llamadores (scripts, pruebas), porque con líneas repetidas la
+        // anulación reponía el stock de una sola de ellas.
+        $productos = array_column($lineas, 'producto_id');
+
+        if (count($productos) !== count(array_unique($productos))) {
+            throw new RuntimeException('La venta repite un producto en dos líneas: júntalas en una sola con la cantidad total.');
+        }
+
         foreach ($lineas as $linea) {
             $producto = Producto::findOrFail($linea['producto_id']);
 

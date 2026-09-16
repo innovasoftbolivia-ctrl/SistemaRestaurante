@@ -234,4 +234,61 @@ class ImpuestoIncluidoTest extends TestCase
         $this->actingAs($this->admin())->get(route('productos.index'))->assertOk()
             ->assertSee('el precio final con el IVA incluido', false);
     }
+
+    // ================================================================ devoluciones al centavo
+
+    /**
+     * 30 unidades de Bs 1,00 se cobran 30,00. Devolverlas devolvía 30,17,
+     * porque la línea de devolución calculaba el impuesto «por fuera» sobre un
+     * precio redondeado por unidad: 17 centavos que salían del cajón.
+     */
+    public function test_devolver_muchas_unidades_baratas_devuelve_lo_cobrado(): void
+    {
+        Producto::where('codigo', 'P-0004')->update(['precio_venta' => 1.00, 'afecto_impuesto' => 1]);
+        $sesion = $this->turno(500);
+        $antes = $sesion->fresh()->efectivoEsperado();
+
+        $venta = $this->vender(['P-0004' => 30]);
+        $this->assertSame('30.00', $venta->total);
+
+        $devolucion = Devoluciones::registrar(
+            $venta->fresh(), $this->admin(), $sesion->fresh(),
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 30]],
+            'El cliente devolvió todo', Devolucion::EFECTIVO,
+        );
+
+        $venta->refresh();
+        $this->assertSame($venta->total, $venta->total_devuelto);
+        $this->assertSame('30.00', (string) $devolucion->fresh()->total);
+        // El impuesto también se separa por dentro en la devolución.
+        $this->assertSame('3.45', (string) $devolucion->detalle->first()->impuesto_linea);
+        $this->assertSame($antes, $sesion->fresh()->efectivoEsperado());
+    }
+
+    /** Devolver en partes tampoco puede sacar del cajón más de lo cobrado. */
+    public function test_ninguna_devolucion_parcial_devuelve_de_mas(): void
+    {
+        Producto::where('codigo', 'P-0004')->update(['precio_venta' => 1.00, 'afecto_impuesto' => 1]);
+        $sesion = $this->turno(500);
+        $venta = $this->vender(['P-0004' => 30], descuento: 0.70);
+        $linea = $venta->detalle->first();
+
+        foreach ([7, 11, 12] as $cantidad) {
+            Devoluciones::registrar(
+                $venta->fresh(), $this->admin(), $sesion->fresh(),
+                [['venta_detalle_id' => $linea->id, 'cantidad' => $cantidad]],
+                'Devolución en partes', Devolucion::EFECTIVO,
+            );
+
+            $this->assertLessThanOrEqual(
+                (float) $venta->fresh()->total,
+                (float) $venta->fresh()->total_devuelto,
+                'se devolvió más de lo cobrado',
+            );
+        }
+
+        $venta->refresh();
+        $this->assertSame('DEVUELTA', $venta->estado);
+        $this->assertSame($venta->total, $venta->total_devuelto);
+    }
 }

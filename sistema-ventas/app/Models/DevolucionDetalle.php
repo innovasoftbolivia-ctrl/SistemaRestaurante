@@ -30,7 +30,7 @@ class DevolucionDetalle extends Model
     protected $fillable = [
         'devolucion_id', 'venta_detalle_id', 'producto_id',
         'cantidad', 'precio_unitario', 'reingresa_stock',
-        'afecto_impuesto', 'tasa_impuesto',
+        'afecto_impuesto', 'tasa_impuesto', 'impuesto_incluido',
     ];
 
     protected function casts(): array

@@ -472,6 +472,10 @@ CREATE TABLE venta_detalle (
                         (ROUND(cantidad * precio_unitario - descuento, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     cantidad_devuelta   DECIMAL(12,3) NOT NULL DEFAULT 0.000,
     PRIMARY KEY (id),
+    -- Un producto, una sola línea por venta. El mostrador ya lo exigía, pero la
+    -- regla vivía solo en la validación HTTP: con dos líneas del mismo producto,
+    -- `sp_anular_venta` reponía el stock de una sola de ellas.
+    UNIQUE KEY uq_detalle_venta_producto (venta_id, producto_id),
     KEY ix_detalle_venta    (venta_id),
     KEY ix_detalle_producto (producto_id),
     CONSTRAINT fk_detalle_venta    FOREIGN KEY (venta_id)    REFERENCES ventas (id) ON DELETE CASCADE,
@@ -679,18 +683,20 @@ CREATE TABLE devolucion_detalle (
     venta_detalle_id    BIGINT UNSIGNED NOT NULL,
     producto_id         INT UNSIGNED NOT NULL,
     cantidad            DECIMAL(12,3) NOT NULL,
-    precio_unitario     DECIMAL(12,2) NOT NULL,      -- base, sin impuesto
+    -- El precio que pagó el cliente por unidad: sin impuesto si la venta lo
+    -- sumaba encima, CON impuesto adentro si el precio ya lo incluía. El modo
+    -- se copia de la línea de venta (ver trigger BEFORE INSERT), igual que la
+    -- tasa: así se devuelve exactamente lo cobrado, sin inflarlo un 13 %.
+    precio_unitario     DECIMAL(12,2) NOT NULL,
     importe             DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario, 2)) STORED,
+                        (ROUND(cantidad * precio_unitario, 2) - IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), 0)) STORED,
     afecto_impuesto     TINYINT(1)    NOT NULL DEFAULT 1,
     tasa_impuesto       DECIMAL(6,4)  NOT NULL DEFAULT 0.0000,
+    impuesto_incluido   TINYINT(1)    NOT NULL DEFAULT 0,
     impuesto_linea      DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(ROUND(cantidad * precio_unitario, 2)
-                               * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2)) STORED,
+                        (IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     total_linea         DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario, 2)
-                         + ROUND(ROUND(cantidad * precio_unitario, 2)
-                                 * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2)) STORED,
+                        (ROUND(cantidad * precio_unitario, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     reingresa_stock     TINYINT(1) NOT NULL DEFAULT 1,   -- 0 si el producto vino dañado
     PRIMARY KEY (id),
     KEY ix_devdet_devolucion (devolucion_id),
@@ -1095,6 +1101,11 @@ BEGIN
     DECLARE v_afecto TINYINT(1);
     DECLARE v_tasa   DECIMAL(6,4);
 
+    -- El modo de precio de la venta, siempre: si el precio llevaba el impuesto
+    -- adentro, la devolución lo separa igual y devuelve lo mismo que se cobró.
+    SET NEW.impuesto_incluido = IFNULL((SELECT impuesto_incluido FROM venta_detalle
+                                         WHERE id = NEW.venta_detalle_id), 0);
+
     IF NEW.tasa_impuesto = 0 THEN
         SELECT afecto_impuesto, tasa_impuesto
           INTO v_afecto, v_tasa
@@ -1476,21 +1487,26 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Solo se puede anular una venta COMPLETADA';
     END IF;
 
-    -- reingreso de stock + kardex
+    -- Reingreso de stock + kardex, agrupando por producto: un UPDATE con JOIN
+    -- toca cada fila UNA vez, así que con el mismo producto en dos líneas
+    -- reponía solo una de las dos. Agrupado, repone la suma aunque el índice
+    -- único de arriba falte en una base vieja.
     INSERT INTO movimientos_inventario
         (producto_id, usuario_id, tipo, origen, venta_id,
          cantidad, stock_anterior, stock_resultante, motivo)
-    SELECT d.producto_id, p_usuario_id, 'ENTRADA', 'ANULACION', p_venta_id,
-           d.cantidad, p.stock_actual, p.stock_actual + d.cantidad,
+    SELECT t.producto_id, p_usuario_id, 'ENTRADA', 'ANULACION', p_venta_id,
+           t.cantidad, p.stock_actual, p.stock_actual + t.cantidad,
            CONCAT('Anulación de venta: ', p_motivo)
-      FROM venta_detalle d
-      JOIN productos p ON p.id = d.producto_id
-     WHERE d.venta_id = p_venta_id;
+      FROM (SELECT producto_id, SUM(cantidad) AS cantidad
+                   FROM venta_detalle WHERE venta_id = p_venta_id
+                  GROUP BY producto_id) t
+      JOIN productos p ON p.id = t.producto_id;
 
     UPDATE productos p
-      JOIN venta_detalle d ON d.producto_id = p.id
-       SET p.stock_actual = p.stock_actual + d.cantidad
-     WHERE d.venta_id = p_venta_id;
+      JOIN (SELECT producto_id, SUM(cantidad) AS cantidad
+                   FROM venta_detalle WHERE venta_id = p_venta_id
+                  GROUP BY producto_id) t ON t.producto_id = p.id
+       SET p.stock_actual = p.stock_actual + t.cantidad;
 
     UPDATE ventas
        SET estado           = 'ANULADA',

@@ -10,9 +10,11 @@ use App\Models\SesionCaja;
 use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use App\Models\Venta;
+use App\Models\VentaDetalle;
 use App\Services\Cajas;
 use App\Services\Ventas;
 use App\Support\Config;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -1002,5 +1004,50 @@ class PuntoDeVentaTest extends TestCase
         DB::table('configuracion')->where('clave', 'exigir_referencia_pago')->update(['valor' => '0']);
         Config::olvidar();
         $this->assertNull($pagar(null)->pagos->first()->referencia);
+    }
+
+    // ================================================================ una línea por producto
+
+    /**
+     * Con el mismo producto en dos líneas, anular la venta reponía el stock de
+     * una sola: el UPDATE del procedimiento toca cada fila una vez. Ahora la
+     * venta no se puede registrar así, ni por el servicio ni por la base.
+     */
+    public function test_una_venta_no_repite_el_mismo_producto_en_dos_lineas(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+
+        $rechazo = null;
+        try {
+            Ventas::registrar(
+                sesion: $sesion,
+                usuario: $this->cajero(),
+                lineas: [
+                    ['producto_id' => $producto->id, 'cantidad' => 10],
+                    ['producto_id' => $producto->id, 'cantidad' => 5],
+                ],
+                pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null]],
+            );
+        } catch (RuntimeException $e) {
+            $rechazo = $e->getMessage();
+        }
+
+        $this->assertNotNull($rechazo, 'Se registró una venta con el mismo producto repetido.');
+        $this->assertStringContainsString('repite un producto', $rechazo);
+        $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
+
+        // Y la base tampoco lo admite, para los caminos que no pasan por el servicio.
+        $venta = $this->vender($sesion->fresh(), $producto, 2);
+
+        $this->expectException(UniqueConstraintViolationException::class);
+        VentaDetalle::create([
+            'venta_id' => $venta->id,
+            'producto_id' => $producto->id,
+            'descripcion' => $producto->nombre,
+            'cantidad' => 1,
+            'precio_unitario' => $producto->precio_venta,
+            'descuento' => 0,
+        ]);
     }
 }
