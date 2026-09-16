@@ -365,6 +365,18 @@
                             <x-form.campo label="Observación" for="ingreso_motivo" name="motivo">
                                 <x-form.input id="ingreso_motivo" name="motivo" placeholder="Opcional" />
                             </x-form.campo>
+
+                            @if ($producto->controla_vencimiento)
+                                {{-- Sin fecha, la tanda queda fuera del control de vencimientos. --}}
+                                <x-form.campo label="Vence el" for="ingreso_vence" name="vence" required
+                                    help="La fecha de la tanda que llegó.">
+                                    <x-form.input id="ingreso_vence" name="vence" type="date" />
+                                </x-form.campo>
+
+                                <x-form.campo label="Lote del proveedor" for="ingreso_lote" name="lote">
+                                    <x-form.input id="ingreso_lote" name="lote" placeholder="Opcional" />
+                                </x-form.campo>
+                            @endif
                         </div>
 
                         <div class="flex justify-end gap-3">

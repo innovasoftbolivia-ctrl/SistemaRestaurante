@@ -269,12 +269,14 @@ class Inventario
                 extra: ['motivo' => $motivo],
             );
 
-            // Un conteo que corrige hacia abajo se descuenta de lo que vence
-            // antes —la merma y la rotura suelen salir justo de ahí—, y uno
-            // que corrige hacia arriba repone donde estaba. Los lotes siguen
-            // al stock, nunca al revés.
+            // Un conteo que corrige hacia abajo se descuenta primero de lo YA
+            // VENCIDO: es de donde sale la merma, y si se descontaba de lo bueno
+            // la pantalla de vencimientos seguía mostrando lo que ya estaba en
+            // la basura —y darlo de baja lo descontaba por segunda vez—. Uno que
+            // corrige hacia arriba repone donde estaba. Los lotes siguen al
+            // stock, nunca al revés.
             $diferencia < 0
-                ? Lotes::consumir($producto, abs($diferencia))
+                ? Lotes::consumir($producto, abs($diferencia), vencidoPrimero: true)
                 : Lotes::reponer($producto, $diferencia);
 
             return $movimiento;

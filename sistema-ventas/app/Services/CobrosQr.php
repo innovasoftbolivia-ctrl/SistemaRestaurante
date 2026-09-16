@@ -59,6 +59,10 @@ class CobrosQr
      */
     public static function generar(SesionCaja $sesion, Usuario $usuario, float $monto, ?string $glosa = null): CobroQr
     {
+        // El turno, releído con candado compartido: un cierre en curso hace
+        // esperar al QR y el cobro no nace colgado de una caja ya arqueada.
+        $sesion = SesionCaja::whereKey($sesion->id)->sharedLock()->first() ?? $sesion;
+
         if (! $sesion->estaAbierta()) {
             throw new RuntimeException('Necesitas una caja abierta para cobrar por QR.');
         }
@@ -162,6 +166,28 @@ class CobrosQr
     }
 
     /** El cajero cancela un QR que ya no se va a usar. */
+    /**
+     * Da por vencido un cobro que ya pasó su hora: primero se cancela en el
+     * banco —donde el QR puede seguir vivo— y después se marca aquí.
+     */
+    public static function vencer(CobroQr $cobro): CobroQr
+    {
+        if (! $cobro->estaPendiente()) {
+            return $cobro;
+        }
+
+        self::pasarela()->anular($cobro);
+
+        $cobro->update(['estado' => CobroQr::EXPIRADO]);
+
+        Auditor::registrar('COBRO_QR_VENCIDO', 'cobros_qr', $cobro->id, [
+            'monto' => $cobro->monto,
+            'expiro_en' => $cobro->expira_en?->toDateTimeString(),
+        ], $cobro->usuario_id);
+
+        return $cobro->fresh();
+    }
+
     public static function anular(CobroQr $cobro, Usuario $usuario): CobroQr
     {
         if ($cobro->estaPagado()) {

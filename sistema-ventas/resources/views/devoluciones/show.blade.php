@@ -142,6 +142,21 @@
                                 {{ Config::importe($devolucion->total) }}
                             </span>
                         </div>
+
+                        {{-- Lo que no salió del cajón: se le debe al cliente por el
+                             medio con que pagó, y el arqueo no lo muestra. --}}
+                        @if ($devolucion->reintegro_pendiente > 0)
+                            <div class="mt-3 rounded-xl bg-warning-50 px-4 py-3 dark:bg-orange-500/10" data-reintegro-pendiente>
+                                <p class="text-theme-xs font-medium text-warning-700 dark:text-orange-400">
+                                    Queda por reintegrar {{ Config::importe($devolucion->reintegro_pendiente) }}
+                                    por el mismo medio con que pagó (tarjeta, QR o transferencia).
+                                </p>
+                                <p class="mt-1 text-theme-xs text-warning-700 dark:text-orange-400">
+                                    Ese dinero no salió del cajón: se devuelve por el banco, y hasta entonces el
+                                    negocio se lo debe al cliente.
+                                </p>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>

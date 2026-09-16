@@ -65,6 +65,18 @@ class Lote extends Model
      * no se sabe cuándo vencen, y algo que no se sabe no puede reclamar
      * prioridad sobre algo que sí tiene fecha y está por vencerse.
      */
+    /**
+     * Para descontar una merma: primero lo ya vencido, que es de donde sale.
+     * Es el orden contrario al de la venta, y a propósito.
+     */
+    public function scopeVencidoPrimero(Builder $query): Builder
+    {
+        return $query
+            ->orderByRaw('CASE WHEN fecha_vencimiento IS NULL THEN 1 WHEN fecha_vencimiento < CURDATE() THEN 0 ELSE 2 END')
+            ->orderBy('fecha_vencimiento')
+            ->orderBy('id');
+    }
+
     public function scopeEnOrdenDeSalida(Builder $query): Builder
     {
         // Primero lo vigente que vence antes; después lo que no tiene fecha; y al

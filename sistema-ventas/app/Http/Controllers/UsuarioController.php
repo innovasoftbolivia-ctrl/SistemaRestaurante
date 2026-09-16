@@ -113,20 +113,26 @@ class UsuarioController extends Controller
 
     public function update(Request $request, Usuario $usuario): RedirectResponse
     {
+        $esPropia = $usuario->id === Auth::id();
+
         $datos = $request->validate([
-            'rol_id' => ['required', Rule::exists('roles', 'id')],
+            // Solo roles vigentes: con uno desactivado la cuenta se queda sin
+            // permisos y sin poder entrar, en silencio.
+            'rol_id' => ['required', Rule::exists('roles', 'id')->where('activo', 1)],
             'usuario' => [
                 'required', 'string', 'min:3', 'max:40', 'regex:/^[a-z0-9._-]+$/',
                 Rule::unique('usuarios', 'usuario')->ignore($usuario->id),
             ],
             'password' => ['nullable', 'confirmed', Password::min(8)],
+            // Cambiar la PROPIA contraseña exige la actual, igual que en Perfil:
+            // una sesión de administrador olvidada abierta no puede quedarse con
+            // la cuenta poniéndole otra clave.
+            'password_actual' => [Rule::requiredIf($esPropia && filled($request->input('password'))), 'current_password'],
             'activo' => ['boolean'],
         ], $this->mensajes(), $this->atributos());
 
         // Nadie puede quitarse a sí mismo el acceso ni cambiar su propio rol:
         // dejaría el sistema sin administrador por accidente.
-        $esPropia = $usuario->id === Auth::id();
-
         $cambios = [
             'rol_id' => $esPropia ? $usuario->rol_id : $datos['rol_id'],
             'usuario' => $datos['usuario'],

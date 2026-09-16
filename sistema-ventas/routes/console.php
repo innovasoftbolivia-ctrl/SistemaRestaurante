@@ -12,3 +12,8 @@ Artisan::command('inspire', function () {
 // andando —en Docker de producción, el servicio `programador`—. En un hosting
 // compartido no lo hay, y los respaldos se hacen desde Sistema > Respaldos.
 Schedule::command('respaldo:crear')->dailyAt('01:00')->withoutOverlapping();
+
+// Los QR vencidos se cancelan en el banco. Si no, un código que el cajero dejó
+// atrás sigue siendo cobrable allá durante horas: el cliente paga, el dinero
+// entra a la cuenta y no hay ninguna venta esperándolo.
+Schedule::command('qr:vencer')->everyFiveMinutes()->withoutOverlapping();

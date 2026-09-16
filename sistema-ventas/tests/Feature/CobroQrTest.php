@@ -338,4 +338,40 @@ class CobroQrTest extends TestCase
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->first()->id, 'monto' => null]],
         );
     }
+
+    // ================================================================ vencidos
+
+    /**
+     * Un QR vencido seguía cobrable en el banco durante horas: el cliente
+     * pagaba tarde, el dinero entraba y no había venta esperándolo. Ahora una
+     * tarea los cancela.
+     */
+    public function test_los_cobros_qr_vencidos_se_cancelan(): void
+    {
+        $this->turno();
+        $cobro = CobrosQr::generar($this->turnoActual(), $this->cajero(), 40.00);
+        CobroQr::whereKey($cobro->id)->update(['expira_en' => now()->subHour()]);
+
+        $this->artisan('qr:vencer')->assertSuccessful();
+
+        // Queda vencido aquí y cancelado en el banco: la tarea consulta la
+        // pasarela y, si sigue sin pagarse, lo cierra.
+        $this->assertSame(CobroQr::EXPIRADO, $cobro->fresh()->estado);
+        $this->assertFalse($cobro->fresh()->estaPendiente());
+
+        // Correrla de nuevo no rompe nada.
+        $this->artisan('qr:vencer')->assertSuccessful();
+        $this->assertSame(CobroQr::EXPIRADO, $cobro->fresh()->estado);
+    }
+
+    /** Uno vigente no se toca. */
+    public function test_un_cobro_qr_vigente_no_se_cancela(): void
+    {
+        $this->turno();
+        $cobro = CobrosQr::generar($this->turnoActual(), $this->cajero(), 25.00);
+
+        $this->artisan('qr:vencer')->assertSuccessful();
+
+        $this->assertSame(CobroQr::PENDIENTE, $cobro->fresh()->estado);
+    }
 }

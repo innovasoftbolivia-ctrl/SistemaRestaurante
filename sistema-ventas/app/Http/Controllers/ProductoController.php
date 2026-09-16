@@ -244,6 +244,12 @@ class ProductoController extends Controller
     /** Mercadería que llega del proveedor. */
     public function ingresar(Request $request, Producto $producto): RedirectResponse
     {
+        // Mismo criterio que Almacén › Inventario: a un producto descatalogado
+        // no se le carga mercadería.
+        if (! $producto->activo) {
+            return back()->with('error', "«{$producto->nombre}» está descatalogado: vuelve a darlo de alta antes de ingresarle mercadería.");
+        }
+
         $datos = $request->validate([
             ...$this->reglasDeCantidad(),
             'proveedor_id' => ['nullable', Rule::exists('proveedores', 'id')],
@@ -252,12 +258,21 @@ class ProductoController extends Controller
             'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'actualizar_costo' => ['boolean'],
             'motivo' => ['nullable', 'string', 'max:255'],
-        ], [], [
+            // Un producto que se lleva por lotes necesita la fecha: sin ella la
+            // tanda nace sin vencimiento, queda fuera de las alertas y sale del
+            // estante la última.
+            'vence' => [Rule::requiredIf(fn () => (bool) $producto?->controla_vencimiento), 'nullable', 'date', 'after_or_equal:today'],
+            'lote' => ['nullable', 'string', 'max:30'],
+        ], [
+            'vence.required' => 'Este producto se controla por vencimiento: escribe la fecha de la tanda que llegó.',
+            'vence.after_or_equal' => 'Esa fecha ya pasó: no se ingresa mercadería vencida.',
+        ], [
             'cantidad' => 'cantidad',
             'empaques' => 'cantidad',
             'proveedor_id' => 'proveedor',
             'documento_externo' => 'guía o factura',
             'costo_unitario' => 'costo unitario',
+            'vence' => 'fecha de vencimiento',
         ]);
 
         ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
@@ -271,6 +286,8 @@ class ProductoController extends Controller
             documentoExterno: $datos['documento_externo'] ?? null,
             costoUnitario: $costo,
             motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
+            vence: $datos['vence'] ?? null,
+            lote: $datos['lote'] ?? null,
         );
 
         // Después del movimiento: si el costo cambia, que cambie sobre una

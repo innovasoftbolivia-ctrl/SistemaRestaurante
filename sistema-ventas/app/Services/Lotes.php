@@ -75,8 +75,12 @@ class Lotes
      * sería castigar al cajero por un descuadre que no es suyo. La cifra que
      * manda es `stock_actual`, y los lotes se acomodan a ella.
      */
-    public static function consumir(Producto $producto, float $cantidad, ?int $ventaDetalleId = null): void
-    {
+    public static function consumir(
+        Producto $producto,
+        float $cantidad,
+        ?int $ventaDetalleId = null,
+        bool $vencidoPrimero = false,
+    ): void {
         if (! $producto->controla_vencimiento || $cantidad <= 0) {
             return;
         }
@@ -87,7 +91,7 @@ class Lotes
         // repartirían el mismo lote dos veces sin este bloqueo.
         $lotes = Lote::where('producto_id', $producto->id)
             ->abiertos()
-            ->enOrdenDeSalida()
+            ->when($vencidoPrimero, fn ($q) => $q->vencidoPrimero(), fn ($q) => $q->enOrdenDeSalida())
             ->lockForUpdate()
             ->get();
 

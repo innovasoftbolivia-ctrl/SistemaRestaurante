@@ -384,6 +384,21 @@
                             <x-form.campo label="Observación" for="ing_motivo" name="motivo">
                                 <x-form.input id="ing_motivo" name="motivo" placeholder="Opcional" />
                             </x-form.campo>
+
+                            {{-- Solo para lo que se lleva por lotes: sin fecha, la tanda
+                                 queda fuera del control de vencimientos. --}}
+                            <template x-if="sel.controlaVencimiento">
+                                <div class="grid grid-cols-1 gap-5 sm:col-span-2 sm:grid-cols-2">
+                                    <x-form.campo label="Vence el" for="ing_vence" name="vence" required
+                                        help="La fecha de la tanda que llegó.">
+                                        <x-form.input id="ing_vence" name="vence" type="date" />
+                                    </x-form.campo>
+
+                                    <x-form.campo label="Lote del proveedor" for="ing_lote" name="lote">
+                                        <x-form.input id="ing_lote" name="lote" placeholder="Opcional" />
+                                    </x-form.campo>
+                                </div>
+                            </template>
                         </div>
 
                         <div class="flex justify-end gap-3">

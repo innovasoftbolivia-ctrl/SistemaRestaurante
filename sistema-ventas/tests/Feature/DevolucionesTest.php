@@ -840,4 +840,30 @@ class DevolucionesTest extends TestCase
         // Lo que entró y lo que salió del cajón se cancelan: queda el fondo.
         $this->assertSame(500.0, $sesion->fresh()->efectivoEsperado());
     }
+
+    // ================================================================ reintegro pendiente
+
+    /**
+     * Lo devuelto «por el mismo medio» de una venta con tarjeta no sale del
+     * cajón: el negocio se lo debe al cliente hasta reintegrarlo por el banco,
+     * y eso tiene que verse en alguna parte.
+     */
+    public function test_la_devolucion_por_el_mismo_medio_deja_a_la_vista_lo_que_falta_reintegrar(): void
+    {
+        $sesion = $this->turno();
+        $venta = $this->ventaCon($sesion, 'TARJETA');
+
+        $devolucion = Devoluciones::registrar(
+            $venta->fresh(), $this->admin(), $sesion->fresh(),
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]],
+            'Producto con falla', Devolucion::MISMO_MEDIO,
+        );
+
+        $this->assertSame(0.0, (float) $devolucion->efectivo);
+        $this->assertSame((float) $devolucion->total, $devolucion->reintegro_pendiente);
+
+        $this->actingAs($this->admin())->get(route('devoluciones.show', $devolucion))->assertOk()
+            ->assertSee('data-reintegro-pendiente', false)
+            ->assertSee('Queda por reintegrar');
+    }
 }

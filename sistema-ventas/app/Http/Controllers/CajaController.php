@@ -183,7 +183,9 @@ class CajaController extends Controller
         $datos = $request->validate([
             'monto_declarado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'observacion' => ['nullable', 'string', 'max:255'],
-            'fondo_dejado' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            // Obligatorio: sin él, el turno siguiente abre con el monto que sea
+            // y el efectivo entre un cierre y la apertura no deja rastro.
+            'fondo_dejado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             // Obligatoria: es el sello del turno cuando se empezó a contar, y
             // sin ella el cierre se saltaba el aviso de «entró una venta
             // mientras contabas» simplemente no mandando el campo.

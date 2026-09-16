@@ -111,4 +111,43 @@ class CuentasTest extends TestCase
 
         $this->assertFalse($admin->fresh()->tienePermiso('usuarios.gestionar'));
     }
+
+    // ================================================================ pantalla de usuarios
+
+    /** Cambiar la propia contraseña exige la actual, igual que en Perfil. */
+    public function test_cambiar_la_propia_contrasena_desde_usuarios_pide_la_actual(): void
+    {
+        $admin = $this->usuario('admin');
+        $admin->forceFill(['password_hash' => Hash::make('clave-vieja-2026')])->save();
+
+        $this->actingAs($admin)->put(route('usuarios.update', $admin), [
+            'rol_id' => $admin->rol_id, 'usuario' => $admin->usuario, 'activo' => 1,
+            'password' => 'clave-nueva-2026', 'password_confirmation' => 'clave-nueva-2026',
+        ])->assertSessionHasErrors('password_actual');
+
+        $this->assertTrue(Hash::check('clave-vieja-2026', $admin->fresh()->password_hash));
+
+        $this->actingAs($admin)->put(route('usuarios.update', $admin), [
+            'rol_id' => $admin->rol_id, 'usuario' => $admin->usuario, 'activo' => 1,
+            'password_actual' => 'clave-vieja-2026',
+            'password' => 'clave-nueva-2026', 'password_confirmation' => 'clave-nueva-2026',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertTrue(Hash::check('clave-nueva-2026', $admin->fresh()->password_hash));
+    }
+
+    /** Un rol desactivado dejaría la cuenta sin permisos y sin poder entrar. */
+    public function test_no_se_asigna_un_rol_desactivado(): void
+    {
+        $rol = Rol::where('nombre', 'Almacenero')->firstOrFail();
+        $rol->update(['activo' => 0]);
+        $cajero = $this->usuario('cajero1');
+
+        $this->actingAs($this->usuario('admin'))->put(route('usuarios.update', $cajero), [
+            'rol_id' => $rol->id, 'usuario' => $cajero->usuario, 'activo' => 1,
+        ])->assertSessionHasErrors('rol_id');
+
+        $this->assertSame($cajero->rol_id, $cajero->fresh()->rol_id);
+        $this->assertTrue($cajero->fresh()->puedeIngresar());
+    }
 }

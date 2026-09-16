@@ -141,6 +141,10 @@ class InventarioController extends Controller
     /** Mercadería que llega del proveedor, con el producto elegido en la pantalla. */
     public function ingreso(Request $request): RedirectResponse
     {
+        // El producto se resuelve antes de validar: de él depende si la fecha
+        // de vencimiento es obligatoria.
+        $producto = Producto::with('unidadMedida')->find($request->input('producto_id'));
+
         $datos = $request->validate([
             'producto_id' => ['required', Rule::exists('productos', 'id')->where('activo', 1)],
             ...$this->reglasDeCantidad(),
@@ -150,8 +154,15 @@ class InventarioController extends Controller
             'costo_por' => ['nullable', 'in:UNIDAD,EMPAQUE'],
             'actualizar_costo' => ['boolean'],
             'motivo' => ['nullable', 'string', 'max:255'],
+            // Un producto que se lleva por lotes necesita la fecha: sin ella la
+            // tanda nace sin vencimiento, queda fuera de las alertas y sale del
+            // estante la última.
+            'vence' => [Rule::requiredIf(fn () => (bool) $producto?->controla_vencimiento), 'nullable', 'date', 'after_or_equal:today'],
+            'lote' => ['nullable', 'string', 'max:30'],
         ], [
             'producto_id.exists' => 'Ese producto no existe o está descatalogado.',
+            'vence.required' => 'Este producto se controla por vencimiento: escribe la fecha de la tanda que llegó.',
+            'vence.after_or_equal' => 'Esa fecha ya pasó: no se ingresa mercadería vencida.',
         ], [
             'producto_id' => 'producto',
             'cantidad' => 'cantidad',
@@ -161,7 +172,6 @@ class InventarioController extends Controller
             'costo_unitario' => 'costo unitario',
         ]);
 
-        $producto = Producto::with('unidadMedida')->findOrFail($datos['producto_id']);
         ['cantidad' => $cantidad, 'detalle' => $detalle] = $this->unidadesQueIngresan($request, $producto);
 
         $costo = $this->costoPorUnidad($request, $producto);
@@ -173,6 +183,8 @@ class InventarioController extends Controller
             documentoExterno: $datos['documento_externo'] ?? null,
             costoUnitario: $costo,
             motivo: $this->motivoDelIngreso($detalle, $datos['motivo'] ?? null),
+            vence: $datos['vence'] ?? null,
+            lote: $datos['lote'] ?? null,
         );
 
         // Después del movimiento: si el costo cambia, que cambie sobre una

@@ -16,6 +16,7 @@ use App\Services\Inventario;
 use App\Services\Lotes;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -448,5 +449,81 @@ class VencimientoTest extends TestCase
 
         // Y queda enganchada a la línea de esa factura.
         $this->assertSame($compra->id, $lote->compraDetalle->compra_id);
+    }
+
+    // ================================================================ ingreso y merma
+
+    /** Un producto que se lleva por lotes no entra sin fecha: quedaba fuera del control. */
+    public function test_ingresar_mercaderia_de_un_producto_con_lotes_exige_la_fecha(): void
+    {
+        $producto = $this->perecedero();
+
+        $this->actingAs($this->almacenero())->post(route('inventario.ingreso'), [
+            'producto_id' => $producto->id, 'cantidad' => 10, 'motivo' => 'Llegó del proveedor',
+        ])->assertSessionHasErrors('vence');
+
+        $this->actingAs($this->almacenero())->post(route('inventario.ingreso'), [
+            'producto_id' => $producto->id, 'cantidad' => 10,
+            'vence' => now()->addMonths(6)->toDateString(), 'lote' => 'L-2026-09',
+            'motivo' => 'Llegó del proveedor',
+        ])->assertSessionHasNoErrors();
+
+        $lote = Lote::where('producto_id', $producto->id)->orderByDesc('id')->first();
+        $this->assertSame(now()->addMonths(6)->toDateString(), $lote->fecha_vencimiento?->toDateString());
+        $this->assertSame('L-2026-09', $lote->codigo);
+        $this->assertSame(10.0, (float) $lote->cantidad_actual);
+
+        // Desde la ficha del producto, lo mismo.
+        $this->actingAs($this->almacenero())->post(route('productos.ingreso', $producto), [
+            'cantidad' => 5, 'motivo' => 'Llegó del proveedor',
+        ])->assertSessionHasErrors('vence');
+    }
+
+    /** La merma sale de lo ya vencido, que es de donde se tira. */
+    public function test_el_ajuste_a_la_baja_descuenta_primero_lo_vencido(): void
+    {
+        $producto = $this->perecedero();
+        DB::table('lotes')->where('producto_id', $producto->id)->delete();
+        // 10 unidades vencidas en el estante y 20 buenas.
+        $stock = 30.0;
+        DB::table('productos')->where('id', $producto->id)->update(['stock_actual' => $stock]);
+
+        DB::table('lotes')->insert([
+            [
+                'producto_id' => $producto->id, 'codigo' => 'VENCIDO',
+                'fecha_vencimiento' => now()->subDays(5)->toDateString(),
+                'cantidad_inicial' => 10, 'cantidad_actual' => 10, 'creado_en' => now(),
+            ],
+            [
+                'producto_id' => $producto->id, 'codigo' => 'BUENO',
+                'fecha_vencimiento' => now()->addMonths(6)->toDateString(),
+                'cantidad_inicial' => $stock - 10, 'cantidad_actual' => $stock - 10, 'creado_en' => now(),
+            ],
+        ]);
+
+        $this->actingAs($this->queAjusta());
+        Inventario::ajuste($producto->fresh(), $stock - 10, 'Se tiraron las unidades vencidas');
+
+        $porCodigo = DB::table('lotes')->where('producto_id', $producto->id)->pluck('cantidad_actual', 'codigo');
+        $this->assertSame(0.0, (float) $porCodigo['VENCIDO'], 'la merma tenía que salir de lo vencido');
+        $this->assertSame($stock - 10, (float) $porCodigo['BUENO']);
+    }
+
+    /** A un producto descatalogado no se le carga mercadería, tampoco desde su ficha. */
+    public function test_un_producto_descatalogado_no_recibe_mercaderia(): void
+    {
+        $producto = Producto::where('activo', 1)->where('controla_vencimiento', 0)->firstOrFail();
+        $antes = (float) $producto->stock_actual;
+        DB::table('productos')->where('id', $producto->id)->update(['activo' => 0]);
+
+        $this->actingAs($this->almacenero())->post(route('productos.ingreso', $producto), [
+            'cantidad' => 5, 'motivo' => 'Ingreso a producto dado de baja',
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'descatalogado'));
+
+        $this->actingAs($this->almacenero())->post(route('inventario.ingreso'), [
+            'producto_id' => $producto->id, 'cantidad' => 5, 'motivo' => 'Ingreso a producto dado de baja',
+        ])->assertSessionHasErrors('producto_id');
+
+        $this->assertSame($antes, (float) $producto->fresh()->stock_actual);
     }
 }

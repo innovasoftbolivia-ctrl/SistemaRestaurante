@@ -66,7 +66,7 @@ class CajaTest extends TestCase
         $sesion = $this->turno($this->cajero());
 
         $this->actingAs($this->cajero())
-            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
+            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0, 'monto_declarado' => 100])
             ->assertForbidden();
 
         $this->assertTrue($sesion->fresh()->estaAbierta());
@@ -77,7 +77,7 @@ class CajaTest extends TestCase
         $sesion = $this->turno($this->cajero());
 
         $this->actingAs($this->admin())
-            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
+            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0, 'monto_declarado' => 100])
             ->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
@@ -272,12 +272,12 @@ class CajaTest extends TestCase
     {
         $sesion = $this->turno(inicial: 100);
 
-        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 60])
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0, 'monto_declarado' => 60])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'escribe en la observación'));
         $this->assertTrue($sesion->fresh()->estaAbierta());
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => 60, 'observacion' => 'Se pagó el gas sin registrarlo',
+            'monto_declarado' => 60, 'observacion' => 'Se pagó el gas sin registrarlo', 'fondo_dejado' => 0,
             'huella' => $sesion->fresh()->huella(),
         ])->assertRedirect(route('caja.imprimir', $sesion));
 
@@ -288,7 +288,7 @@ class CajaTest extends TestCase
     {
         $sesion = $this->turno(inicial: 100);
 
-        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0, 'monto_declarado' => 100])
             ->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
@@ -320,12 +320,12 @@ class CajaTest extends TestCase
         $this->vender($sesion);
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => $esperadoVisto, 'huella' => $huella,
+            'monto_declarado' => $esperadoVisto, 'huella' => $huella, 'fondo_dejado' => 0,
         ])->assertSessionHas('error', fn ($m) => str_contains($m, 'Mientras contabas'));
         $this->assertTrue($sesion->fresh()->estaAbierta());
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => $sesion->fresh()->efectivoEsperado(), 'huella' => $sesion->fresh()->huella(),
+            'monto_declarado' => $sesion->fresh()->efectivoEsperado(), 'huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0,
         ])->assertRedirect(route('caja.imprimir', $sesion));
         $this->assertSame(0.0, (float) $sesion->fresh()->diferencia);
     }
@@ -415,13 +415,13 @@ class CajaTest extends TestCase
         $esperado = $sesion->fresh()->efectivoEsperado();
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => $esperado,
+            'monto_declarado' => $esperado, 'fondo_dejado' => 0,
         ])->assertSessionHasErrors('huella');
 
         $this->assertTrue($sesion->fresh()->estaAbierta());
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => $esperado, 'huella' => $sesion->fresh()->huella(),
+            'monto_declarado' => $esperado, 'huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0,
         ])->assertRedirect(route('caja.imprimir', $sesion));
         $this->assertFalse($sesion->fresh()->estaAbierta());
     }
@@ -468,9 +468,39 @@ class CajaTest extends TestCase
 
         $this->actingAs($arqueador->fresh())->post(route('caja.cerrar', $sesion), [
             'monto_declarado' => $sesion->fresh()->efectivoEsperado(),
-            'huella' => $sesion->fresh()->huella(),
+            'huella' => $sesion->fresh()->huella(), 'fondo_dejado' => 0,
         ])->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
+    }
+
+    // ================================================================ fondo obligatorio
+
+    /** Sin anotar cuánto queda en el cajón, el turno siguiente abre con lo que sea. */
+    public function test_el_cierre_exige_decir_cuanto_queda_en_el_cajon(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 100, 'huella' => $sesion->fresh()->huella(),
+        ])->assertSessionHasErrors('fondo_dejado');
+
+        $this->assertTrue($sesion->fresh()->estaAbierta());
+    }
+
+    /**
+     * El fondo que propone la apertura sale del último cierre que lo anotó: si
+     * el más reciente lo dejó vacío, el control no se ejecutaba nunca.
+     */
+    public function test_el_fondo_propuesto_sale_del_ultimo_cierre_que_lo_anoto(): void
+    {
+        $caja = Caja::firstOrFail();
+
+        Cajas::cerrar($this->turno(inicial: 100)->fresh(), $this->admin(), 100, null, 60);
+        // Un cierre viejo, de los que no lo anotaban.
+        $sinFondo = $this->turno(inicial: 60);
+        Cajas::cerrar($sinFondo->fresh(), $this->admin(), 60);
+
+        $this->assertSame(60.0, Cajas::fondoDejadoEn($caja));
     }
 }

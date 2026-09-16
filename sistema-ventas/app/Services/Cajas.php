@@ -95,8 +95,12 @@ class Cajas
     /** Lo que el último turno cerrado de la caja dejó en el cajón, si lo anotó. */
     public static function fondoDejadoEn(Caja $caja): ?float
     {
+        // El último cierre que SÍ lo anotó: si el más reciente lo dejó vacío
+        // —los cierres viejos, anteriores a que fuera obligatorio— el control
+        // seguía sin ejecutarse nunca.
         $fondo = SesionCaja::where('caja_id', $caja->id)
             ->where('estado', 'CERRADA')
+            ->whereNotNull('fondo_dejado')
             ->orderByDesc('fecha_cierre')
             ->orderByDesc('id')
             ->value('fondo_dejado');

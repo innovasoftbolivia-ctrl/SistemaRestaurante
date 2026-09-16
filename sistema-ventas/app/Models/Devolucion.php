@@ -43,6 +43,20 @@ class Devolucion extends Model
         ];
     }
 
+    /**
+     * Lo que queda por devolverle al cliente por el medio con que pagó
+     * (tarjeta, QR, transferencia): no sale del cajón, así que el arqueo no lo
+     * ve, pero el negocio se lo debe igual hasta que lo reintegre.
+     */
+    public function getReintegroPendienteAttribute(): float
+    {
+        if ($this->reembolso !== self::MISMO_MEDIO) {
+            return 0.0;
+        }
+
+        return round((float) $this->total - (float) $this->efectivo, 2);
+    }
+
     public function venta(): BelongsTo
     {
         return $this->belongsTo(Venta::class, 'venta_id');
