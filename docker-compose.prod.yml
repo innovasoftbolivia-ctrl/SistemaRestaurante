@@ -102,6 +102,8 @@ services:
       - "8100:80"
     volumes:
       - ./sistema-ventas/docker/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # Las cabeceras de seguridad, que cada bloque incluye (ver seguridad.conf).
+      - ./sistema-ventas/docker/nginx/seguridad.conf:/etc/nginx/conf.d/seguridad.conf:ro
       # Estáticos servidos directo desde el disco del servidor, sin pasar por
       # PHP. Es el mismo checkout desde el que se construyó la imagen, así que
       # `public/build/` (generado antes con `npm run build`) coincide con el

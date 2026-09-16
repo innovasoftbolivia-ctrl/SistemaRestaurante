@@ -156,10 +156,13 @@ class InstalacionLimpiaTest extends TestCase
 
         $this->assertTrue($cajero->fresh()->debe_cambiar_password);
 
-        // La propia, desde la ficha de usuarios, no.
-        $this->actingAs($admin)->put(route('usuarios.update', $admin), [
+        // La propia, desde la ficha de usuarios, no —y exige la contraseña actual.
+        $admin->forceFill(['password_hash' => Hash::make('clave-de-hoy-2026')])->save();
+
+        $this->actingAs($admin->fresh())->put(route('usuarios.update', $admin), [
             'rol_id' => $admin->rol_id,
             'usuario' => $admin->usuario,
+            'password_actual' => 'clave-de-hoy-2026',
             'password' => 'otra-clave-5678',
             'password_confirmation' => 'otra-clave-5678',
             'activo' => 1,

@@ -87,9 +87,43 @@ class CredencialesSeeder extends Seeder
             'intentos_fallidos' => 0,
         ])->save();
 
+        // En un archivo, no en la salida: lo que se imprime aquí termina en el
+        // log del contenedor, que Docker guarda indefinidamente y lee cualquiera
+        // con acceso al servidor. El archivo va junto a los respaldos, solo
+        // legible por el dueño, y se borra al entrar por primera vez.
+        // En la carpeta de respaldos, que en Docker es un volumen y siempre es
+        // escribible por la aplicación.
+        $carpeta = storage_path('app/respaldos');
+
+        if (! is_dir($carpeta)) {
+            @mkdir($carpeta, 0770, true);
+        }
+
+        $ruta = $carpeta.DIRECTORY_SEPARATOR.'PRIMER-ACCESO.txt';
+
+        $escrito = @file_put_contents($ruta, implode(PHP_EOL, [
+            'PRIMER ACCESO al Sistema de Ventas',
+            '',
+            '  usuario:    admin',
+            '  contraseña: '.$clave,
+            '',
+            'Al entrar, el sistema pide cambiarla. Después borra este archivo.',
+            '',
+        ]));
+        @chmod($ruta, 0600);
+
         $this->command->warn(str_repeat('=', 64));
-        $this->command->warn('  PRIMER ACCESO — usuario: admin   contraseña: '.$clave);
-        $this->command->warn('  Se muestra una sola vez. Al entrar, el sistema pide cambiarla.');
+        $this->command->warn('  PRIMER ACCESO — usuario: admin');
+
+        if ($escrito !== false) {
+            $this->command->warn('  La contraseña quedó en: '.$ruta);
+            $this->command->warn('  Léela desde el servidor y bórrala al entrar. NO sale en el log.');
+        } else {
+            // Si no se pudo escribir, más vale que salga en el log que dejar la
+            // instalación sin forma de entrar.
+            $this->command->warn('  contraseña: '.$clave.'  (no se pudo escribir '.$ruta.')');
+        }
+
         $this->command->warn(str_repeat('=', 64));
     }
 }

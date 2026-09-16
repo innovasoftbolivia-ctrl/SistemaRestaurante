@@ -889,8 +889,11 @@ sus propios datos de negocio.
    es aleatoria y sale **una sola vez** en el log del primer arranque:
 
    ```bash
-   docker compose -f docker-compose.prod.yml logs app | grep "PRIMER ACCESO"
+   docker compose -f docker-compose.prod.yml exec app cat storage/app/respaldos/PRIMER-ACCESO.txt
    ```
+
+   La contraseña **no** sale en el log del contenedor a propósito: ahí quedaría guardada para
+   siempre. Bórrala del servidor (`rm storage/app/respaldos/PRIMER-ACCESO.txt`) en cuanto entres.
 
    Al entrar, el sistema obliga a cambiarla antes de hacer cualquier otra cosa.
 

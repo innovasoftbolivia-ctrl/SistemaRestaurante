@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
+use App\Models\Cliente;
 use App\Models\Devolucion;
 use App\Models\MetodoPago;
 use App\Models\Producto;
@@ -11,7 +12,9 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Devoluciones;
+use App\Services\LibroDeVentas;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -708,5 +711,96 @@ class ReportesTest extends TestCase
                 ->get(route($ruta))
                 ->assertForbidden();
         }
+    }
+
+    // ================================================================ un solo «neto»
+
+    /**
+     * El «neto» del reporte de ventas y el «vendido» del ranking de productos
+     * son la misma pregunta —qué quedó de lo que se vendió en el período— y
+     * antes se calculaban con criterios distintos: uno restaba las
+     * devoluciones registradas en el período y el otro las de esas ventas.
+     */
+    public function test_el_neto_descuenta_las_devoluciones_de_las_ventas_del_periodo(): void
+    {
+        $sesion = $this->turno();
+        $venta = $this->vender($sesion, 3);
+
+        // Una devolución registrada HOY de una venta de hoy.
+        $devolucion = Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion->fresh(),
+            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota');
+
+        // Y una venta vieja, devuelta hoy: sale del cajón hoy, pero no es de
+        // este período.
+        $vieja = $this->vender($sesion->fresh(), 2);
+        $devolucionVieja = Devoluciones::registrar($vieja->fresh(), $this->admin(), $sesion->fresh(),
+            [['venta_detalle_id' => $vieja->detalle->first()->id, 'cantidad' => 1]], 'Devolución de una venta vieja');
+        Venta::whereKey($vieja->id)->update(['fecha' => now()->subDays(20)]);
+
+        $resumen = $this->actingAs($this->admin())
+            ->get(route('reportes.ventas', $this->hoy()))
+            ->viewData('resumen');
+
+        // Lo que salió del cajón hoy: las dos devoluciones.
+        $this->assertSame(
+            round((float) $devolucion->total + (float) $devolucionVieja->total, 2),
+            round($resumen['devuelto'], 2),
+        );
+
+        // Lo que se le resta a lo vendido de hoy: solo la de la venta de hoy.
+        $this->assertSame(round((float) $devolucion->total, 2), round($resumen['devuelto_de_las_ventas'], 2));
+        $this->assertSame(round($resumen['vendido'] - (float) $devolucion->total, 2), $resumen['neto']);
+    }
+
+    // ================================================================ inventario con IVA incluido
+
+    /** «Si vendieras todo esto, ganarías» no puede contar el IVA como ganancia. */
+    public function test_el_valor_del_inventario_a_venta_va_sin_iva(): void
+    {
+        $inventario = fn () => $this->actingAs($this->admin())
+            ->get(route('reportes.productos', $this->hoy()))->viewData('inventario');
+
+        DB::table('configuracion')->where('clave', 'tasa_impuesto')->update(['valor' => '0.1300']);
+        DB::table('configuracion')->updateOrInsert(['clave' => 'precios_incluyen_impuesto'], ['valor' => '1']);
+        Config::olvidar();
+
+        $conIva = (float) DB::table('productos')
+            ->selectRaw('COALESCE(SUM(stock_actual * precio_venta), 0) AS v')->value('v');
+        $sinIva = (float) DB::table('productos')
+            ->selectRaw('COALESCE(SUM(stock_actual * IF(afecto_impuesto = 1, precio_venta - ROUND(precio_venta * 0.13 / 1.13, 2), precio_venta)), 0) AS v')
+            ->value('v');
+
+        $este = $inventario();
+        $this->assertSame(round($sinIva, 2), round($este['venta'], 2));
+        $this->assertLessThan(round($conIva, 2), round($este['venta'], 2));
+        $this->assertSame(round($este['venta'] - $este['costo'], 2), $este['margen']);
+    }
+
+    // ================================================================ libro de ventas
+
+    /** Con la tasa en 0 el libro no puede declarar débito fiscal. */
+    public function test_el_libro_no_declara_iva_si_el_negocio_no_lo_cobra(): void
+    {
+        DB::table('configuracion')->where('clave', 'tasa_impuesto')->update(['valor' => '0.0000']);
+        Config::olvidar();
+
+        $sesion = $this->turno();
+        $cliente = Cliente::where('tipo_persona', 'JURIDICA')->firstOrFail();
+        Ventas::registrar(
+            sesion: $sesion,
+            usuario: $this->admin(),
+            lineas: [['producto_id' => Producto::where('codigo', 'P-0004')->value('id'), 'cantidad' => 2]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+            cliente: $cliente,
+        );
+
+        $libro = LibroDeVentas::mes((int) now()->year, (int) now()->month);
+
+        $this->assertTrue($libro['sin_impuesto_configurado']);
+        $this->assertSame(0.0, round($libro['totales']['debito_fiscal'], 2));
+        $this->assertSame(round($libro['totales']['importe_total'], 2), round($libro['totales']['exentas'], 2));
+
+        $this->actingAs($this->admin())->get(route('reportes.libro-ventas'))->assertOk()
+            ->assertSee('El negocio está configurado sin IVA');
     }
 }

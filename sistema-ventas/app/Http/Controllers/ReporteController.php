@@ -128,8 +128,8 @@ class ReporteController extends Controller
         $indicadores = [
             ['etiqueta' => 'Operaciones', 'valor' => $resumen['operaciones'], 'formato' => 'entero', 'nota' => 'ventas cobradas, sin contar anuladas'],
             ['etiqueta' => 'Vendido', 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'],
-            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'a clientes, por devoluciones'],
-            ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'vendido menos devuelto', 'destacar' => true],
+            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'devoluciones registradas en el período; es lo que salió del cajón'],
+            ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'lo vendido en el período menos lo que se devolvió de esas ventas, aunque se haya devuelto después', 'destacar' => true],
             ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas y devoluciones en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
             ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'revirtieron su stock'],
@@ -321,9 +321,21 @@ class ReporteController extends Controller
             ->selectRaw("SUM(estado = 'ANULADA') AS anuladas")
             ->first();
 
+        // Dos cuentas distintas, y cada una responde a una pregunta:
+        //   - lo devuelto REGISTRADO en el período es lo que salió del cajón
+        //     estos días, y es lo que cuadra con los arqueos;
+        //   - lo devuelto DE LAS VENTAS del período es lo que hay que restarle
+        //     a lo vendido para saber qué quedó de verdad. Antes el «neto» de
+        //     esta pantalla usaba el primero y el ranking de productos el
+        //     segundo: dos cifras con el mismo nombre que no coincidían.
         $devuelto = (float) DB::table('devoluciones')
             ->whereBetween('fecha', [$desde, $hasta])
             ->sum('total');
+
+        $devueltoDeLasVentas = (float) DB::table('devoluciones as d')
+            ->join('ventas as v', 'v.id', '=', 'd.venta_id')
+            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->sum('d.total');
 
         /*
          * La ganancia, con un solo criterio de fecha y sin impuesto:
@@ -371,7 +383,8 @@ class ReporteController extends Controller
             'impuesto' => (float) $ventas->impuesto,
             'anuladas' => (int) $ventas->anuladas,
             'devuelto' => $devuelto,
-            'neto' => round($vendido - $devuelto, 2),
+            'devuelto_de_las_ventas' => $devueltoDeLasVentas,
+            'neto' => round($vendido - $devueltoDeLasVentas, 2),
             'efectivo' => $efectivo,
             'ganancia' => round(($base - (float) $devuelta->base) - ($costo - (float) $devuelta->costo), 2),
             'ticket' => $operaciones > 0 ? round($vendido / $operaciones, 2) : 0.0,
@@ -583,13 +596,21 @@ class ReporteController extends Controller
     /** @return array<string, float|int> */
     private function valorInventario(): array
     {
+        // El precio de venta sin el impuesto: con los precios que ya lo
+        // incluyen, «lo que se cobraría por todo» traía el IVA adentro y el
+        // margen salía casi al triple. El IVA no es del negocio.
+        $tasa = number_format(Config::tasaImpuesto(), 4, '.', '');
+        $sinImpuesto = Config::preciosIncluyenImpuesto()
+            ? "IF(afecto_impuesto = 1, precio_venta - ROUND(precio_venta * {$tasa} / (1 + {$tasa}), 2), precio_venta)"
+            : 'precio_venta';
+
         // Sobre todo lo que hay en estante, activo o no: dar de baja un
         // producto con stock no hace desaparecer lo que costó.
         $totales = DB::table('productos')
             ->selectRaw('COALESCE(SUM(activo = 1), 0) AS productos')
             ->selectRaw('COALESCE(SUM(activo = 0 AND stock_actual > 0), 0) AS inactivos_con_stock')
             ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS costo')
-            ->selectRaw('COALESCE(SUM(stock_actual * precio_venta), 0) AS venta')
+            ->selectRaw("COALESCE(SUM(stock_actual * {$sinImpuesto}), 0) AS venta")
             ->first();
 
         return [

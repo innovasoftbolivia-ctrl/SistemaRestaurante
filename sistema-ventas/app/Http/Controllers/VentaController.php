@@ -8,6 +8,7 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Comprobantes;
 use App\Services\Ventas;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -54,8 +55,10 @@ class VentaController extends Controller
             })
             ->when($filtros['estado'], fn ($q, $estado) => $q->where('estado', $estado))
             ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
-            ->when($filtros['desde'], fn ($q, $d) => $q->whereDate('fecha', '>=', $d))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->whereDate('fecha', '<=', $h)),
+            // Rango explícito y no `whereDate`: envolver la columna en DATE()
+            // anula el índice de fecha y obliga a recorrer la tabla entera.
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay())),
             $orden
         )
             ->paginate(15)
@@ -156,18 +159,23 @@ class VentaController extends Controller
      */
     private function resumen(array $filtros): array
     {
-        $base = Venta::query()
+        // Una sola pasada por el mismo rango, con el índice de fecha: antes
+        // eran cuatro recorridos de la tabla entera para cuatro cifras.
+        $fila = Venta::query()
             ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
-            ->when($filtros['desde'], fn ($q, $d) => $q->whereDate('fecha', '>=', $d))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->whereDate('fecha', '<=', $h));
-
-        $validas = (clone $base)->where('estado', '<>', 'ANULADA');
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay()))
+            ->selectRaw("SUM(estado <> 'ANULADA') AS operaciones")
+            ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', total, 0)), 0) AS vendido")
+            ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', impuesto, 0)), 0) AS impuesto")
+            ->selectRaw("SUM(estado = 'ANULADA') AS anuladas")
+            ->first();
 
         return [
-            'operaciones' => (int) (clone $validas)->count(),
-            'vendido' => (float) (clone $validas)->sum('total'),
-            'impuesto' => (float) (clone $validas)->sum('impuesto'),
-            'anuladas' => (int) (clone $base)->where('estado', 'ANULADA')->count(),
+            'operaciones' => (int) $fila->operaciones,
+            'vendido' => (float) $fila->vendido,
+            'impuesto' => (float) $fila->impuesto,
+            'anuladas' => (int) $fila->anuladas,
         ];
     }
 }

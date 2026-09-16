@@ -73,7 +73,8 @@ class UsuarioController extends Controller
                 Rule::exists('empleados', 'id')->where('estado', 'ACTIVO'),
                 Rule::unique('usuarios', 'empleado_id'),
             ],
-            'rol_id' => ['required', Rule::exists('roles', 'id')],
+            // Un rol desactivado dejaría la cuenta nueva sin permisos y sin acceso.
+            'rol_id' => ['required', Rule::exists('roles', 'id')->where('activo', 1)],
             'usuario' => ['required', 'string', 'min:3', 'max:40', 'regex:/^[a-z0-9._-]+$/', Rule::unique('usuarios', 'usuario')],
             'password' => ['required', 'confirmed', Password::min(8)],
             'activo' => ['boolean'],

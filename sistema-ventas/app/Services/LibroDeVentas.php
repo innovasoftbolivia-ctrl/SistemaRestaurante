@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Config;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -66,9 +67,13 @@ class LibroDeVentas
             ]);
 
         // Lo que se vendió sin impuesto en cada venta, de una sola consulta.
+        // Exento es lo que NO pagó impuesto: el producto exonerado y también
+        // lo vendido con la tasa en cero (un negocio que todavía no factura con
+        // IVA). Sin esta segunda condición el libro declaraba el 13 % de
+        // facturas cuyo ticket no cobró ni un centavo de impuesto.
         $sinImpuesto = DB::table('venta_detalle')
             ->whereIn('venta_id', $facturas->pluck('venta_id')->unique())
-            ->where('afecto_impuesto', 0)
+            ->where(fn ($q) => $q->where('afecto_impuesto', 0)->orWhere('tasa_impuesto', 0))
             ->groupBy('venta_id')
             ->selectRaw('venta_id, SUM(importe) AS importe')
             ->pluck('importe', 'venta_id');
@@ -130,6 +135,10 @@ class LibroDeVentas
         return [
             'desde' => $desde,
             'hasta' => $hasta,
+            // Para avisarlo en la pantalla: con la tasa en cero el libro sale
+            // entero en exentas, y eso hay que explicarlo antes que el contador
+            // lo pregunte.
+            'sin_impuesto_configurado' => Config::tasaImpuesto() <= 0,
             'filas' => $filas,
             'totales' => [
                 'importe_total' => $sumar('importe_total'),

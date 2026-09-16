@@ -14,6 +14,13 @@
             formato vigente antes de usarlo.
         </x-ui.en-construccion>
 
+        @if ($libro['sin_impuesto_configurado'])
+            {{-- Sin IVA configurado, el ticket no cobró impuesto: el libro no puede
+                 declarar un débito fiscal que nadie cobró. --}}
+            <x-ui.alert variant="warning" title="El negocio está configurado sin IVA"
+                message="La tasa de impuesto está en 0 %, así que las facturas del mes salen como exentas y el débito fiscal es cero. Si el negocio ya factura con IVA, actívalo en Sistema → Configuración → Impuesto y precios." />
+        @endif
+
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <form method="GET" action="{{ route('reportes.libro-ventas') }}"
                 class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
