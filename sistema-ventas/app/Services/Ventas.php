@@ -58,6 +58,7 @@ class Ventas
         ?Cliente $cliente = null,
         float $descuento = 0,
         ?string $observacion = null,
+        ?float $totalEsperado = null,
     ): Venta {
         if ($lineas === []) {
             throw new RuntimeException('La venta no tiene productos.');
@@ -77,7 +78,7 @@ class Ventas
         // había problema de stock, solo mala suerte de milisegundos. Laravel
         // reintenta la transacción entera, que se deshizo por completo al
         // fallar, así que no queda nada a medias.
-        return DB::transaction(function () use ($sesion, $usuario, $lineas, $pagos, $cliente, $descuento, $observacion) {
+        return DB::transaction(function () use ($sesion, $usuario, $lineas, $pagos, $cliente, $descuento, $observacion, $totalEsperado) {
             // El turno, leído con candado compartido: varias ventas pueden
             // entrar a la vez, pero un cierre en curso las hace esperar, y al
             // terminar la venta encuentra la caja cerrada. Sin esto, una venta
@@ -131,6 +132,20 @@ class Ventas
             }
 
             $venta->refresh();
+
+            // Lo que el mostrador le cantó al cliente tiene que ser lo que se
+            // registra. Si entre medio cambió la tasa, el modo de precios o un
+            // precio del catálogo, la pantalla y el servidor calculan distinto
+            // y el cajero cobra un total que la venta no guarda: sobrante o
+            // faltante en el arqueo, sin rastro. Mismo criterio que el cobro
+            // por QR, que ya exigía el importe exacto.
+            if ($totalEsperado !== null && round($totalEsperado, 2) !== round((float) $venta->total, 2)) {
+                throw new RuntimeException(sprintf(
+                    'El total cambió mientras cobrabas: la pantalla decía %s y la venta suma %s. Revisa el carrito y vuelve a cobrar.',
+                    Config::importe($totalEsperado),
+                    Config::importe($venta->total),
+                ));
+            }
 
             self::registrarPagos($venta, $pagos);
             self::emitirComprobante($venta, $cliente);

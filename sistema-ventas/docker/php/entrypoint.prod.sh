@@ -89,6 +89,20 @@ su-exec www-data php artisan config:cache
 su-exec www-data php artisan route:cache
 su-exec www-data php artisan view:cache
 
+if [ "${APP_ENV:-}" = "production" ] && [ "${DB_USERNAME:-}" = "root" ]; then
+    log "AVISO: la aplicación se está conectando a MySQL como root. Crea la cuenta con permisos"
+    log "       mínimos (scripts/crear-usuario-app.sh) y pon DB_USERNAME=ventas_app en .env.docker."
+fi
+
+case "${APP_URL:-}" in
+    http://*)
+        if [ "${APP_ENV:-}" = "production" ]; then
+            log "AVISO: APP_URL usa http://. Con HTTPS delante, ponlo en https:// para que la cookie"
+            log "       de sesión no viaje en claro."
+        fi
+        ;;
+esac
+
 log "configuración efectiva: DB=${DB_USERNAME}@${DB_HOST}:${DB_PORT}/${DB_DATABASE} · APP_URL=${APP_URL}"
 log "listo — arrancando: $*"
 

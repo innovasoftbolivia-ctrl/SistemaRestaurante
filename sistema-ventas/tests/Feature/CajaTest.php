@@ -66,7 +66,7 @@ class CajaTest extends TestCase
         $sesion = $this->turno($this->cajero());
 
         $this->actingAs($this->cajero())
-            ->post(route('caja.cerrar', $sesion), ['monto_declarado' => 100])
+            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
             ->assertForbidden();
 
         $this->assertTrue($sesion->fresh()->estaAbierta());
@@ -77,7 +77,7 @@ class CajaTest extends TestCase
         $sesion = $this->turno($this->cajero());
 
         $this->actingAs($this->admin())
-            ->post(route('caja.cerrar', $sesion), ['monto_declarado' => 100])
+            ->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
             ->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
@@ -272,12 +272,13 @@ class CajaTest extends TestCase
     {
         $sesion = $this->turno(inicial: 100);
 
-        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['monto_declarado' => 60])
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 60])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'escribe en la observación'));
         $this->assertTrue($sesion->fresh()->estaAbierta());
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
             'monto_declarado' => 60, 'observacion' => 'Se pagó el gas sin registrarlo',
+            'huella' => $sesion->fresh()->huella(),
         ])->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertSame(-40.0, (float) $sesion->fresh()->diferencia);
@@ -287,7 +288,7 @@ class CajaTest extends TestCase
     {
         $sesion = $this->turno(inicial: 100);
 
-        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['monto_declarado' => 100])
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), ['huella' => $sesion->fresh()->huella(), 'monto_declarado' => 100])
             ->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->assertFalse($sesion->fresh()->estaAbierta());
@@ -351,11 +352,11 @@ class CajaTest extends TestCase
         $sesion = $this->turno(inicial: 100);
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => 100, 'fondo_dejado' => 150,
+            'monto_declarado' => 100, 'fondo_dejado' => 150, 'huella' => $sesion->fresh()->huella(),
         ])->assertSessionHas('error', fn ($m) => str_contains($m, 'más de lo contado'));
 
         $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
-            'monto_declarado' => 100, 'fondo_dejado' => 60,
+            'monto_declarado' => 100, 'fondo_dejado' => 60, 'huella' => $sesion->fresh()->huella(),
         ])->assertRedirect(route('caja.imprimir', $sesion));
 
         $this->actingAs($this->admin())->get(route('caja.imprimir', $sesion))->assertOk()
@@ -403,5 +404,73 @@ class CajaTest extends TestCase
                 'Devoluciones en efectivo', Config::importe(0),
                 'Efectivo esperado', Config::importe($cuenta['esperado']),
             ]);
+    }
+
+    // ================================================================ cierre y egresos
+
+    /** Sin el sello del turno, el cierre se saltaba el aviso de «se vendió mientras contabas». */
+    public function test_el_cierre_exige_el_sello_del_turno(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $esperado = $sesion->fresh()->efectivoEsperado();
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => $esperado,
+        ])->assertSessionHasErrors('huella');
+
+        $this->assertTrue($sesion->fresh()->estaAbierta());
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => $esperado, 'huella' => $sesion->fresh()->huella(),
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+        $this->assertFalse($sesion->fresh()->estaAbierta());
+    }
+
+    /** El tope del cajero es por turno: partir el retiro en varios no lo evade. */
+    public function test_el_tope_de_egresos_es_del_turno_entero(): void
+    {
+        $sesion = $this->turno(inicial: 1000);
+        $tope = (float) Config::get('egreso_max_cajero', '0');
+        $mitad = round($tope / 2, 2);
+
+        Cajas::movimiento($sesion->fresh(), $this->cajero(), 'EGRESO', 'Primera parte', $mitad);
+
+        $rechazo = null;
+        try {
+            Cajas::movimiento($sesion->fresh(), $this->cajero(), 'EGRESO', 'Segunda parte', $tope);
+        } catch (RuntimeException $e) {
+            $rechazo = $e->getMessage();
+        }
+
+        $this->assertNotNull($rechazo, 'El cajero sacó del cajón más que su tope, en dos veces.');
+        $this->assertStringContainsString('por turno', $rechazo);
+
+        // Lo que falta para llegar al tope sí entra, y el administrador no tiene tope.
+        Cajas::movimiento($sesion->fresh(), $this->cajero(), 'EGRESO', 'El resto', $mitad);
+        Cajas::movimiento($sesion->fresh(), $this->admin(), 'EGRESO', 'Pago a proveedor', $tope * 2);
+
+        $this->assertSame(round($tope * 3, 2), round((float) $sesion->fresh()->movimientos()
+            ->where('tipo', 'EGRESO')->sum('monto'), 2));
+    }
+
+    /** Cerrar el turno de otro es del arqueo: lo habilita `caja.cerrar`, no `reportes.ver`. */
+    public function test_cerrar_el_turno_ajeno_pide_el_permiso_de_caja(): void
+    {
+        $sesion = $this->turno($this->cajero(), 100);
+        $arqueador = $this->admin();
+        DB::table('rol_permiso')
+            ->where('rol_id', $arqueador->rol_id)
+            ->whereIn('permiso_id', DB::table('permisos')->where('codigo', 'reportes.ver')->pluck('id'))
+            ->delete();
+        $arqueador->refresh();
+
+        $this->assertFalse($arqueador->fresh()->tienePermiso('reportes.ver'));
+
+        $this->actingAs($arqueador->fresh())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => $sesion->fresh()->efectivoEsperado(),
+            'huella' => $sesion->fresh()->huella(),
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+
+        $this->assertFalse($sesion->fresh()->estaAbierta());
     }
 }

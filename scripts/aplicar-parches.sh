@@ -6,6 +6,7 @@
 #
 #   ./scripts/aplicar-parches.sh              # solo muestra qué falta (no toca nada)
 #   ./scripts/aplicar-parches.sh --aplicar     # aplica lo pendiente, en orden
+#   ./scripts/aplicar-parches.sh --aplicar --forzar   # incluso los que van fuera de orden
 #   BASE=ventas_db_cliente2 ./scripts/aplicar-parches.sh --aplicar
 #
 # Importante — no todos los parches son para todas las instalaciones:
@@ -34,9 +35,11 @@ CONTENEDOR="ventas_mysql"
 BASE="${BASE:-ventas_db}"
 DIRECTORIO="docs/sql/parches"
 APLICAR=0
+FORZAR=0
 
 for arg in "$@"; do
     [ "$arg" = "--aplicar" ] && APLICAR=1
+    [ "$arg" = "--forzar" ] && FORZAR=1
 done
 
 if [ -f .env ]; then
@@ -67,6 +70,19 @@ for ruta in "$DIRECTORIO"/*.sql; do
     [ -z "$ya" ] && PENDIENTES+=("$archivo")
 done
 
+# Los parches se aplican en orden de nombre, y varios reemplazan el mismo
+# procedimiento: aplicar uno con fecha ANTERIOR a la del último ya aplicado deja
+# la versión vieja en la base. Pasa en cuanto alguien copia un parche suelto de
+# otra rama. Se compara solo la fecha (los 10 primeros caracteres): varios
+# parches del mismo día son lo normal y se aplican entre ellos por nombre.
+ULTIMO="$(mysql -N "$BASE" -e "SELECT archivo FROM parches_aplicados ORDER BY archivo DESC LIMIT 1" 2>/dev/null || true)"
+FUERA_DE_ORDEN=()
+if [ -n "$ULTIMO" ]; then
+    for archivo in "${PENDIENTES[@]}"; do
+        [[ "${archivo:0:10}" < "${ULTIMO:0:10}" ]] && FUERA_DE_ORDEN+=("$archivo")
+    done
+fi
+
 if [ "${#PENDIENTES[@]}" -eq 0 ]; then
     echo "«$BASE» ya tiene todos los parches registrados."
     exit 0
@@ -77,10 +93,26 @@ for archivo in "${PENDIENTES[@]}"; do
     echo "  - $archivo"
 done
 
+if [ "${#FUERA_DE_ORDEN[@]}" -gt 0 ]; then
+    echo
+    echo "AVISO: estos parches son anteriores al último aplicado ($ULTIMO):"
+    for archivo in "${FUERA_DE_ORDEN[@]}"; do
+        echo "  - $archivo"
+    done
+    echo "Aplicarlos puede reemplazar un procedimiento por una versión vieja."
+    echo "Revísalos y, si de verdad hacen falta, corre con --forzar."
+fi
+
 if [ "$APLICAR" -eq 0 ]; then
     echo
     echo "Nada se tocó. Corre con --aplicar para aplicarlos, en este orden."
     exit 0
+fi
+
+if [ "${#FUERA_DE_ORDEN[@]}" -gt 0 ] && [ "$FORZAR" -eq 0 ]; then
+    echo
+    echo "No se aplicó nada: hay parches fuera de orden. Añade --forzar si estás seguro." >&2
+    exit 1
 fi
 
 echo

@@ -158,10 +158,23 @@ class Cajas
 
         $tope = (float) Config::get('egreso_max_cajero', '0');
 
-        if (! $usuario->tienePermiso('caja.cerrar') && round($monto, 2) > $tope) {
+        if ($usuario->tienePermiso('caja.cerrar')) {
+            return;
+        }
+
+        // Acumulado del turno, no por movimiento: el tope se evadía partiendo
+        // el retiro en cuatro egresos «de hasta Bs 200» que el arqueo cuadraba
+        // igual, porque cada uno bajaba el efectivo esperado.
+        $yaSacado = (float) $sesion->movimientos()
+            ->where('tipo', 'EGRESO')
+            ->where('usuario_id', $usuario->id)
+            ->sum('monto');
+
+        if (round($yaSacado + $monto, 2) > $tope) {
             throw new RuntimeException(sprintf(
-                'Tu rol puede registrar egresos de hasta %s. Para uno mayor, pide a un administrador que lo registre en tu turno.',
+                'Tu rol puede sacar del cajón hasta %s por turno y ya registraste %s. Pide a un administrador que registre este egreso en tu turno.',
                 Config::importe($tope),
+                Config::importe($yaSacado),
             ));
         }
     }

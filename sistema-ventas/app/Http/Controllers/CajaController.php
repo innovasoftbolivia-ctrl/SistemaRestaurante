@@ -184,14 +184,20 @@ class CajaController extends Controller
             'monto_declarado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'observacion' => ['nullable', 'string', 'max:255'],
             'fondo_dejado' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
-            'huella' => ['nullable', 'string', 'max:100'],
+            // Obligatoria: es el sello del turno cuando se empezó a contar, y
+            // sin ella el cierre se saltaba el aviso de «entró una venta
+            // mientras contabas» simplemente no mandando el campo.
+            'huella' => ['required', 'string', 'max:100'],
         ], [], [
             'monto_declarado' => 'efectivo contado',
             'observacion' => 'observación',
             'fondo_dejado' => 'lo que queda en el cajón',
         ]);
 
-        if ($sesion->usuario_apertura_id !== Auth::id() && ! Auth::user()->tienePermiso('reportes.ver')) {
+        // Cerrar el turno de otro es del arqueo, no de los reportes: el permiso
+        // que lo habilita tiene que ser el mismo que pide registrar movimientos
+        // en un turno ajeno.
+        if ($sesion->usuario_apertura_id !== Auth::id() && ! Auth::user()->tienePermiso('caja.cerrar')) {
             return back()->with('error', 'Solo quien abrió la caja puede cerrarla.');
         }
 
@@ -202,7 +208,7 @@ class CajaController extends Controller
                 (float) $datos['monto_declarado'],
                 $datos['observacion'] ?? null,
                 isset($datos['fondo_dejado']) ? (float) $datos['fondo_dejado'] : null,
-                $datos['huella'] ?? null,
+                $datos['huella'],
             );
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());

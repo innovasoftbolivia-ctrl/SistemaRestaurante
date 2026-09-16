@@ -1050,4 +1050,63 @@ class PuntoDeVentaTest extends TestCase
             'descuento' => 0,
         ]);
     }
+
+    // ================================================================ el total que se cantó
+
+    /**
+     * Si entre que el cajero vio el total y pulsó Cobrar cambió la tasa, el modo
+     * de precios o un precio, la pantalla y el servidor calculan distinto: se
+     * cobraba una cifra y se registraba otra, y la diferencia aparecía en el
+     * arqueo sin rastro.
+     */
+    public function test_la_venta_se_rechaza_si_el_total_no_es_el_que_vio_el_cajero(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+
+        $rechazo = null;
+        try {
+            Ventas::registrar(
+                sesion: $sesion,
+                usuario: $this->cajero(),
+                lineas: [['producto_id' => $producto->id, 'cantidad' => 2]],
+                pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null]],
+                totalEsperado: 999.99,
+            );
+        } catch (RuntimeException $e) {
+            $rechazo = $e->getMessage();
+        }
+
+        $this->assertNotNull($rechazo, 'Se registró una venta por un total distinto del que vio el cajero.');
+        $this->assertStringContainsString('El total cambió mientras cobrabas', $rechazo);
+        $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
+
+        // Con el total correcto, la venta entra: el mismo que calculó el servidor
+        // en una venta idéntica.
+        $referencia = $this->vender($sesion->fresh(), $producto, 2);
+
+        $venta = Ventas::registrar(
+            sesion: $sesion->fresh(),
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 2]],
+            pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null]],
+            totalEsperado: (float) $referencia->total,
+        );
+        $this->assertSame($referencia->total, $venta->fresh()->total);
+    }
+
+    /** El mostrador manda ese total y el régimen de impuesto viaja en el refresco de precios. */
+    public function test_el_mostrador_manda_el_total_y_refresca_el_regimen_de_impuesto(): void
+    {
+        $sesion = $this->turno();
+        $producto = $this->producto();
+
+        $this->actingAs($this->cajero())->get(route('pos.index'))->assertOk()
+            ->assertSee("oculto('total_esperado'", false);
+
+        $this->actingAs($this->cajero())
+            ->getJson(route('pos.precios', ['ids' => $producto->id]))
+            ->assertOk()
+            ->assertJsonStructure([['id', 'precio', 'precio_estante', 'stock', 'afecto']]);
+    }
 }

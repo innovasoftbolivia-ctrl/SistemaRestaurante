@@ -180,4 +180,30 @@ class AutenticacionTest extends TestCase
         $this->assertTrue(Hash::check('la-clave-real-del-negocio', $cuenta->fresh()->password_hash));
         $this->assertFalse(Hash::check('admin123', $cuenta->fresh()->password_hash));
     }
+
+    // ================================================================ freno por origen
+
+    /**
+     * El freno por cuenta ya existía; lo que faltaba era uno por origen: probar
+     * UNA contraseña contra todas las cuentas del negocio no gastaba cupo en
+     * ninguna.
+     */
+    public function test_muchos_intentos_desde_el_mismo_origen_se_frenan(): void
+    {
+        $bloqueado = false;
+
+        for ($i = 0; $i < 25; $i++) {
+            $respuesta = $this->post(route('login.store'), [
+                'usuario' => 'cuenta'.$i,
+                'password' => 'la-de-siempre',
+            ]);
+
+            if ($respuesta->getStatusCode() === 429) {
+                $bloqueado = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($bloqueado, 'Se pudo probar una contraseña en 25 cuentas distintas sin ningún freno.');
+    }
 }

@@ -1411,6 +1411,11 @@
                                     cambio = true;
                                 }
 
+                                if (p.afecto !== undefined && p.afecto !== l.afecto) {
+                                    l.afecto = p.afecto;
+                                    cambio = true;
+                                }
+
                                 if (p.stock !== l.stock) {
                                     l.stock = p.stock;
                                     if (l.cantidad > p.stock) l.cantidad = p.stock;
@@ -1447,6 +1452,10 @@
                                céntimo de diferencia en el redondeo del navegador no
                                puede tumbar la venta. Las demás sí lo llevan, porque
                                son un reparto que decidió el cajero. */
+                            /* El total que se le cantó al cliente: el servidor rechaza la
+                               venta si no coincide con el suyo. */
+                            oculto('total_esperado', this.total.toFixed(2));
+
                             this.pagos.forEach((p, i) => {
                                 oculto(`pagos[${i}][metodo_pago_id]`, p.metodoId);
 

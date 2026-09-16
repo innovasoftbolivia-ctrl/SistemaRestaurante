@@ -125,6 +125,9 @@ class PosController extends Controller
                 'precio' => (float) $p->precio_venta,
                 'precio_estante' => $p->precio_estante,
                 'stock' => (float) $p->stock_actual,
+                // El régimen de impuesto también puede cambiar mientras el
+                // carrito está armado, y en modo incluido no mueve el precio.
+                'afecto' => (bool) $p->afecto_impuesto,
             ])
         );
     }
@@ -140,7 +143,10 @@ class PosController extends Controller
 
         $datos = $request->validate([
             'cliente_id' => ['nullable', Rule::exists('clientes', 'id')->where('activo', 1)],
-            'descuento' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'descuento' => ['nullable', 'numeric', 'min:0', 'max:9999999999', 'decimal:0,2'],
+            // El total que vio el cajero: si no cuadra con el que calcula el
+            // servidor, la venta no se registra.
+            'total_esperado' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'observacion' => ['nullable', 'string', 'max:255'],
 
             'lineas' => ['required', 'array', 'min:1'],
@@ -155,8 +161,8 @@ class PosController extends Controller
             'pagos' => ['required', 'array', 'min:1'],
             'pagos.*.metodo_pago_id' => ['required', Rule::exists('metodos_pago', 'id')->where('activo', 1)],
             // Sin importe significa «el resto»: lo calcula el servidor.
-            'pagos.*.monto' => ['nullable', 'numeric', 'gt:0'],
-            'pagos.*.monto_recibido' => ['nullable', 'numeric', 'min:0'],
+            'pagos.*.monto' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
+            'pagos.*.monto_recibido' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'pagos.*.referencia' => ['nullable', 'string', 'max:60'],
             // El pago por QR viene respaldado por su cobro. Que esté pagado,
             // sea de este turno, libre y por el importe exacto lo controla
@@ -183,6 +189,7 @@ class PosController extends Controller
                 cliente: $cliente,
                 descuento: $descuento,
                 observacion: $datos['observacion'] ?? null,
+                totalEsperado: isset($datos['total_esperado']) ? (float) $datos['total_esperado'] : null,
             );
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage())->withInput();
