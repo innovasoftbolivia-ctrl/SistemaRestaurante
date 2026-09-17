@@ -73,8 +73,11 @@
                             Turno de <b class="text-gray-800 dark:text-white/90">{{ $abierta->usuarioApertura?->usuario }}</b>
                             desde las {{ $abierta->fecha_apertura?->format('H:i') }}
                         </p>
-                        <a href="{{ route('caja.show', $abierta) }}"
-                            class="mt-2 inline-block text-theme-xs text-brand-500 dark:text-brand-400 hover:text-brand-600">Ver turno →</a>
+                        {{-- El turno de otro solo lo abre quien arquea. --}}
+                        @if ($veArqueo || $abierta->usuario_apertura_id === auth()->id())
+                            <a href="{{ route('caja.show', $abierta) }}"
+                                class="mt-2 inline-block text-theme-xs text-brand-500 dark:text-brand-400 hover:text-brand-600">Ver turno →</a>
+                        @endif
                     @else
                         <p class="text-theme-sm text-gray-500 dark:text-gray-400">Disponible para abrir.</p>
                     @endif

@@ -97,7 +97,9 @@
                 <div class="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
                     <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
                     <x-ui.button variant="outline" size="sm" :href="route('clientes.index')">Limpiar</x-ui.button>
-                    <x-ui.button size="sm" class="ml-auto" @click="nuevo()">Nuevo cliente</x-ui.button>
+                    @puede('ventas.registrar')
+                        <x-ui.button size="sm" class="ml-auto" @click="nuevo()">Nuevo cliente</x-ui.button>
+                    @endpuede
                 </div>
             </form>
         </div>
@@ -175,6 +177,7 @@
                                 </td>
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-end gap-1">
+                                        @puede('ventas.registrar')
                                         <button type="button" title="Editar" @click="editar(@js($datos))"
                                             class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-brand-500 dark:text-gray-400 dark:hover:bg-white/[0.05]">
                                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -190,6 +193,7 @@
                                                     stroke-linejoin="round" />
                                             </svg>
                                         </button>
+                                        @endpuede
                                     </div>
                                 </td>
                             </tr>

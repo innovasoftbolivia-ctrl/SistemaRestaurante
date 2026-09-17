@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Caja;
+use App\Models\CobroQr;
 use App\Models\MovimientoCaja;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
@@ -292,6 +293,21 @@ class Cajas
         }, self::REINTENTOS);
 
         $sesion->refresh();
+
+        // Un QR que quedó esperando pago ya no puede terminar en una venta: la
+        // venta exige el mismo turno. Se cancela en el banco para que el cliente
+        // no pague a un turno cerrado. Si el banco no contesta, lo recoge
+        // después `qr:vencer`.
+        CobroQr::where('sesion_caja_id', $sesion->id)
+            ->where('estado', CobroQr::PENDIENTE)
+            ->get()
+            ->each(function (CobroQr $cobro) {
+                try {
+                    CobrosQr::vencer($cobro);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            });
 
         Auditor::registrar('CAJA_CERRADA', 'sesiones_caja', $sesion->id, [
             'esperado' => $sesion->monto_esperado,

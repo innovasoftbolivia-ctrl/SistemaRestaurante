@@ -118,6 +118,18 @@ class TomasInventario
                     throw new RuntimeException('La hora del conteo es anterior a la apertura de la toma.');
                 }
 
+                // Un ajuste hecho DESPUÉS de contar en papel ya corrigió el
+                // stock con otro conteo: aplicar además la diferencia del papel
+                // restaría dos veces lo mismo (contado 10 contra 12 a las 10:00,
+                // ajustado a 10 a las 11:00, el cierre dejaba 8).
+                if ($contadoEn !== null && DB::table('movimientos_inventario')
+                    ->where('producto_id', $producto->id)
+                    ->where('origen', 'AJUSTE')
+                    ->where('fecha', '>', $contadoEn)
+                    ->exists()) {
+                    throw new RuntimeException('Después de esa hora se ajustó el stock de este producto: el conteo en papel ya no vale. Vuelve a contarlo en el estante.');
+                }
+
                 $linea->update([
                     'contado' => round($contado, 3),
                     'stock_sistema' => $contadoEn ? self::stockA($producto, $contadoEn) : $producto->stock_actual,
@@ -167,6 +179,9 @@ class TomasInventario
 
         try {
             $motivo = "Toma de inventario #{$vigente->id}";
+            // Los ajustes quedan a nombre de quien cierra, también fuera de
+            // una petición web (consola, cola), donde no hay sesión.
+            $usuarioId = $usuario->id;
 
             $pendientes = TomaInventarioDetalle::where('toma_id', $vigente->id)
                 ->whereNotNull('contado')
@@ -176,7 +191,7 @@ class TomasInventario
                 ->pluck('id');
 
             foreach ($pendientes as $id) {
-                DB::transaction(function () use ($id, $motivo) {
+                DB::transaction(function () use ($id, $motivo, $usuarioId) {
                     $linea = TomaInventarioDetalle::whereKey($id)->lockForUpdate()->with('producto')->first();
 
                     // Otro ajuste la dejó sin contar, o ya se aplicó.
@@ -184,7 +199,7 @@ class TomasInventario
                         return;
                     }
 
-                    $movimiento = Inventario::corregir($linea->producto, (float) $linea->diferencia, $motivo);
+                    $movimiento = Inventario::corregir($linea->producto, (float) $linea->diferencia, $motivo, $usuarioId);
 
                     if ($movimiento) {
                         $linea->update(['movimiento_id' => $movimiento->id]);

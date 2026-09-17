@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ExigeVencimiento;
 use App\Models\Compra;
 use App\Models\DevolucionCompra;
 use App\Models\Lote;
@@ -37,6 +38,8 @@ use RuntimeException;
  */
 class DevolucionCompraController extends Controller
 {
+    use ExigeVencimiento;
+
     public function index(Request $request): View
     {
         $filtros = [
@@ -186,6 +189,15 @@ class DevolucionCompraController extends Controller
             'espera.required' => 'Di en qué quedaron: si repone ahora, si lo trae después o si acredita.',
         ]);
 
+        // Lo que el proveedor cambia en el momento entra con su fecha.
+        if ($datos['espera'] === 'REPUESTO') {
+            $this->exigirVencimiento(
+                array_map(fn ($l) => (int) DB::table('compra_detalle')->where('id', $l['compra_detalle_id'])->value('producto_id'), $datos['lineas']),
+                array_map(fn ($l) => $l['vence_repuesto'] ?? null, $datos['lineas']),
+                'vence_repuesto',
+            );
+        }
+
         try {
             $devolucion = DevolucionesCompra::registrar(
                 usuario: Auth::user(),
@@ -253,6 +265,12 @@ class DevolucionCompraController extends Controller
             'lineas.required' => 'Marca al menos un producto de los que trajo el proveedor.',
             'lineas.min' => 'Marca al menos un producto de los que trajo el proveedor.',
         ]);
+
+        $this->exigirVencimiento(
+            array_map(fn ($l) => (int) DB::table('devolucion_compra_detalle')->where('id', $l['linea_id'])->value('producto_id'), $datos['lineas']),
+            array_map(fn ($l) => $l['vence'] ?? null, $datos['lineas']),
+            'vence',
+        );
 
         try {
             $devolucion = DevolucionesCompra::reponer(

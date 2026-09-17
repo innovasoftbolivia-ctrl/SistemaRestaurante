@@ -68,6 +68,19 @@ class SesionCaja extends Model
         return $this->hasMany(Devolucion::class, 'sesion_caja_id');
     }
 
+    /**
+     * Cobros por QR de este turno que el banco dio por pagados y no terminaron
+     * en una venta: el cliente pagó y se fue, o la venta falló. Es dinero en el
+     * banco que ningún arqueo ni reporte cuenta, así que se muestra aparte.
+     */
+    public function cobrosQrSinVenta(): HasMany
+    {
+        return $this->hasMany(CobroQr::class, 'sesion_caja_id')
+            ->where('estado', CobroQr::PAGADO)
+            ->whereNull('venta_id')
+            ->orderBy('id');
+    }
+
     public function scopeAbiertas(Builder $query): Builder
     {
         return $query->where('estado', 'ABIERTA');

@@ -77,6 +77,10 @@ class CajaController extends Controller
                 ->paginate(15),
             'resumen' => $this->resumen($sesion),
             'veArqueo' => self::arquea(Auth::user()),
+            'puedeMover' => $sesion->usuario_apertura_id === Auth::id()
+                ? Auth::user()->tienePermiso('caja.abrir')
+                : Auth::user()->tienePermiso('caja.cerrar'),
+            'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
         ]);
     }
 
@@ -110,6 +114,7 @@ class CajaController extends Controller
             'resumen' => $this->resumen($sesion),
             'desglose' => $sesion->desgloseDelEfectivo(),
             'porMetodo' => $this->porMetodoPago($sesion),
+            'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
             'negocio' => [
                 'nombre' => Config::get('negocio_nombre', config('app.name')),
                 'documento' => Config::get('negocio_documento'),

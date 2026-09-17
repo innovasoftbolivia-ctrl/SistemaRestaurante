@@ -234,11 +234,18 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
     });
 
     // ---- Catálogo: productos y sus tablas de apoyo ----
+    // La ficha con su kardex se lee desde el almacén y los reportes, que la
+    // enlazan: la abre cualquiera que trabaje con el inventario. Las acciones
+    // de adentro llevan cada una su permiso.
+    Route::get('productos/{producto}', [ProductoController::class, 'show'])
+        ->middleware('permiso:productos.gestionar,inventario.ingresar,inventario.ajustar,reportes.ver')
+        ->whereNumber('producto')
+        ->name('productos.show');
+
     Route::middleware('permiso:productos.gestionar')->group(function () {
         Route::get('productos', [ProductoController::class, 'index'])->name('productos.index');
         Route::get('productos/nuevo', [ProductoController::class, 'create'])->name('productos.create');
         Route::post('productos', [ProductoController::class, 'store'])->name('productos.store');
-        Route::get('productos/{producto}', [ProductoController::class, 'show'])->name('productos.show');
         Route::get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
         Route::put('productos/{producto}', [ProductoController::class, 'update'])->name('productos.update');
         Route::delete('productos/{producto}', [ProductoController::class, 'destroy'])->name('productos.destroy');

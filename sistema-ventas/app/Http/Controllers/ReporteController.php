@@ -136,7 +136,7 @@ class ReporteController extends Controller
         $indicadores = [
             ['etiqueta' => 'Operaciones', 'valor' => $resumen['operaciones'], 'formato' => 'entero', 'nota' => 'ventas cobradas, sin contar anuladas'],
             ['etiqueta' => 'Vendido', 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'],
-            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'devoluciones registradas en el período; es lo que salió del cajón'],
+            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'devoluciones registradas en el período, en efectivo o por el mismo medio del pago; lo que salió del cajón está en «Efectivo en cajas»'],
             ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'lo vendido en el período menos lo que se devolvió de esas ventas, aunque se haya devuelto después', 'destacar' => true],
             ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas y devoluciones en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
@@ -370,8 +370,21 @@ class ReporteController extends Controller
             ->join('productos as p', 'p.id', '=', 'dd.producto_id')
             ->whereBetween('dv.fecha', [$desde, $hasta])
             ->selectRaw('COALESCE(SUM(dd.importe), 0) AS base')
+            ->selectRaw('COALESCE(SUM(dd.total_linea), 0) AS cobrado')
             ->selectRaw('COALESCE(SUM(IF(dd.reingresa_stock = 1, dd.cantidad * COALESCE(vd.costo_unitario, p.precio_compra), 0)), 0) AS costo')
             ->first();
+
+        // Al devolver una venta completa, `Devoluciones::cuadrarAlCentavo` ajusta
+        // el total de la devolución y no sus líneas: ese centavo también es
+        // base que vuelve, repartido en la misma proporción base / cobrado.
+        $ajuste = (float) DB::table('devoluciones as dv')
+            ->whereBetween('dv.fecha', [$desde, $hasta])
+            ->selectRaw('COALESCE(SUM(dv.total), 0) AS total')
+            ->value('total') - (float) $devuelta->cobrado;
+
+        if (abs($ajuste) >= 0.005 && (float) $devuelta->cobrado > 0) {
+            $devuelta->base = round((float) $devuelta->base + $ajuste * (float) $devuelta->base / (float) $devuelta->cobrado, 2);
+        }
 
         $costo = (float) DB::table('venta_detalle as vd')
             ->join('ventas as v', 'v.id', '=', 'vd.venta_id')

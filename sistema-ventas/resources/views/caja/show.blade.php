@@ -61,11 +61,11 @@
                                 <x-ui.button size="sm" :href="route('pos.index')">Ir al mostrador</x-ui.button>
                             @endif
                         @endpuede
-                        @puede('caja.abrir')
-                            @if ($esPropia)
-                                <x-ui.button size="sm" variant="outline" @click="moviendo = true">Registrar movimiento</x-ui.button>
-                            @endif
-                        @endpuede
+                        {{-- Quien abrió el turno, o quien puede cerrarlo: el cajero le pide
+                             al administrador el egreso que supera su tope. --}}
+                        @if ($puedeMover)
+                            <x-ui.button size="sm" variant="outline" @click="moviendo = true">Registrar movimiento</x-ui.button>
+                        @endif
                         @puede('caja.cerrar')
                             <x-ui.button size="sm" variant="danger" @click="cerrando = true">Cerrar caja</x-ui.button>
                         @endpuede
@@ -73,6 +73,24 @@
                 </div>
             </div>
         </div>
+
+        {{-- Dinero en el banco que ninguna cifra de arriba cuenta. --}}
+        @if ($qrSinVenta->isNotEmpty())
+            <div class="rounded-2xl border border-warning-200 bg-warning-50 p-5 dark:border-orange-500/30 dark:bg-orange-500/10" data-qr-sin-venta>
+                <p class="text-theme-sm font-medium text-warning-700 dark:text-orange-400">
+                    {{ $qrSinVenta->count() }} cobro(s) por QR pagados sin venta: {{ Config::importe($qrSinVenta->sum('monto')) }}
+                </p>
+                <p class="mt-1 text-theme-xs text-warning-700 dark:text-orange-400">
+                    El cliente pagó y la venta no se registró. Mientras el turno esté abierto, se cobra la venta con ese QR;
+                    si no, hay que devolverle el dinero por el banco.
+                </p>
+                <ul class="mt-2 space-y-1 text-theme-xs text-warning-700 dark:text-orange-400">
+                    @foreach ($qrSinVenta as $cobro)
+                        <li>#{{ $cobro->id }} · {{ Config::importe($cobro->monto) }} · {{ $cobro->pagado_en?->format('H:i') ?? $cobro->creado_en?->format('H:i') }}{{ $cobro->referencia_bancaria ? ' · ref. '.$cobro->referencia_bancaria : '' }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
 
         {{-- Arqueo --}}
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -184,8 +202,8 @@
         </div>
 
         {{-- Registrar movimiento --}}
-        @if ($abierta && $esPropia)
-            @puede('caja.abrir')
+        @if ($abierta && $puedeMover)
+            @if (true)
                 <div x-show="moviendo" x-cloak role="dialog" aria-modal="true" aria-labelledby="titulo-modal-movimiento-caja"
                     class="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto overscroll-contain p-5">
                     <div @click="moviendo = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"></div>
@@ -235,7 +253,7 @@
                         </form>
                     </div>
                 </div>
-            @endpuede
+            @endif
         @endif
 
         {{-- Cerrar caja --}}

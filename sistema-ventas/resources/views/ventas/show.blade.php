@@ -83,6 +83,12 @@
                 <div class="mt-5">
                     <x-ui.alert variant="error" title="Venta anulada"
                         :message="'Anulada por '.($venta->anuladaPor?->usuario ?? '—').' el '.$venta->anulada_en?->format('d/m/Y H:i').'. Motivo: '.$venta->motivo_anulacion" />
+                    @if ($venta->reintegro_por_anulacion > 0)
+                        <p class="mt-3 rounded-xl bg-warning-50 px-4 py-3 text-theme-xs font-medium text-warning-700 dark:bg-orange-500/10 dark:text-orange-400" data-reintegro-anulacion>
+                            Queda por reintegrar {{ App\Support\Config::importe($venta->reintegro_por_anulacion) }} por el medio con que pagó
+                            (QR, tarjeta o transferencia): ese dinero no pasó por el cajón y se le devuelve por el banco.
+                        </p>
+                    @endif
                 </div>
             @endif
         </div>
@@ -422,6 +428,12 @@
                             El stock vuelve al inventario y el comprobante queda anulado, conservando su correlativo.
                             La venta no se borra: queda registrada como anulada, con tu nombre y el motivo.
                         </p>
+                        @if (($fueraDelCajon = App\Models\Venta::fueraDelCajon($venta->id)) > 0)
+                            <p class="mb-6 rounded-xl bg-warning-50 px-4 py-3 text-sm text-warning-700 dark:bg-orange-500/10 dark:text-orange-400">
+                                {{ App\Support\Config::importe($fueraDelCajon) }} se cobraron por QR, tarjeta o transferencia: no salen del cajón,
+                                hay que devolverlos por el banco.
+                            </p>
+                        @endif
 
                         <form method="POST" action="{{ route('ventas.anular', $venta) }}" class="space-y-5">
                             @csrf

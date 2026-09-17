@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ExigeVencimiento;
 use App\Http\Controllers\Concerns\IngresaPorEmpaque;
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Categoria;
@@ -35,7 +36,7 @@ use RuntimeException;
  */
 class CompraController extends Controller
 {
-    use IngresaPorEmpaque, OrdenaTablas;
+    use ExigeVencimiento, IngresaPorEmpaque, OrdenaTablas;
 
     /** Qué compras se hicieron, a quién y por cuánto. */
     public function index(Request $request): View
@@ -156,6 +157,12 @@ class CompraController extends Controller
             'proveedor_id' => 'proveedor',
             'documento_externo' => 'guía o factura',
         ]);
+
+        $this->exigirVencimiento(
+            array_map(fn ($l) => (int) $l['producto_id'], $datos['lineas']),
+            array_map(fn ($l) => $l['vence'] ?? null, $datos['lineas']),
+            'vence',
+        );
 
         $proveedor = Proveedor::findOrFail($datos['proveedor_id']);
 

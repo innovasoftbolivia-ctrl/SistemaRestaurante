@@ -59,30 +59,33 @@ class CobrosQr
      */
     public static function generar(SesionCaja $sesion, Usuario $usuario, float $monto, ?string $glosa = null): CobroQr
     {
-        // El turno, releído con candado compartido: un cierre en curso hace
-        // esperar al QR y el cobro no nace colgado de una caja ya arqueada.
-        $sesion = SesionCaja::whereKey($sesion->id)->sharedLock()->first() ?? $sesion;
-
-        if (! $sesion->estaAbierta()) {
-            throw new RuntimeException('Necesitas una caja abierta para cobrar por QR.');
-        }
-
         if ($monto <= 0) {
             throw new RuntimeException('El importe a cobrar debe ser mayor que cero.');
         }
 
         $pasarela = self::pasarela();
 
-        $cobro = CobroQr::create([
-            'sesion_caja_id' => $sesion->id,
-            'usuario_id' => $usuario->id,
-            'monto' => round($monto, 2),
-            'moneda' => Config::get('moneda_codigo', 'BOB'),
-            'glosa' => $glosa ?: ('Venta en '.Config::negocio()),
-            'pasarela' => $pasarela->codigo(),
-            'estado' => CobroQr::PENDIENTE,
-            'expira_en' => now()->addMinutes((int) config('qr.minutos_vigencia', self::MINUTOS_POR_DEFECTO)),
-        ]);
+        // El turno, releído con candado compartido DENTRO de una transacción:
+        // fuera de ella el candado se soltaba al instante y un QR podía nacer
+        // colgado de una caja que se estaba cerrando.
+        $cobro = DB::transaction(function () use ($sesion, $usuario, $monto, $glosa, $pasarela) {
+            $turno = SesionCaja::whereKey($sesion->id)->sharedLock()->first();
+
+            if (! $turno?->estaAbierta()) {
+                throw new RuntimeException('Necesitas una caja abierta para cobrar por QR.');
+            }
+
+            return CobroQr::create([
+                'sesion_caja_id' => $turno->id,
+                'usuario_id' => $usuario->id,
+                'monto' => round($monto, 2),
+                'moneda' => Config::get('moneda_codigo', 'BOB'),
+                'glosa' => $glosa ?: ('Venta en '.Config::negocio()),
+                'pasarela' => $pasarela->codigo(),
+                'estado' => CobroQr::PENDIENTE,
+                'expira_en' => now()->addMinutes((int) config('qr.minutos_vigencia', self::MINUTOS_POR_DEFECTO)),
+            ]);
+        });
 
         $cobro = $pasarela->generar($cobro);
 

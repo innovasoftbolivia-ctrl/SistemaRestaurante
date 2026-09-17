@@ -33,6 +33,19 @@ class CrearRespaldo extends Command
             ? 'Fotos: '.basename($hecho['fotos'])
             : 'Fotos: no había fotos que guardar.');
 
+        // Sin la copia externa, el respaldo vive en el mismo disco que la base:
+        // se pierde con él. Queda en la bitácora y el comando termina con error
+        // para que el programador y revisar-salud.sh lo vean.
+        if ($hecho['error_copia'] ?? null) {
+            Auditor::registrar('RESPALDO_COPIA_FALLIDA', null, null, [
+                'archivo' => $nombre,
+                'error' => $hecho['error_copia'],
+            ]);
+            $this->error('No se pudo copiar a la carpeta externa: '.$hecho['error_copia']);
+
+            return self::FAILURE;
+        }
+
         return self::SUCCESS;
     }
 }

@@ -110,6 +110,10 @@ class ComprobanteController extends Controller
      */
     public function sustituir(Request $request, Comprobante $comprobante): RedirectResponse
     {
+        // Sin facturación a la vista no hay a qué sustituir: el botón no se
+        // muestra, y un envío directo tampoco pasa.
+        abort_unless(Config::facturacionVisible(), 404);
+
         $datos = $request->validate([
             'cliente_id' => ['nullable', Rule::exists('clientes', 'id')->where('activo', 1)],
             'motivo' => ['required', 'string', 'min:5', 'max:255'],

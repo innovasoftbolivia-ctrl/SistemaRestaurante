@@ -144,7 +144,7 @@
                                                     {{-- Con compra detrás, el documento lleva a
                                                          la factura completa. --}}
                                                     @if ($movimiento->compra_id)
-                                                        · <a href="{{ route('compras.show', $movimiento->compra_id) }}"
+                                                        · <a href="{{ \App\Support\Menu::puedeAlguno('inventario.ingresar', 'reportes.ver') ? route('compras.show', $movimiento->compra_id) : '#' }}"
                                                             class="text-brand-500 hover:text-brand-600 dark:text-brand-400">{{ $movimiento->documento_externo ?: 'Compra #'.$movimiento->compra_id }}</a>
                                                     @elseif ($movimiento->documento_externo)
                                                         · {{ $movimiento->documento_externo }}

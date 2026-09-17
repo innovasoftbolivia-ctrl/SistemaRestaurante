@@ -10,6 +10,7 @@ use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Devoluciones;
 use App\Support\Config;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -39,26 +40,12 @@ class DevolucionController extends Controller
             'devuelto' => 'total',
         ], 'fecha', 'desc');
 
-        $devoluciones = $this->aplicarOrden(Devolucion::with([
+        $devoluciones = $this->aplicarOrden($this->filtradas($filtros)->with([
             'venta:id,cliente_id,estado',
             'venta.cliente:id,nombre',
             'venta.comprobante:id,venta_id,numero_completo',
             'usuario:id,usuario',
-        ])
-            ->withCount('detalle')
-            ->when($filtros['buscar'] !== '', function ($q) use ($filtros) {
-                $texto = $filtros['buscar'];
-                $q->where(function ($sub) use ($texto) {
-                    $sub->where('motivo', 'like', "%{$texto}%")
-                        ->orWhereHas('venta.comprobantes', fn ($c) => $c->where('numero_completo', 'like', "%{$texto}%"))
-                        ->orWhereHas('venta.cliente', fn ($c) => $c->where('nombre', 'like', "%{$texto}%"));
-                });
-            })
-            ->when($filtros['tipo'], fn ($q, $tipo) => $q->where('tipo', $tipo))
-            ->when($filtros['desde'], fn ($q, $d) => $q->whereDate('fecha', '>=', $d))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->whereDate('fecha', '<=', $h)),
-            $orden
-        )
+        ])->withCount('detalle'), $orden)
             ->paginate(15)
             ->withQueryString();
 
@@ -200,11 +187,26 @@ class DevolucionController extends Controller
      * @param  array<string, mixed>  $filtros
      * @return array<string, float|int>
      */
+    /** Las devoluciones del listado: la tabla y sus totales usan los mismos filtros. */
+    private function filtradas(array $filtros): Builder
+    {
+        return Devolucion::query()
+            ->when($filtros['buscar'] !== '', function ($q) use ($filtros) {
+                $texto = $filtros['buscar'];
+                $q->where(function ($sub) use ($texto) {
+                    $sub->where('motivo', 'like', "%{$texto}%")
+                        ->orWhereHas('venta.comprobantes', fn ($c) => $c->where('numero_completo', 'like', "%{$texto}%"))
+                        ->orWhereHas('venta.cliente', fn ($c) => $c->where('nombre', 'like', "%{$texto}%"));
+                });
+            })
+            ->when($filtros['tipo'], fn ($q, $tipo) => $q->where('tipo', $tipo))
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', $d.' 00:00:00'))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', $h.' 23:59:59'));
+    }
+
     private function resumen(array $filtros): array
     {
-        $base = Devolucion::query()
-            ->when($filtros['desde'], fn ($q, $d) => $q->whereDate('fecha', '>=', $d))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->whereDate('fecha', '<=', $h));
+        $base = $this->filtradas($filtros);
 
         return [
             'operaciones' => (int) (clone $base)->count(),

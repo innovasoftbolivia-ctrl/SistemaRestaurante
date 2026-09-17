@@ -10,6 +10,7 @@ use App\Services\Comprobantes;
 use App\Services\Ventas;
 use App\Support\Config;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -41,27 +42,11 @@ class VentaController extends Controller
             'total' => 'total',
         ], 'fecha', 'desc');
 
-        $ventas = $this->aplicarOrden(Venta::with([
+        $ventas = $this->aplicarOrden($this->filtradas($filtros)->with([
             'cliente:id,nombre',
             'usuario:id,usuario',
             'comprobante:id,venta_id,numero_completo,estado',
-        ])
-            ->when($filtros['buscar'] !== '', function ($q) use ($filtros) {
-                $texto = $filtros['buscar'];
-                $q->where(function ($sub) use ($texto) {
-                    $sub->whereHas('comprobantes', fn ($c) => $c->where('numero_completo', 'like', "%{$texto}%"))
-                        ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', "%{$texto}%"))
-                        ->orWhere('id', ltrim($texto, '#'));
-                });
-            })
-            ->when($filtros['estado'], fn ($q, $estado) => $q->where('estado', $estado))
-            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
-            // Rango explícito y no `whereDate`: envolver la columna en DATE()
-            // anula el índice de fecha y obliga a recorrer la tabla entera.
-            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay())),
-            $orden
-        )
+        ]), $orden)
             ->paginate(15)
             ->withQueryString();
 
@@ -159,14 +144,34 @@ class VentaController extends Controller
      * @param  array<string, mixed>  $filtros
      * @return array<string, float|int>
      */
+    /**
+     * Las ventas que muestra el listado. El listado y sus totales salen de aquí
+     * los dos: antes los totales ignoraban el estado y la búsqueda, y con el
+     * filtro «Devuelta» la tabla mostraba 2 ventas y la tarjeta sumaba 10.
+     */
+    private function filtradas(array $filtros): Builder
+    {
+        return Venta::query()
+            ->when($filtros['buscar'] !== '', function ($q) use ($filtros) {
+                $texto = $filtros['buscar'];
+                $q->where(function ($sub) use ($texto) {
+                    $sub->whereHas('comprobantes', fn ($c) => $c->where('numero_completo', 'like', "%{$texto}%"))
+                        ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', "%{$texto}%"))
+                        ->orWhere('id', ltrim($texto, '#'));
+                });
+            })
+            ->when($filtros['estado'], fn ($q, $estado) => $q->where('estado', $estado))
+            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
+            // Rango explícito y no `whereDate`: envolver la columna en DATE()
+            // anula el índice de fecha y obliga a recorrer la tabla entera.
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay()));
+    }
+
     private function resumen(array $filtros): array
     {
-        // Una sola pasada por el mismo rango, con el índice de fecha: antes
-        // eran cuatro recorridos de la tabla entera para cuatro cifras.
-        $fila = Venta::query()
-            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
-            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay()))
+        // Una sola pasada, con los mismos filtros que la tabla.
+        $fila = $this->filtradas($filtros)
             ->selectRaw("SUM(estado <> 'ANULADA') AS operaciones")
             ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', total, 0)), 0) AS vendido")
             ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', impuesto, 0)), 0) AS impuesto")

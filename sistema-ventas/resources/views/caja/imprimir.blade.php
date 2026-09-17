@@ -197,6 +197,14 @@
             </div>
         </div>
 
+        @if ($qrSinVenta->isNotEmpty())
+            <h2>QR pagados sin venta</h2>
+            <p data-qr-sin-venta>
+                {{ $qrSinVenta->count() }} cobro(s) por {{ Config::importe($qrSinVenta->sum('monto')) }} que el banco recibió y no
+                terminaron en una venta: hay que devolverlos al cliente. No están en ninguna cifra de este resumen.
+            </p>
+        @endif
+
         <h2>Ventas por método de pago</h2>
         <table style="margin-bottom: 20px;">
             <thead>

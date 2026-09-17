@@ -39,14 +39,18 @@ class Inventario
             return null;
         }
 
-        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'INICIAL', [
-            'motivo' => 'Carga inicial de inventario'.($detalle ? " ({$detalle})" : ''),
-            'costo_unitario' => (float) $producto->precio_compra,
-        ]);
+        // El stock y su lote juntos: si el lote no se puede guardar, tampoco
+        // queda el movimiento.
+        return DB::transaction(function () use ($producto, $cantidad, $detalle, $vence) {
+            $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'INICIAL', [
+                'motivo' => 'Carga inicial de inventario'.($detalle ? " ({$detalle})" : ''),
+                'costo_unitario' => (float) $producto->precio_compra,
+            ]);
 
-        Lotes::ingresar($producto, $cantidad, $vence);
+            Lotes::ingresar($producto, $cantidad, $vence);
 
-        return $movimiento;
+            return $movimiento;
+        }, self::REINTENTOS);
     }
 
     /**
@@ -72,20 +76,24 @@ class Inventario
         ?int $compraDetalleId = null,
         ?int $usuarioId = null,
     ): MovimientoInventario {
-        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
-            'usuario_id' => $usuarioId ?? Auth::id(),
-            'proveedor_id' => $proveedorId,
-            'documento_externo' => $documentoExterno,
-            'compra_id' => $compraId,
-            'costo_unitario' => $costoUnitario,
-            'motivo' => $motivo,
-        ]);
+        // El stock y su lote juntos: antes el movimiento se confirmaba en su
+        // propia transacción y, si el lote fallaba, quedaba stock sin tanda.
+        return DB::transaction(function () use ($producto, $cantidad, $proveedorId, $documentoExterno, $costoUnitario, $motivo, $compraId, $vence, $lote, $compraDetalleId, $usuarioId) {
+            $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
+                'usuario_id' => $usuarioId ?? Auth::id(),
+                'proveedor_id' => $proveedorId,
+                'documento_externo' => $documentoExterno,
+                'compra_id' => $compraId,
+                'costo_unitario' => $costoUnitario,
+                'motivo' => $motivo,
+            ]);
 
-        // La mercadería que entra abre su tanda con la fecha que trae la caja.
-        // Si el producto no lleva control de vencimiento, esto no hace nada.
-        Lotes::ingresar($producto, $cantidad, $vence, $lote, $compraDetalleId);
+            // La mercadería que entra abre su tanda con la fecha que trae la caja.
+            // Si el producto no lleva control de vencimiento, esto no hace nada.
+            Lotes::ingresar($producto, $cantidad, $vence, $lote, $compraDetalleId);
 
-        return $movimiento;
+            return $movimiento;
+        }, self::REINTENTOS);
     }
 
     /**
@@ -110,18 +118,20 @@ class Inventario
         ?Lote $lote = null,
         ?int $usuarioId = null,
     ): MovimientoInventario {
-        $movimiento = self::mover($producto, $cantidad, 'SALIDA', 'DEVOLUCION_COMPRA', [
-            'usuario_id' => $usuarioId ?? Auth::id(),
-            'devolucion_compra_id' => $devolucionCompraId,
-            'proveedor_id' => $proveedorId,
-            'documento_externo' => $documentoExterno,
-            'costo_unitario' => $costoUnitario,
-            'motivo' => $motivo,
-        ]);
+        return DB::transaction(function () use ($producto, $cantidad, $devolucionCompraId, $proveedorId, $documentoExterno, $costoUnitario, $motivo, $lote, $usuarioId) {
+            $movimiento = self::mover($producto, $cantidad, 'SALIDA', 'DEVOLUCION_COMPRA', [
+                'usuario_id' => $usuarioId ?? Auth::id(),
+                'devolucion_compra_id' => $devolucionCompraId,
+                'proveedor_id' => $proveedorId,
+                'documento_externo' => $documentoExterno,
+                'costo_unitario' => $costoUnitario,
+                'motivo' => $motivo,
+            ]);
 
-        Lotes::consumirDe($producto, $cantidad, $lote);
+            Lotes::consumirDe($producto, $cantidad, $lote);
 
-        return $movimiento;
+            return $movimiento;
+        }, self::REINTENTOS);
     }
 
     /**
@@ -141,18 +151,20 @@ class Inventario
         ?string $vence = null,
         ?int $usuarioId = null,
     ): MovimientoInventario {
-        $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'DEVOLUCION_COMPRA', [
-            'usuario_id' => $usuarioId ?? Auth::id(),
-            'devolucion_compra_id' => $devolucionCompraId,
-            'proveedor_id' => $proveedorId,
-            'documento_externo' => $documentoExterno,
-            'costo_unitario' => $costoUnitario,
-            'motivo' => 'Reposición del proveedor',
-        ]);
+        return DB::transaction(function () use ($producto, $cantidad, $devolucionCompraId, $proveedorId, $documentoExterno, $costoUnitario, $vence, $usuarioId) {
+            $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'DEVOLUCION_COMPRA', [
+                'usuario_id' => $usuarioId ?? Auth::id(),
+                'devolucion_compra_id' => $devolucionCompraId,
+                'proveedor_id' => $proveedorId,
+                'documento_externo' => $documentoExterno,
+                'costo_unitario' => $costoUnitario,
+                'motivo' => 'Reposición del proveedor',
+            ]);
 
-        Lotes::ingresar($producto, $cantidad, $vence);
+            Lotes::ingresar($producto, $cantidad, $vence);
 
-        return $movimiento;
+            return $movimiento;
+        }, self::REINTENTOS);
     }
 
     /**
@@ -243,9 +255,9 @@ class Inventario
      * más de lo que había, el producto queda en cero.
      * Ver {@see TomasInventario}.
      */
-    public static function corregir(Producto $producto, float $diferencia, string $motivo): ?MovimientoInventario
+    public static function corregir(Producto $producto, float $diferencia, string $motivo, ?int $usuarioId = null): ?MovimientoInventario
     {
-        return self::ajustarA($producto, fn (float $actual) => max(round($actual + $diferencia, 3), 0.0), $motivo);
+        return self::ajustarA($producto, fn (float $actual) => max(round($actual + $diferencia, 3), 0.0), $motivo, $usuarioId);
     }
 
     /**
@@ -254,9 +266,9 @@ class Inventario
      *
      * @param  callable(float): float  $destino
      */
-    private static function ajustarA(Producto $producto, callable $destino, string $motivo): ?MovimientoInventario
+    private static function ajustarA(Producto $producto, callable $destino, string $motivo, ?int $usuarioId = null): ?MovimientoInventario
     {
-        return DB::transaction(function () use ($producto, $destino, $motivo) {
+        return DB::transaction(function () use ($producto, $destino, $motivo, $usuarioId) {
             $actual = (float) Producto::whereKey($producto->id)->lockForUpdate()->value('stock_actual');
             $stockContado = (float) $destino($actual);
             $diferencia = round($stockContado - $actual, 3);
@@ -272,7 +284,7 @@ class Inventario
                 origen: 'AJUSTE',
                 stockAnterior: $actual,
                 stockResultante: $stockContado,
-                extra: ['motivo' => $motivo],
+                extra: ['motivo' => $motivo, 'usuario_id' => $usuarioId ?? Auth::id()],
             );
 
             // Un conteo que corrige hacia abajo se descuenta primero de lo YA

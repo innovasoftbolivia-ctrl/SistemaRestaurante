@@ -97,8 +97,16 @@ class ProductoController extends Controller
         $request->validate([
             ...$this->reglasDeCantidad(),
             'stock_inicial' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-            'vence' => ['nullable', 'date'],
-        ], [], ['stock_inicial' => 'stock inicial', 'empaques' => 'stock inicial', 'vence' => 'vencimiento']);
+            // Un perecedero que entra con stock necesita la fecha de ese stock,
+            // igual que un ingreso: sin ella, su lote nace sin fecha.
+            'vence' => [
+                Rule::requiredIf(fn () => $request->boolean('controla_vencimiento')
+                    && ((float) $request->input('stock_inicial') > 0 || (int) $request->input('empaques') > 0 || (float) $request->input('sueltas') > 0)),
+                'nullable', 'date', 'after_or_equal:today',
+            ],
+        ], [
+            'vence.required' => 'Este producto se controla por vencimiento: escribe la fecha del stock con que entra.',
+        ], ['stock_inicial' => 'stock inicial', 'empaques' => 'stock inicial', 'vence' => 'vencimiento']);
 
         if ($request->hasFile('imagen')) {
             $datos['imagen'] = $request->file('imagen')->store('productos', 'public');
@@ -185,16 +193,23 @@ class ProductoController extends Controller
         $precioAnterior = (float) $producto->precio_venta;
         $controlabaVencimiento = $producto->controla_vencimiento;
 
-        $producto->update($datos);
+        // Con el producto bloqueado: una venta en curso termina antes (o
+        // espera), así el lote sin fecha se abre por el stock que de verdad
+        // quedó. Sin el candado, la venta descontaba stock sin tocar lotes y el
+        // lote se abría por el stock de antes: más en lotes que en el estante.
+        DB::transaction(function () use ($producto, $datos, $controlabaVencimiento) {
+            Producto::whereKey($producto->id)->lockForUpdate()->first();
+            $producto->update($datos);
 
-        // Al encender el control, el stock que ya tenía existe y hay que
-        // contarlo, pero su fecha no la sabe nadie: se abre un lote sin fecha
-        // por esa diferencia. Inventar una fecha sería peor que admitir que no
-        // se conoce, y la pantalla lo muestra aparte para que se vea que el
-        // control todavía no está completo.
-        if (! $controlabaVencimiento && $producto->controla_vencimiento) {
-            Lotes::cuadrarConElStock($producto->fresh());
-        }
+            // Al encender el control, el stock que ya tenía existe y hay que
+            // contarlo, pero su fecha no la sabe nadie: se abre un lote sin fecha
+            // por esa diferencia. Inventar una fecha sería peor que admitir que no
+            // se conoce, y la pantalla lo muestra aparte para que se vea que el
+            // control todavía no está completo.
+            if (! $controlabaVencimiento && $producto->controla_vencimiento) {
+                Lotes::cuadrarConElStock($producto->fresh());
+            }
+        });
 
         // El cambio de precio se audita aparte: es la operación sensible
         // del catálogo (C3: precios no centralizados).

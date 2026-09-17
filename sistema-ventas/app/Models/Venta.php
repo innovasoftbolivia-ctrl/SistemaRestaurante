@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 /**
  * La operación comercial. El documento entregado al cliente vive aparte, en
@@ -71,6 +72,30 @@ class Venta extends Model
     public function detalle(): HasMany
     {
         return $this->hasMany(VentaDetalle::class, 'venta_id');
+    }
+
+    /**
+     * Lo que se le debe al cliente al anular una venta que se cobró, en todo o
+     * en parte, por QR, tarjeta o transferencia: el efectivo se devuelve en el
+     * mostrador, pero eso sigue en el banco.
+     */
+    public function getReintegroPorAnulacionAttribute(): float
+    {
+        if ($this->estado !== 'ANULADA') {
+            return 0.0;
+        }
+
+        return self::fueraDelCajon($this->id);
+    }
+
+    /** Lo cobrado a esta venta por medios que no pasan por el cajón. */
+    public static function fueraDelCajon(int $ventaId): float
+    {
+        return round((float) DB::table('venta_pagos as p')
+            ->join('metodos_pago as m', 'm.id', '=', 'p.metodo_pago_id')
+            ->where('p.venta_id', $ventaId)
+            ->where('m.afecta_caja', 0)
+            ->sum('p.monto'), 2);
     }
 
     public function pagos(): HasMany
