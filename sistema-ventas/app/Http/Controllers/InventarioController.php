@@ -12,6 +12,7 @@ use App\Models\TomaInventarioDetalle;
 use App\Models\Usuario;
 use App\Services\Auditor;
 use App\Services\Inventario;
+use App\Support\Menu;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -115,7 +116,10 @@ class InventarioController extends Controller
             ])
             ->when($filtros['producto'], fn ($q, $id) => $q->where('producto_id', $id))
             ->when($filtros['origen'] !== '', fn ($q) => $q->where('origen', $filtros['origen']))
-            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
+            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id)
+                // Quién vendió qué es de cada cajero: sin reportes, el filtro
+                // por responsable no alcanza a los movimientos del mostrador.
+                ->when(! Menu::puede('reportes.ver'), fn ($m) => $m->whereNotIn('origen', MovimientoInventario::DEL_MOSTRADOR)))
             // Las dos puntas del día, y no `whereDate()`: envolver la columna
             // en una función impide usar el índice de `fecha` (mismo criterio
             // que en `DashboardController`).
@@ -133,7 +137,15 @@ class InventarioController extends Controller
             'filtros' => $filtros,
             'origenes' => $origenes,
             'productos' => Producto::orderBy('nombre')->pluck('nombre', 'id'),
-            'usuarios' => Usuario::orderBy('usuario')->pluck('usuario', 'id'),
+            // Sin reportes, la lista de responsables no enumera a los cajeros:
+            // solo a quienes movieron stock fuera del mostrador.
+            'usuarios' => Usuario::query()
+                ->when(! Menu::puede('reportes.ver'), fn ($q) => $q->whereIn('id', MovimientoInventario::query()
+                    ->whereNotIn('origen', MovimientoInventario::DEL_MOSTRADOR)
+                    ->whereNotNull('usuario_id')
+                    ->select('usuario_id')))
+                ->orderBy('usuario')
+                ->pluck('usuario', 'id'),
             'resumen' => $this->resumenMovimientos($filtros),
         ]);
     }
@@ -302,7 +314,10 @@ class InventarioController extends Controller
         $fila = DB::table('movimientos_inventario')
             ->when($filtros['producto'], fn ($q, $id) => $q->where('producto_id', $id))
             ->when($filtros['origen'] !== '', fn ($q) => $q->where('origen', $filtros['origen']))
-            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
+            ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id)
+                // Quién vendió qué es de cada cajero: sin reportes, el filtro
+                // por responsable no alcanza a los movimientos del mostrador.
+                ->when(! Menu::puede('reportes.ver'), fn ($m) => $m->whereNotIn('origen', MovimientoInventario::DEL_MOSTRADOR)))
             ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', $d->copy()->startOfDay()))
             ->when($filtros['hasta'], fn ($q, $d) => $q->where('fecha', '<=', $d->copy()->endOfDay()))
             ->selectRaw('COUNT(*) AS movimientos')

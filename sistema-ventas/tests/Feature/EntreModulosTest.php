@@ -321,8 +321,11 @@ class EntreModulosTest extends TestCase
     /** El almacenero ve los clientes pero no los botones de editar que le darían 403. */
     public function test_el_almacenero_no_ve_acciones_de_clientes_que_no_puede_hacer(): void
     {
-        $this->actingAs($this->usuario('almacen'))->get(route('clientes.index'))->assertOk()
-            ->assertDontSee('@click="nuevo()"', false)->assertDontSee('title="Eliminar"', false);
+        // El almacenero ya no entra a clientes; el cajero entra y registra, pero
+        // no ve cómo editar ni eliminar.
+        $this->actingAs($this->usuario('almacen'))->get(route('clientes.index'))->assertForbidden();
+        $this->actingAs($this->usuario('cajero1'))->get(route('clientes.index'))->assertOk()
+            ->assertSee('@click="nuevo()"', false)->assertDontSee('title="Eliminar"', false);
         $this->actingAs($this->usuario('admin'))->get(route('clientes.index'))->assertOk()
             ->assertSee('@click="nuevo()"', false);
     }

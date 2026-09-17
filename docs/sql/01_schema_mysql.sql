@@ -1858,4 +1858,5 @@ INSERT INTO parches_aplicados (archivo) VALUES
     ('2026_09_15_lote_salidas.sql'),
     ('2026_09_15_plazo_devolucion_y_referencia_de_pago.sql'),
     ('2026_09_15_precios_con_impuesto_incluido.sql'),
+    ('2026_09_16_permisos_por_rol.sql'),
     ('2026_09_16_reglas_en_la_base.sql');

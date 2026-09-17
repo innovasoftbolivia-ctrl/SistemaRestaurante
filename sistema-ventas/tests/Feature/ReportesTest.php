@@ -95,11 +95,15 @@ class ReportesTest extends TestCase
         $this->actingAs($this->cajero())->get('/reportes/productos')->assertForbidden();
     }
 
-    public function test_el_almacenero_y_el_administrador_ven_los_reportes(): void
+    /** Los reportes muestran las ventas de todos los cajeros: solo los ve el administrador. */
+    public function test_solo_el_administrador_ve_los_reportes(): void
     {
-        foreach ([$this->admin(), $this->almacenero()] as $usuario) {
-            $this->actingAs($usuario)->get('/reportes/ventas')->assertOk();
-            $this->actingAs($usuario)->get('/reportes/productos')->assertOk();
+        $this->actingAs($this->admin())->get('/reportes/ventas')->assertOk();
+        $this->actingAs($this->admin())->get('/reportes/productos')->assertOk();
+
+        foreach ([$this->almacenero(), $this->cajero()] as $usuario) {
+            $this->actingAs($usuario)->get('/reportes/ventas')->assertForbidden();
+            $this->actingAs($usuario)->get('/reportes/productos')->assertForbidden();
         }
     }
 

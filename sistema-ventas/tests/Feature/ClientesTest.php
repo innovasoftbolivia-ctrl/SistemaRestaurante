@@ -45,9 +45,10 @@ class ClientesTest extends TestCase
     // ------------------------------------------------------------- permisos
 
     /** Ve a los clientes por su `reportes.ver`, aunque no venda desde el mostrador. */
-    public function test_el_almacenero_entra_a_clientes(): void
+    /** Los clientes son del mostrador y de la administración, no del almacén. */
+    public function test_el_almacenero_no_entra_a_clientes(): void
     {
-        $this->actingAs($this->almacenero())->get('/clientes')->assertOk();
+        $this->actingAs($this->almacenero())->get('/clientes')->assertForbidden();
     }
 
     public function test_el_cajero_entra_a_clientes(): void

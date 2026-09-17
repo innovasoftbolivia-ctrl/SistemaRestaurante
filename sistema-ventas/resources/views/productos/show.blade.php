@@ -160,7 +160,7 @@
                                             → <b class="text-gray-800 dark:text-white/90">{{ Config::cantidad($movimiento->stock_resultante) }}</b>
                                         </td>
                                         <td class="px-5 py-4 whitespace-nowrap text-theme-xs text-gray-500 dark:text-gray-400">
-                                            {{ $movimiento->usuario?->usuario ?? 'sistema' }}
+                                            {{ $movimiento->responsable_visible }}
                                         </td>
                                     </tr>
                                 @empty
@@ -251,7 +251,7 @@
                     @endif
                 </x-common.component-card>
 
-                @puede('productos.gestionar')
+                @puede('registros.eliminar')
                     <x-common.component-card title="Retirar del catálogo">
                         <p class="text-theme-sm text-gray-500 dark:text-gray-400">
                             Si el producto tiene movimientos, se descataloga en lugar de eliminarse.
@@ -444,7 +444,7 @@
         @endpuede
 
         {{-- Baja --}}
-        @puede('productos.gestionar')
+        @puede('registros.eliminar')
             <div x-show="borrando" x-cloak role="dialog" aria-modal="true" aria-labelledby="titulo-modal-eliminar-producto"
                 class="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto overscroll-contain p-5">
                 <div @click="borrando = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"></div>

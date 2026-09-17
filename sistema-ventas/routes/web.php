@@ -81,13 +81,13 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('empleados/{empleado}', [EmpleadoController::class, 'show'])->name('empleados.show');
         Route::get('empleados/{empleado}/editar', [EmpleadoController::class, 'edit'])->name('empleados.edit');
         Route::put('empleados/{empleado}', [EmpleadoController::class, 'update'])->name('empleados.update');
-        Route::delete('empleados/{empleado}', [EmpleadoController::class, 'destroy'])->name('empleados.destroy');
+        Route::delete('empleados/{empleado}', [EmpleadoController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('empleados.destroy');
         Route::post('empleados/{empleado}/reactivar', [EmpleadoController::class, 'reactivar'])->name('empleados.reactivar');
 
         Route::get('cargos', [CargoController::class, 'index'])->name('cargos.index');
         Route::post('cargos', [CargoController::class, 'store'])->name('cargos.store');
         Route::put('cargos/{cargo}', [CargoController::class, 'update'])->name('cargos.update');
-        Route::delete('cargos/{cargo}', [CargoController::class, 'destroy'])->name('cargos.destroy');
+        Route::delete('cargos/{cargo}', [CargoController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('cargos.destroy');
     });
 
     // ---- Punto de venta ----
@@ -139,8 +139,12 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
     // para modificar clientes, igual que ya pasa con devoluciones más abajo.
     Route::middleware('permiso:ventas.registrar')->group(function () {
         Route::post('clientes', [ClienteController::class, 'store'])->name('clientes.store');
-        Route::put('clientes/{cliente}', [ClienteController::class, 'update'])->name('clientes.update');
-        Route::delete('clientes/{cliente}', [ClienteController::class, 'destroy'])->name('clientes.destroy');
+        // Registrar un cliente es del mostrador; corregirlo o borrarlo, del
+        // administrador.
+        Route::put('clientes/{cliente}', [ClienteController::class, 'update'])
+            ->middleware('permiso:clientes.editar')->name('clientes.update');
+        Route::delete('clientes/{cliente}', [ClienteController::class, 'destroy'])
+            ->middleware('permiso:registros.eliminar')->name('clientes.destroy');
     });
 
     Route::post('ventas/{venta}/anular', [VentaController::class, 'anular'])
@@ -207,7 +211,7 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('cajas', [CajaFisicaController::class, 'index'])->name('cajas.index');
         Route::post('cajas', [CajaFisicaController::class, 'store'])->name('cajas.store');
         Route::put('cajas/{caja}', [CajaFisicaController::class, 'update'])->name('cajas.update');
-        Route::delete('cajas/{caja}', [CajaFisicaController::class, 'destroy'])->name('cajas.destroy');
+        Route::delete('cajas/{caja}', [CajaFisicaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('cajas.destroy');
 
         // Los datos del negocio y los parámetros del sistema. Hasta que hubo
         // pantalla se cambiaban por SQL.
@@ -248,22 +252,22 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::post('productos', [ProductoController::class, 'store'])->name('productos.store');
         Route::get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
         Route::put('productos/{producto}', [ProductoController::class, 'update'])->name('productos.update');
-        Route::delete('productos/{producto}', [ProductoController::class, 'destroy'])->name('productos.destroy');
+        Route::delete('productos/{producto}', [ProductoController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('productos.destroy');
 
         Route::get('categorias', [CategoriaController::class, 'index'])->name('categorias.index');
         Route::post('categorias', [CategoriaController::class, 'store'])->name('categorias.store');
         Route::put('categorias/{categoria}', [CategoriaController::class, 'update'])->name('categorias.update');
-        Route::delete('categorias/{categoria}', [CategoriaController::class, 'destroy'])->name('categorias.destroy');
+        Route::delete('categorias/{categoria}', [CategoriaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('categorias.destroy');
 
         Route::get('unidades', [UnidadMedidaController::class, 'index'])->name('unidades.index');
         Route::post('unidades', [UnidadMedidaController::class, 'store'])->name('unidades.store');
         Route::put('unidades/{unidad}', [UnidadMedidaController::class, 'update'])->name('unidades.update');
-        Route::delete('unidades/{unidad}', [UnidadMedidaController::class, 'destroy'])->name('unidades.destroy');
+        Route::delete('unidades/{unidad}', [UnidadMedidaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('unidades.destroy');
 
         Route::get('proveedores', [ProveedorController::class, 'index'])->name('proveedores.index');
         Route::post('proveedores', [ProveedorController::class, 'store'])->name('proveedores.store');
         Route::put('proveedores/{proveedor}', [ProveedorController::class, 'update'])->name('proveedores.update');
-        Route::delete('proveedores/{proveedor}', [ProveedorController::class, 'destroy'])->name('proveedores.destroy');
+        Route::delete('proveedores/{proveedor}', [ProveedorController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('proveedores.destroy');
     });
 
     // ---- Movimientos de stock: permisos propios, distintos del catálogo ----
@@ -395,12 +399,12 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('usuarios/{usuario}/editar', [UsuarioController::class, 'edit'])->name('usuarios.edit');
         Route::put('usuarios/{usuario}', [UsuarioController::class, 'update'])->name('usuarios.update');
         Route::patch('usuarios/{usuario}/acceso', [UsuarioController::class, 'alternarAcceso'])->name('usuarios.acceso');
-        Route::delete('usuarios/{usuario}', [UsuarioController::class, 'destroy'])->name('usuarios.destroy');
+        Route::delete('usuarios/{usuario}', [UsuarioController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('usuarios.destroy');
 
         Route::get('roles', [RolController::class, 'index'])->name('roles.index');
         Route::post('roles', [RolController::class, 'store'])->name('roles.store');
         Route::put('roles/{rol}', [RolController::class, 'update'])->name('roles.update');
-        Route::delete('roles/{rol}', [RolController::class, 'destroy'])->name('roles.destroy');
+        Route::delete('roles/{rol}', [RolController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('roles.destroy');
     });
 });
 

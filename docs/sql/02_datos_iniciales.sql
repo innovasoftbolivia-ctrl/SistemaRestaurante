@@ -38,7 +38,9 @@ INSERT INTO permisos (codigo, modulo, descripcion) VALUES
     ('reportes.ver',         'Reportes',   'Consultar reportes y dashboard'),
     ('configuracion.editar', 'Sistema',    'Editar parámetros del sistema'),
     ('bitacora.ver',         'Sistema',    'Consultar la bitácora de operaciones'),
-    ('respaldos.gestionar',  'Sistema',    'Hacer y descargar respaldos de la base');
+    ('respaldos.gestionar',  'Sistema',    'Hacer y descargar respaldos de la base'),
+    ('clientes.editar',      'Ventas',     'Editar los datos de un cliente ya registrado'),
+    ('registros.eliminar',   'Sistema',    'Eliminar productos, categorías, unidades, proveedores, clientes y personal');
 
 -- Administrador: todos los permisos
 INSERT INTO rol_permiso (rol_id, permiso_id) SELECT 1, id FROM permisos;
@@ -52,7 +54,10 @@ SELECT 2, id FROM permisos
 -- Almacenero
 INSERT INTO rol_permiso (rol_id, permiso_id)
 SELECT 3, id FROM permisos
- WHERE codigo IN ('productos.gestionar','inventario.ingresar','inventario.ajustar','reportes.ver');
+ WHERE codigo IN ('productos.gestionar','inventario.ingresar','inventario.ajustar');
+-- Sin `reportes.ver`: los reportes, las ventas, las cajas y las devoluciones son
+-- de todos los cajeros, y eso solo lo ve el administrador. Tampoco
+-- `registros.eliminar`: el almacenero da de alta y corrige, no elimina.
 
 -- Nótese que los roles (Administrador, Cajero, Almacenero) no tienen por qué
 -- coincidir con los cargos: el gerente Ana tiene rol Administrador, pero un

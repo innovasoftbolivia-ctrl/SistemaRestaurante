@@ -91,10 +91,10 @@ class PuntoDeVentaTest extends TestCase
      * `ventas.registrar`, así que no entra al mostrador; pero sí tiene
      * `reportes.ver`, y el listado de ventas es información de gestión.
      */
-    public function test_el_almacenero_consulta_ventas_pero_no_vende(): void
+    public function test_el_almacenero_no_vende_ni_ve_las_ventas(): void
     {
         $this->actingAs($this->almacenero())->get('/pos')->assertForbidden();
-        $this->actingAs($this->almacenero())->get('/ventas')->assertOk();
+        $this->actingAs($this->almacenero())->get('/ventas')->assertForbidden();
 
         $this->actingAs($this->almacenero())
             ->post('/pos', [

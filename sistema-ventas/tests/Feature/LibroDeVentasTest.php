@@ -183,19 +183,19 @@ class LibroDeVentasTest extends TestCase
 
     // ============================================================== pantalla
 
-    public function test_lo_ven_quienes_ven_reportes(): void
+    public function test_lo_ve_solo_el_administrador(): void
     {
         $venta = $this->vender([['P-0001', 2]], $this->empresa());
 
-        foreach ([$this->admin(), $this->almacenero()] as $usuario) {
-            $this->actingAs($usuario)
-                ->get(route('reportes.libro-ventas'))
-                ->assertOk()
-                ->assertSee($venta->comprobante->numero_completo)
-                ->assertSee('Borrador para el contador');
-        }
+        $this->actingAs($this->admin())
+            ->get(route('reportes.libro-ventas'))
+            ->assertOk()
+            ->assertSee($venta->comprobante->numero_completo)
+            ->assertSee('Borrador para el contador');
 
-        $this->actingAs($this->cajero())->get(route('reportes.libro-ventas'))->assertForbidden();
+        foreach ([$this->cajero(), $this->almacenero()] as $usuario) {
+            $this->actingAs($usuario)->get(route('reportes.libro-ventas'))->assertForbidden();
+        }
     }
 
     /** La diferencia con el impuesto del ticket queda a la vista, con los números del mes. */

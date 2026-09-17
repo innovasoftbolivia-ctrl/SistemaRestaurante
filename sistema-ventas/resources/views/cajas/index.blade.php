@@ -103,6 +103,7 @@
                                                     stroke-width="1.5" stroke-linejoin="round" />
                                             </svg>
                                         </button>
+                                        @puede('registros.eliminar')
                                         <button type="button" title="Dar de baja" @click="eliminar(@js($datos))"
                                             class="rounded-lg p-2 text-gray-500 transition hover:bg-error-50 hover:text-error-500 dark:text-gray-400 dark:hover:bg-error-500/10">
                                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -111,6 +112,7 @@
                                                     stroke-linejoin="round" />
                                             </svg>
                                         </button>
+                                        @endpuede
                                     </div>
                                 </td>
                             </tr>

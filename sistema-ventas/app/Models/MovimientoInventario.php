@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Menu;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,6 +12,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class MovimientoInventario extends Model
 {
+    /** Los orígenes que salen del mostrador: quién vendió es de cada cajero. */
+    public const DEL_MOSTRADOR = ['VENTA', 'DEVOLUCION', 'ANULACION'];
+
+    /**
+     * Quién hizo el movimiento, tal como lo puede ver quien mira. Las ventas,
+     * devoluciones y anulaciones son movimientos de cada cajero: solo el
+     * administrador ve de quién. El almacén ve que salió por el mostrador.
+     */
+    public function getResponsableVisibleAttribute(): string
+    {
+        if (in_array($this->origen, self::DEL_MOSTRADOR, true) && ! Menu::puede('reportes.ver')) {
+            return 'Mostrador';
+        }
+
+        return $this->usuario?->usuario ?? 'sistema';
+    }
+
     protected $table = 'movimientos_inventario';
 
     public $timestamps = false;

@@ -58,8 +58,19 @@ class DevolucionController extends Controller
     }
 
     /** Formulario de devolución, montado sobre las líneas de una venta. */
+    /**
+     * Quien no ve reportes solo trabaja con devoluciones de sus propias ventas,
+     * igual que en el listado de ventas: lo de los demás cajeros no es suyo.
+     */
+    private function exigirPropia(Venta $venta): void
+    {
+        abort_if(VentaController::soloPropias() && $venta->usuario_id !== Auth::id(), 403, 'Esa venta la registró otra persona.');
+    }
+
     public function create(Venta $venta): View|RedirectResponse
     {
+        $this->exigirPropia($venta);
+
         if (! $venta->dentroDelPlazoDeDevolucion()) {
             return redirect()->route('ventas.show', $venta)->with('error', sprintf(
                 'Pasó el plazo para devolver: se aceptan devoluciones hasta %d día(s) después de la venta.',
@@ -88,6 +99,8 @@ class DevolucionController extends Controller
 
     public function store(Request $request, Venta $venta): RedirectResponse
     {
+        $this->exigirPropia($venta);
+
         $datos = $request->validate([
             'motivo' => ['required', 'string', 'min:5', 'max:255'],
             'lineas' => ['required', 'array', 'min:1'],
@@ -165,6 +178,8 @@ class DevolucionController extends Controller
 
     public function show(Devolucion $devolucion): View
     {
+        $this->exigirPropia($devolucion->venta);
+
         $devolucion->load([
             'venta.cliente:id,nombre',
             'venta.comprobante:id,venta_id,numero_completo',
@@ -191,6 +206,7 @@ class DevolucionController extends Controller
     private function filtradas(array $filtros): Builder
     {
         return Devolucion::query()
+            ->when(VentaController::soloPropias(), fn ($q) => $q->whereHas('venta', fn ($v) => $v->where('usuario_id', Auth::id())))
             ->when($filtros['buscar'] !== '', function ($q) use ($filtros) {
                 $texto = $filtros['buscar'];
                 $q->where(function ($sub) use ($texto) {

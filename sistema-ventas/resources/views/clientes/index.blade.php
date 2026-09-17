@@ -177,7 +177,7 @@
                                 </td>
                                 <td class="px-5 py-4">
                                     <div class="flex items-center justify-end gap-1">
-                                        @puede('ventas.registrar')
+                                        @puede('clientes.editar')
                                         <button type="button" title="Editar" @click="editar(@js($datos))"
                                             class="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-brand-500 dark:text-gray-400 dark:hover:bg-white/[0.05]">
                                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -185,6 +185,8 @@
                                                     stroke-width="1.5" stroke-linejoin="round" />
                                             </svg>
                                         </button>
+                                        @endpuede
+                                        @puede('registros.eliminar')
                                         <button type="button" title="Eliminar" @click="eliminar(@js($datos))"
                                             class="rounded-lg p-2 text-gray-500 transition hover:bg-error-50 hover:text-error-500 dark:text-gray-400 dark:hover:bg-error-500/10">
                                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none">

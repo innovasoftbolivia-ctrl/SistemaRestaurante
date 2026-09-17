@@ -78,7 +78,8 @@ class PersonalYAccesosTest extends TestCase
         $almacenero = Usuario::where('usuario', 'almacen')->firstOrFail();
 
         $this->actingAs($this->admin())->get('/')->assertRedirect('/inicio');
-        $this->actingAs($almacenero)->get('/')->assertRedirect('/inicio');
+        // Sin reportes, el almacenero entra directo a su catálogo.
+        $this->actingAs($almacenero)->get('/')->assertRedirect('/productos');
         $this->actingAs($this->cajero())->get('/')->assertRedirect('/pos');
     }
 

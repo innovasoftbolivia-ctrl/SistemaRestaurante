@@ -120,9 +120,12 @@ class CajaTest extends TestCase
         $sesion = $this->turno();
         Cajas::cerrar($sesion->fresh(), $this->admin(), 100);
 
-        foreach ([$this->cajero(), $this->admin(), $this->almacenero()] as $usuario) {
+        foreach ([$this->cajero(), $this->admin()] as $usuario) {
             $this->actingAs($usuario)->get(route('caja.imprimir', $sesion))->assertOk();
         }
+
+        // El almacenero no ve las cajas de nadie: eso es del administrador.
+        $this->actingAs($this->almacenero())->get(route('caja.imprimir', $sesion))->assertForbidden();
     }
 
     // -------------------------------------------------------------- contenido

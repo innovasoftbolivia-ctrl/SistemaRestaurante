@@ -141,13 +141,17 @@
                                         <span class="block text-theme-xs">{{ $movimiento->proveedor->razon_social }}</span>
                                     @endif
                                     @if ($movimiento->venta_id)
-                                        <a href="{{ route('ventas.show', $movimiento->venta_id) }}"
-                                            class="text-theme-xs hover:text-brand-500">Venta #{{ $movimiento->venta_id }}</a>
+                                        @puede('reportes.ver')
+                                            <a href="{{ route('ventas.show', $movimiento->venta_id) }}"
+                                                class="text-theme-xs hover:text-brand-500">Venta #{{ $movimiento->venta_id }}</a>
+                                        @else
+                                            <span class="text-theme-xs">Venta #{{ $movimiento->venta_id }}</span>
+                                        @endpuede
                                     @endif
                                 </td>
 
                                 <td class="hidden px-5 py-4 text-theme-sm text-gray-500 md:table-cell dark:text-gray-400">
-                                    {{ $movimiento->usuario?->usuario }}
+                                    {{ $movimiento->responsable_visible }}
                                 </td>
                             </tr>
                         @empty

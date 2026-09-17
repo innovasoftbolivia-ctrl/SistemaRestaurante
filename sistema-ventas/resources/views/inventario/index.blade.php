@@ -295,7 +295,7 @@
                                         {{ Config::cantidad($movimiento->stock_resultante) }}
                                     </td>
                                     <td class="hidden px-5 py-3 text-theme-sm text-gray-500 md:table-cell dark:text-gray-400">
-                                        {{ $movimiento->usuario?->usuario }}
+                                        {{ $movimiento->responsable_visible }}
                                     </td>
                                 </tr>
                             @endforeach
