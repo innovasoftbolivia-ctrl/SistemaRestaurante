@@ -374,7 +374,7 @@
                         </p>
 
                         <form method="POST" action="{{ route('comprobantes.sustituir', $comprobante) }}"
-                            x-data="{ cliente: '{{ old('cliente_id', $venta->cliente_id) }}' }" class="space-y-5">
+                            x-data="{ cliente: @js((string) old('cliente_id', $venta->cliente_id)) }" class="space-y-5">
                             @csrf
 
                             <x-form.campo label="Cliente del nuevo documento" for="sustituir_cliente" name="cliente_id"

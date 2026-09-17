@@ -12,6 +12,7 @@ use App\Services\Auditor;
 use App\Services\Inventario;
 use App\Services\Lotes;
 use App\Support\Palabras;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -239,25 +240,36 @@ class ProductoController extends Controller
     /**
      * Un producto con historial no se borra: se descataloga. Su nombre y su
      * precio tienen que seguir siendo legibles en las ventas ya emitidas.
+     *
+     * Historial no es solo el kardex: un producto recién creado que ya se contó
+     * en una toma de inventario lo tiene referenciado, y borrarlo reventaba con
+     * un 500 por la clave foránea.
      */
     public function destroy(Producto $producto): RedirectResponse
     {
         $nombre = $producto->nombre;
 
-        if ($producto->movimientos()->exists()) {
-            $producto->update(['activo' => false]);
+        if (! $producto->movimientos()->exists()) {
+            try {
+                $producto->delete();
 
-            Auditor::registrar('PRODUCTO_DESCATALOGADO', 'productos', $producto->id, ['codigo' => $producto->codigo]);
+                Auditor::registrar('PRODUCTO_ELIMINADO', 'productos', null, ['nombre' => $nombre]);
 
-            return redirect()->route('productos.index')
-                ->with('exito', "«{$nombre}» tiene movimientos registrados, así que se descatalogó en lugar de eliminarse.");
+                return redirect()->route('productos.index')->with('exito', "Producto «{$nombre}» eliminado.");
+            } catch (QueryException $e) {
+                // 1451: otra tabla lo referencia.
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1451) {
+                    throw $e;
+                }
+            }
         }
 
-        $producto->delete();
+        $producto->update(['activo' => false]);
 
-        Auditor::registrar('PRODUCTO_ELIMINADO', 'productos', null, ['nombre' => $nombre]);
+        Auditor::registrar('PRODUCTO_DESCATALOGADO', 'productos', $producto->id, ['codigo' => $producto->codigo]);
 
-        return redirect()->route('productos.index')->with('exito', "Producto «{$nombre}» eliminado.");
+        return redirect()->route('productos.index')
+            ->with('exito', "«{$nombre}» tiene historial registrado, así que se descatalogó en lugar de eliminarse.");
     }
 
     // ------------------------------------------------------------- inventario
@@ -332,7 +344,7 @@ class ProductoController extends Controller
     public function ajustar(Request $request, Producto $producto): RedirectResponse
     {
         $datos = $request->validate([
-            'stock_contado' => ['required', 'numeric', 'min:0', 'max:999999'],
+            'stock_contado' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:999999'],
             'motivo' => ['required', 'string', 'max:255'],
         ], [
             'motivo.required' => 'Un ajuste sin motivo es un descuadre sin responsable: explica la diferencia.',

@@ -240,14 +240,14 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- -- impuesto sobre el importe de línea en lugar de sobre el precio unitario;
 -- -- es inherente a trabajar con precios netos y se acumula como céntimos, no como error.
 --
--- -- 4) comprobante: serie 2 = R001 (la serie ya define que es RECIBO)
--- CALL sp_emitir_comprobante(@venta, 2, @comp_id, @numero);
--- SELECT @numero;   -- R001-000001
---
--- -- 5) cobro
+-- -- 4) cobro, ANTES del comprobante: el trigger exige que los pagos sumen el total
 -- -- `vuelto` es columna generada: no se inserta, sale de monto_recibido - monto
 -- INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto, monto_recibido)
 -- SELECT @venta, 1, total, 40.00 FROM ventas WHERE id = @venta;   -- vuelto = 13.51
+--
+-- -- 5) comprobante: serie 2 = R001 (la serie ya define que es RECIBO)
+-- CALL sp_emitir_comprobante(@venta, 2, @comp_id, @numero);
+-- SELECT @numero;   -- R001-000001
 --
 -- COMMIT;
 --
@@ -271,11 +271,11 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 --
 -- -- serie 1 = F001 (FACTURA). El trigger valida que el cliente sea JURIDICA
 -- -- y que tenga documento; en caso contrario aborta la transacción.
--- CALL sp_emitir_comprobante(@venta2, 1, @comp_id2, @numero2);
--- SELECT @numero2;  -- F001-000001
---
 -- INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto, referencia)
 -- SELECT @venta2, 4, total, 'TRF-99881' FROM ventas WHERE id = @venta2;
+--
+-- CALL sp_emitir_comprobante(@venta2, 1, @comp_id2, @numero2);
+-- SELECT @numero2;  -- F001-000001
 --
 -- COMMIT;
 --
@@ -303,10 +303,10 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 --
 -- -- RECIBO: exige_cliente = 0, así que no reclama cliente.
 -- -- El comprobante sale a nombre de configuracion.cliente_generico_nombre.
--- CALL sp_emitir_comprobante(@venta3, 2, @comp_id3, @numero3);
---
 -- INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto, monto_recibido)
 -- SELECT @venta3, 1, total, 5.00 FROM ventas WHERE id = @venta3;
+--
+-- CALL sp_emitir_comprobante(@venta3, 2, @comp_id3, @numero3);
 --
 -- COMMIT;
 --

@@ -280,8 +280,8 @@
                                     </td>
                                     <td class="px-5 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                                         {{ $movimiento->etiqueta_origen }}
-                                        @if ($movimiento->motivo)
-                                            <span class="block text-theme-xs">{{ $movimiento->motivo }}</span>
+                                        @if ($movimiento->motivo_visible)
+                                            <span class="block text-theme-xs">{{ $movimiento->motivo_visible }}</span>
                                         @endif
                                     </td>
                                     <td class="px-5 py-3 text-right whitespace-nowrap text-theme-sm">

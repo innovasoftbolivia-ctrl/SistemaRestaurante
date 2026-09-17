@@ -220,12 +220,14 @@ class InventarioController extends Controller
     public function ajuste(Request $request): RedirectResponse
     {
         $datos = $request->validate([
-            'producto_id' => ['required', Rule::exists('productos', 'id')->where('activo', 1)],
-            'stock_contado' => ['required', 'numeric', 'min:0', 'max:999999'],
+            // Un descatalogado sí se ajusta, como desde su ficha: es la forma de
+            // dejar en cero lo que sobró. Lo que no recibe es mercadería.
+            'producto_id' => ['required', Rule::exists('productos', 'id')],
+            'stock_contado' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:999999'],
             'motivo' => ['required', 'string', 'max:255'],
         ], [
             'motivo.required' => 'Un ajuste sin motivo es un descuadre sin responsable: explica la diferencia.',
-            'producto_id.exists' => 'Ese producto no existe o está descatalogado.',
+            'producto_id.exists' => 'Ese producto no existe.',
         ], [
             'producto_id' => 'producto',
             'stock_contado' => 'stock contado',

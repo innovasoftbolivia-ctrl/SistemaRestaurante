@@ -8,8 +8,10 @@
 --  las dos vías no coincidían. Ahora el procedimiento agrupa por producto.
 --
 --  Y la regla que el mostrador ya exigía pasa a la base: un producto, una línea
---  por venta. Si alguna base tuviera líneas repetidas, el índice no se crea y
---  el parche avisa en vez de fallar.
+--  por venta. Si alguna base tuviera líneas repetidas, el parche FALLA antes de
+--  tocar nada —y aplicar-parches.sh no lo registra—: hay que revisar esas
+--  ventas y volver a aplicarlo. Antes solo avisaba y quedaba registrado sin el
+--  índice, así que nadie volvía a mirarlo.
 --
 --  Idempotente: el índice se crea solo si falta y el procedimiento se reemplaza.
 -- =============================================================================
@@ -17,16 +19,29 @@
 USE ventas_db;
 SET NAMES utf8mb4;
 
-SET @repetidas := (SELECT COUNT(*) FROM (SELECT venta_id FROM venta_detalle
-                                          GROUP BY venta_id, producto_id HAVING COUNT(*) > 1) x);
+DROP PROCEDURE IF EXISTS tmp_exigir_sin_lineas_repetidas;
+
+DELIMITER $$
+
+CREATE PROCEDURE tmp_exigir_sin_lineas_repetidas ()
+BEGIN
+    IF EXISTS (SELECT 1 FROM venta_detalle GROUP BY venta_id, producto_id HAVING COUNT(*) > 1) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hay ventas con el mismo producto en varias lineas: revisalas y vuelve a aplicar el parche';
+    END IF;
+END$$
+
+DELIMITER ;
+
+CALL tmp_exigir_sin_lineas_repetidas();
+DROP PROCEDURE tmp_exigir_sin_lineas_repetidas;
+
 SET @falta := (SELECT COUNT(*) = 0 FROM information_schema.STATISTICS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'venta_detalle'
                   AND INDEX_NAME = 'uq_detalle_venta_producto');
-SET @sql := IF(@repetidas > 0,
-    'SELECT ''HAY VENTAS CON EL MISMO PRODUCTO EN VARIAS LINEAS: revisalas antes de crear el indice'' AS aviso',
-    IF(@falta,
-       'ALTER TABLE venta_detalle ADD UNIQUE KEY uq_detalle_venta_producto (venta_id, producto_id)',
-       'SELECT ''venta_detalle ya tiene uq_detalle_venta_producto'' AS aviso'));
+SET @sql := IF(@falta,
+    'ALTER TABLE venta_detalle ADD UNIQUE KEY uq_detalle_venta_producto (venta_id, producto_id)',
+    'SELECT ''venta_detalle ya tiene uq_detalle_venta_producto'' AS aviso');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;

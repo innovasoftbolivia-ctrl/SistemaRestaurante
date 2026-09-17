@@ -6,6 +6,7 @@ use App\Models\SerieComprobante;
 use App\Services\Auditor;
 use App\Services\Precios;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -69,7 +70,7 @@ class ConfiguracionController extends Controller
         try {
             $resultado = Precios::deshacerUltimaConversion($request->user());
         } catch (RuntimeException $e) {
-            return redirect()->route('configuracion.edit')->with('error', $e->getMessage());
+            return redirect()->route('configuracion.edit')->with('error', Mensaje::de($e));
         }
 
         $mensaje = "Se restauró el precio de {$resultado['restaurados']} producto(s) y el modo de precios anterior.";

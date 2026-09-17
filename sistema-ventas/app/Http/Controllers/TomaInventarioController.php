@@ -7,6 +7,7 @@ use App\Models\TomaInventario;
 use App\Models\TomaInventarioDetalle;
 use App\Services\TomasInventario;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,7 +58,7 @@ class TomaInventarioController extends Controller
         try {
             $toma = TomasInventario::abrir(Auth::user(), $datos['categoria_id'] ?? null, $datos['observacion'] ?? null);
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+            return back()->with('error', Mensaje::de($e))->withInput();
         }
 
         return redirect()->route('tomas.show', $toma)
@@ -120,7 +121,7 @@ class TomaInventarioController extends Controller
     public function contar(Request $request, TomaInventario $toma, TomaInventarioDetalle $linea): JsonResponse
     {
         $datos = $request->validate([
-            'contado' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'contado' => ['nullable', 'numeric', 'decimal:0,3', 'min:0', 'max:999999'],
             // La hora en que se contó el estante, si se carga después (planilla en papel).
             'contado_en' => ['nullable', 'date', 'before_or_equal:now'],
         ], [
@@ -144,7 +145,7 @@ class TomaInventarioController extends Controller
                 filled($datos['contado_en'] ?? null) ? Carbon::parse($datos['contado_en']) : null,
             );
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
+            return response()->json(['message' => Mensaje::de($e)], 409);
         }
 
         return response()->json([
@@ -161,7 +162,7 @@ class TomaInventarioController extends Controller
         try {
             $resumen = TomasInventario::cerrar($toma, Auth::user());
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', Mensaje::de($e));
         }
 
         $sinContar = $resumen['total'] - $resumen['contados'];
@@ -180,7 +181,7 @@ class TomaInventarioController extends Controller
         try {
             TomasInventario::cancelar($toma, Auth::user());
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', Mensaje::de($e));
         }
 
         return redirect()->route('tomas.index')

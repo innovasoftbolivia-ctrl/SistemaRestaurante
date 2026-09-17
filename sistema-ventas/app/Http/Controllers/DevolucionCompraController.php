@@ -9,6 +9,7 @@ use App\Models\Lote;
 use App\Models\Proveedor;
 use App\Services\DevolucionesCompra;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -209,7 +210,7 @@ class DevolucionCompraController extends Controller
                 observacion: $datos['observacion'] ?? null,
             );
         } catch (RuntimeException $e) {
-            throw ValidationException::withMessages(['lineas' => $e->getMessage()]);
+            throw ValidationException::withMessages(['lineas' => Mensaje::de($e)]);
         }
 
         $lineas = $devolucion->detalle->count();
@@ -280,7 +281,7 @@ class DevolucionCompraController extends Controller
                 documentoExterno: $datos['documento_externo'] ?? null,
             );
         } catch (RuntimeException $e) {
-            throw ValidationException::withMessages(['lineas' => $e->getMessage()]);
+            throw ValidationException::withMessages(['lineas' => Mensaje::de($e)]);
         }
 
         $falta = $devolucion->pendiente_reposicion;

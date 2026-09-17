@@ -103,6 +103,66 @@ jobs:
           LOGICA_EN_PHP: 'true'
         run: php artisan test
 
+  # Lo que hace docker-compose.prod.yml al crear la base de un cliente nuevo:
+  # esquema, datos base (NO los de demostración) y la cuenta ventas_app. Las
+  # pruebas corren con los datos de demostración, así que un error en estos
+  # archivos solo aparecía el día de instalar.
+  instalacion:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ventas123
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pventas123"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Esquema y datos base de producción
+        run: |
+          MYSQL="mysql --host=127.0.0.1 --port=3306 --default-character-set=utf8mb4 -uroot -pventas123"
+          $MYSQL < docs/sql/01_schema_mysql.sql
+          $MYSQL < docs/sql/produccion/02_datos_base.sql
+
+      # El script está escrito para el contenedor de MySQL (socket local): aquí
+      # se le cambia `mysql` por una función que va por TCP al servicio.
+      - name: Cuenta ventas_app
+        env:
+          MYSQL_ROOT_PASSWORD: ventas123
+          DB_APP_PASSWORD: clave-de-prueba-ci
+        run: |
+          mysql() {
+            local a=()
+            for x in "$@"; do [ "$x" = "--protocol=socket" ] || a+=("$x"); done
+            command mysql --host=127.0.0.1 --port=3306 "${a[@]}"
+          }
+          export -f mysql
+          bash docs/sql/produccion/03_usuario_app.sh | tee /tmp/usuario.log
+          grep -q "Cuenta ventas_app creada" /tmp/usuario.log
+
+      - name: Comprobar la instalación con ventas_app
+        run: |
+          APP="mysql --host=127.0.0.1 --port=3306 -uventas_app -pclave-de-prueba-ci -N ventas_db"
+          test "$($APP -e "SELECT COUNT(*) FROM usuarios u JOIN roles r ON r.id = u.rol_id WHERE r.nombre = 'Administrador'")" -ge 1
+          test "$($APP -e "SELECT COUNT(*) FROM permisos")" -gt 0
+          test "$($APP -e "SELECT COUNT(*) FROM productos")" -eq 0
+          test "$($APP -e "SELECT COUNT(*) FROM parches_aplicados")" -gt 0
+          if $APP -e "DROP TABLE auditoria" 2>/dev/null; then
+            echo "ventas_app no debería poder borrar tablas" >&2
+            exit 1
+          fi
+
+      - name: Imagen de producción
+        run: docker build -f sistema-ventas/Dockerfile.prod -t ventas-prod sistema-ventas
+
   estilo:
     runs-on: ubuntu-latest
     steps:

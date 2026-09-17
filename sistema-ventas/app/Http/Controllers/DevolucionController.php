@@ -10,6 +10,7 @@ use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Devoluciones;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -108,7 +109,7 @@ class DevolucionController extends Controller
                 'required',
                 Rule::exists('venta_detalle', 'id')->where('venta_id', $venta->id),
             ],
-            'lineas.*.cantidad' => ['nullable', 'numeric', 'min:0'],
+            'lineas.*.cantidad' => ['nullable', 'numeric', 'decimal:0,3', 'min:0', 'max:999999'],
             'lineas.*.reingresa_stock' => ['boolean'],
             'reembolso' => ['nullable', Rule::in([Devolucion::EFECTIVO, Devolucion::MISMO_MEDIO])],
             'sesion_caja_id' => ['nullable', 'integer'],
@@ -146,7 +147,7 @@ class DevolucionController extends Controller
                 reembolso: $datos['reembolso'] ?? Devolucion::EFECTIVO,
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+            return back()->with('error', Mensaje::de($e))->withInput();
         }
 
         return redirect()->route('devoluciones.show', $devolucion)

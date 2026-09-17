@@ -29,6 +29,19 @@ class MovimientoInventario extends Model
         return $this->usuario?->usuario ?? 'sistema';
     }
 
+    /**
+     * El motivo, con la misma regla: el de una anulación lo escribió el cajero
+     * que anuló. El origen ya dice qué fue; el porqué es del administrador.
+     */
+    public function getMotivoVisibleAttribute(): ?string
+    {
+        if (in_array($this->origen, self::DEL_MOSTRADOR, true) && ! Menu::puede('reportes.ver')) {
+            return null;
+        }
+
+        return $this->motivo;
+    }
+
     protected $table = 'movimientos_inventario';
 
     public $timestamps = false;

@@ -9,6 +9,7 @@ use App\Services\Auditor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -38,7 +39,9 @@ class ClienteController extends Controller
         ], 'nombre');
 
         $clientes = $this->aplicarOrden(
-            Cliente::withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', '<>', 'ANULADA')])
+            // El cajero ve cuántas veces le compró A ÉL: las ventas de los demás no son suyas.
+            Cliente::withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', '<>', 'ANULADA')
+                ->when(VentaController::soloPropias(), fn ($q) => $q->where('usuario_id', Auth::id()))])
                 ->buscar($filtros['buscar'])
                 ->when($filtros['persona'], fn ($q, $tipo) => $q->where('tipo_persona', $tipo)),
             $orden

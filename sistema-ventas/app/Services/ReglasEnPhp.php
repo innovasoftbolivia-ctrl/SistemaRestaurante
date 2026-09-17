@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Las reglas que normalmente ejecuta la BASE, hechas en PHP.
  *
- * Réplica de los 6 procedimientos almacenados y los 7 triggers de
+ * Réplica de los 6 procedimientos almacenados y los 9 triggers de
  * `docs/sql/01_schema_mysql.sql`, para poder correr el sistema en un hosting
  * que no permite crearlos (ver config/ventas.php).
  *

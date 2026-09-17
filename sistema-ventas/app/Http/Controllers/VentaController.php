@@ -9,6 +9,7 @@ use App\Models\Venta;
 use App\Services\Comprobantes;
 use App\Services\Ventas;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -106,6 +107,9 @@ class VentaController extends Controller
 
     public function anular(Request $request, Venta $venta): RedirectResponse
     {
+        // Un rol hecho a medida puede tener `ventas.anular` sin ver todo: anula lo suyo.
+        abort_if(self::soloPropias() && $venta->usuario_id !== Auth::id(), 403, 'Esa venta la registró otra persona.');
+
         $datos = $request->validate([
             'motivo_anulacion' => ['required', 'string', 'min:5', 'max:255'],
         ], [
@@ -118,7 +122,7 @@ class VentaController extends Controller
         try {
             Ventas::anular($venta, Auth::user(), $datos['motivo_anulacion']);
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', Mensaje::de($e));
         } catch (Throwable $e) {
             // El procedimiento almacenado también puede avisar con SIGNAL
             // (p. ej. si dos personas anulan la misma venta a la vez).
@@ -131,13 +135,7 @@ class VentaController extends Controller
     /** Extrae el texto del SIGNAL de MySQL, que llega envuelto en ruido. */
     private function mensajeDeBase(Throwable $e): string
     {
-        if (preg_match('/SQLSTATE\[45000\].*?:\s*\d+\s+(.+?)(?: \(Connection:|$)/s', $e->getMessage(), $m)) {
-            return trim($m[1]);
-        }
-
-        report($e);
-
-        return 'No se pudo anular la venta. Inténtalo de nuevo.';
+        return Mensaje::deLaBase($e, 'No se pudo anular la venta. Inténtalo de nuevo.');
     }
 
     /**

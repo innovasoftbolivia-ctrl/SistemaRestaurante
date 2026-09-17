@@ -105,8 +105,8 @@
 
                                 <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ $movimiento->etiqueta_origen }}
-                                    @if ($movimiento->motivo)
-                                        <span class="block text-theme-xs">{{ $movimiento->motivo }}</span>
+                                    @if ($movimiento->motivo_visible)
+                                        <span class="block text-theme-xs">{{ $movimiento->motivo_visible }}</span>
                                     @endif
                                 </td>
 
@@ -140,12 +140,11 @@
                                     @if ($movimiento->proveedor)
                                         <span class="block text-theme-xs">{{ $movimiento->proveedor->razon_social }}</span>
                                     @endif
+                                    {{-- El número lleva a la venta, y la venta es de quien la hizo. --}}
                                     @if ($movimiento->venta_id)
                                         @puede('reportes.ver')
                                             <a href="{{ route('ventas.show', $movimiento->venta_id) }}"
                                                 class="text-theme-xs hover:text-brand-500">Venta #{{ $movimiento->venta_id }}</a>
-                                        @else
-                                            <span class="text-theme-xs">Venta #{{ $movimiento->venta_id }}</span>
                                         @endpuede
                                     @endif
                                 </td>

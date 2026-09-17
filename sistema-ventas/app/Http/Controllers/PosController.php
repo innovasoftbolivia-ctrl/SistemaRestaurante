@@ -11,6 +11,7 @@ use App\Services\Cajas;
 use App\Services\CobrosQr;
 use App\Services\Ventas;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -218,7 +219,7 @@ class PosController extends Controller
                 totalEsperado: isset($datos['total_esperado']) ? (float) $datos['total_esperado'] : null,
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+            return back()->with('error', Mensaje::de($e))->withInput();
         } catch (Throwable $e) {
             // Los triggers de la base avisan con SIGNAL: se muestra su mensaje.
             return back()->with('error', $this->mensajeDeBase($e))->withInput();
@@ -277,12 +278,6 @@ class PosController extends Controller
     /** Extrae el texto del SIGNAL de MySQL, que llega envuelto en ruido. */
     private function mensajeDeBase(Throwable $e): string
     {
-        if (preg_match('/SQLSTATE\[45000\].*?:\s*\d+\s+(.+?)(?: \(Connection:|$)/s', $e->getMessage(), $m)) {
-            return trim($m[1]);
-        }
-
-        report($e);
-
-        return 'No se pudo registrar la venta. Revisa el stock y los importes e inténtalo de nuevo.';
+        return Mensaje::deLaBase($e, 'No se pudo registrar la venta. Revisa el stock y los importes e inténtalo de nuevo.');
     }
 }

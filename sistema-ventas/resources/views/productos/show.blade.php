@@ -133,9 +133,9 @@
                                             <span class="block text-theme-sm text-gray-800 dark:text-white/90">
                                                 {{ $movimiento->etiqueta_origen }}
                                             </span>
-                                            @if ($movimiento->motivo)
+                                            @if ($movimiento->motivo_visible)
                                                 <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
-                                                    {{ $movimiento->motivo }}
+                                                    {{ $movimiento->motivo_visible }}
                                                 </span>
                                             @endif
                                             @if ($movimiento->proveedor || $movimiento->documento_externo || $movimiento->compra_id)

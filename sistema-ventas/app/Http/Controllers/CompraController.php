@@ -11,6 +11,7 @@ use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\UnidadMedida;
 use App\Services\Compras;
+use App\Support\Mensaje;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -177,7 +178,7 @@ class CompraController extends Controller
         } catch (RuntimeException $e) {
             // Las reglas del servicio —producto descatalogado, media gaseosa—
             // vuelven al formulario como un error más, sin perder lo tecleado.
-            throw ValidationException::withMessages(['lineas' => $e->getMessage()]);
+            throw ValidationException::withMessages(['lineas' => Mensaje::de($e)]);
         }
 
         $lineas = $compra->detalle->count();

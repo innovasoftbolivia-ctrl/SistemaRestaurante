@@ -7,6 +7,7 @@ use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -130,7 +131,7 @@ class CajaController extends Controller
     {
         $datos = $request->validate([
             'caja_id' => ['required', Rule::exists('cajas', 'id')->where('activo', 1)],
-            'monto_inicial' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'monto_inicial' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
             'observacion' => ['nullable', 'string', 'max:255'],
         ], [], [
             'caja_id' => 'caja',
@@ -146,7 +147,7 @@ class CajaController extends Controller
                 $datos['observacion'] ?? null,
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+            return back()->with('error', Mensaje::de($e))->withInput();
         }
 
         return redirect()->route('caja.index')->with('exito', 'Caja abierta. Ya puedes vender.');
@@ -157,7 +158,7 @@ class CajaController extends Controller
         $datos = $request->validate([
             'tipo' => ['required', Rule::in(['INGRESO', 'EGRESO'])],
             'concepto' => ['required', 'string', 'max:120'],
-            'monto' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'monto' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
         ], [
             'monto.gt' => 'El monto debe ser mayor que cero.',
         ], [
@@ -179,7 +180,7 @@ class CajaController extends Controller
                 (float) $datos['monto'],
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', Mensaje::de($e));
         }
 
         return back()->with('exito', 'Movimiento registrado.');
@@ -188,11 +189,11 @@ class CajaController extends Controller
     public function cerrar(Request $request, SesionCaja $sesion): RedirectResponse
     {
         $datos = $request->validate([
-            'monto_declarado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'monto_declarado' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
             'observacion' => ['nullable', 'string', 'max:255'],
             // Obligatorio: sin él, el turno siguiente abre con el monto que sea
             // y el efectivo entre un cierre y la apertura no deja rastro.
-            'fondo_dejado' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'fondo_dejado' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999'],
             // Obligatoria: es el sello del turno cuando se empezó a contar, y
             // sin ella el cierre se saltaba el aviso de «entró una venta
             // mientras contabas» simplemente no mandando el campo.
@@ -220,7 +221,7 @@ class CajaController extends Controller
                 $datos['huella'],
             );
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', Mensaje::de($e));
         } catch (Throwable $e) {
             // El procedimiento almacenado también puede avisar con SIGNAL
             // (p. ej. si dos personas cierran la misma sesión a la vez).
@@ -274,12 +275,6 @@ class CajaController extends Controller
     /** Extrae el texto del SIGNAL de MySQL, que llega envuelto en ruido. */
     private function mensajeDeBase(Throwable $e): string
     {
-        if (preg_match('/SQLSTATE\[45000\].*?:\s*\d+\s+(.+?)(?: \(Connection:|$)/s', $e->getMessage(), $m)) {
-            return trim($m[1]);
-        }
-
-        report($e);
-
-        return 'No se pudo cerrar la caja. Inténtalo de nuevo.';
+        return Mensaje::deLaBase($e, 'No se pudo cerrar la caja. Inténtalo de nuevo.');
     }
 }

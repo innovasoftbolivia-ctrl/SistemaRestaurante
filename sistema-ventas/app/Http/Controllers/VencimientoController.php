@@ -61,6 +61,9 @@ class VencimientoController extends Controller
         $base = fn () => DB::table('lotes as l')
             ->join('productos as p', 'p.id', '=', 'l.producto_id')
             ->where('p.activo', 1)
+            // Un producto al que se le apagó el control conserva sus lotes
+            // viejos, pero la lista ya no lo muestra: el resumen tampoco.
+            ->where('p.controla_vencimiento', 1)
             ->where('l.cantidad_actual', '>', 0);
 
         return [

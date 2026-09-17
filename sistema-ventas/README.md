@@ -927,7 +927,26 @@ sus propios datos de negocio.
    con todas las letras. Se hizo así a propósito: un simulador que se pagara solo daría la falsa
    impresión de que el cobro funciona.
 
-   Cuando el banco entregue credenciales, en `sistema-ventas/.env.docker`:
+   Con **Banco Económico** («BEC QR Connect»), cuando entregue las credenciales, en
+   `sistema-ventas/.env.docker` (nunca en el repositorio):
+
+   ```
+   QR_PASARELA=baneco
+   QR_BANECO_URL=https://...        # la de PRODUCCIÓN que entregue el banco
+   QR_BANECO_USUARIO=...
+   QR_BANECO_PASSWORD=...
+   QR_BANECO_LLAVE=...
+   QR_BANECO_CUENTA=...
+   QR_BANECO_SUCURSAL=...
+   ```
+
+   **Ojo con `QR_BANECO_URL`: si se deja vacía, apunta a certificación** (`apimktdesa`), donde
+   los pagos no son reales. El aviso de pago se le da al banco como
+   `https://<servidor>/api/qrsimple/notifyPaymentQR`; no trae firma, así que el sistema solo lo usa
+   para ir a consultar al banco, nunca lo da por bueno. Después de cambiar `.env.docker`,
+   `docker compose -f docker-compose.prod.yml up -d` (un `restart` no relee el archivo).
+
+   Para otro banco, `QR_PASARELA=banco`:
 
    ```
    QR_PASARELA=banco

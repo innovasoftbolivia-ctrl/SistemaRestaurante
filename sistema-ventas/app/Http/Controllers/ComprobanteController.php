@@ -8,6 +8,7 @@ use App\Models\Comprobante;
 use App\Models\SerieComprobante;
 use App\Services\Comprobantes;
 use App\Support\Config;
+use App\Support\Mensaje;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -113,6 +114,11 @@ class ComprobanteController extends Controller
         // Sin facturación a la vista no hay a qué sustituir: el botón no se
         // muestra, y un envío directo tampoco pasa.
         abort_unless(Config::facturacionVisible(), 404);
+        abort_if(
+            VentaController::soloPropias() && $comprobante->venta()->value('usuario_id') !== Auth::id(),
+            403,
+            'Esa venta la registró otra persona.'
+        );
 
         $datos = $request->validate([
             'cliente_id' => ['nullable', Rule::exists('clientes', 'id')->where('activo', 1)],
@@ -130,7 +136,7 @@ class ComprobanteController extends Controller
         try {
             $nuevo = Comprobantes::sustituir($comprobante, Auth::user(), $cliente, $datos['motivo']);
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage())->withInput();
+            return back()->with('error', Mensaje::de($e))->withInput();
         } catch (Throwable $e) {
             return back()->with('error', $this->mensajeDeBase($e))->withInput();
         }
@@ -143,12 +149,6 @@ class ComprobanteController extends Controller
     /** Los triggers avisan con SIGNAL; se muestra su texto y no el ruido de PDO. */
     private function mensajeDeBase(Throwable $e): string
     {
-        if (preg_match('/SQLSTATE\[45000\].*?:\s*\d+\s+(.+?)(?: \(Connection:|$)/s', $e->getMessage(), $m)) {
-            return trim($m[1]);
-        }
-
-        report($e);
-
-        return 'No se pudo sustituir el documento. Revisa los datos del cliente e inténtalo de nuevo.';
+        return Mensaje::deLaBase($e, 'No se pudo sustituir el documento. Revisa los datos del cliente e inténtalo de nuevo.');
     }
 }

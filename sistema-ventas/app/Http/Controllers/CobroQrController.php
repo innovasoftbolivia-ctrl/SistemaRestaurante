@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CobroQr;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
+use App\Support\Mensaje;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,7 +28,7 @@ class CobroQrController extends Controller
     public function crear(Request $request): JsonResponse
     {
         $datos = $request->validate([
-            'monto' => ['required', 'numeric', 'gt:0', 'max:9999999999'],
+            'monto' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:9999999999'],
             'glosa' => ['nullable', 'string', 'max:120'],
         ], [
             'monto.gt' => 'El importe a cobrar debe ser mayor que cero.',
@@ -47,7 +48,7 @@ class CobroQrController extends Controller
                 glosa: $datos['glosa'] ?? null,
             );
         } catch (RuntimeException $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json(['error' => Mensaje::de($e)], 422);
         } catch (Throwable $e) {
             report($e);
 
@@ -93,7 +94,7 @@ class CobroQrController extends Controller
         try {
             $cobro = CobrosQr::confirmarAMano($cobro, Auth::user(), $datos['referencia'] ?? null);
         } catch (RuntimeException $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json(['error' => Mensaje::de($e)], 422);
         }
 
         return response()->json($this->comoJson($cobro));
@@ -109,7 +110,7 @@ class CobroQrController extends Controller
         try {
             $cobro = CobrosQr::anular($cobro, Auth::user());
         } catch (RuntimeException $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json(['error' => Mensaje::de($e)], 422);
         }
 
         return response()->json($this->comoJson($cobro));
@@ -133,7 +134,7 @@ class CobroQrController extends Controller
         try {
             $cobro = CobrosQr::procesarAviso($request->all(), $cabeceras, $request->getContent());
         } catch (RuntimeException $e) {
-            return response()->json(['responseCode' => 1, 'message' => $e->getMessage(), 'error' => $e->getMessage()], 403);
+            return response()->json(['responseCode' => 1, 'message' => Mensaje::de($e), 'error' => Mensaje::de($e)], 403);
         } catch (Throwable $e) {
             report($e);
 
