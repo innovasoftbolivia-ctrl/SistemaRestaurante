@@ -117,14 +117,25 @@ fi
 # horaria ni del formato de `date` del servidor.
 ULTIMO="$(find "$DESTINO" -maxdepth 1 -name 'ventas_db_*.sql.gz' -mmin "-$((BACKUP_MAX_HORAS * 60))" 2>/dev/null | sort | tail -1)"
 
+# Los respaldos nocturnos del programador viven en el volumen de la aplicación,
+# no en backups/. Antes el chequeo solo miraba aquí y, sin un cron aparte,
+# avisaba siempre «no hay respaldos» aunque se hicieran todas las noches.
+if [ -z "$ULTIMO" ] && APP_RESPALDOS="$(detectar "${VENTAS_APP:-}" ventas_app_prod ventas_app)"; then
+    EN_APP="$(docker exec "$APP_RESPALDOS" find storage/app/respaldos -maxdepth 1 -name 'ventas_db_*.sql.gz' -size +1k -mmin "-$((BACKUP_MAX_HORAS * 60))" 2>/dev/null | sort | tail -1)"
+    if [ -n "$EN_APP" ]; then
+        pasar "respaldo reciente del programador: $(basename "$EN_APP")"
+        ULTIMO="programador"
+    fi
+fi
+
 if [ -z "$ULTIMO" ]; then
     RECIENTE="$(find "$DESTINO" -maxdepth 1 -name 'ventas_db_*.sql.gz' 2>/dev/null | sort | tail -1)"
     if [ -n "$RECIENTE" ]; then
         fallar "el último respaldo ($(basename "$RECIENTE")) tiene más de ${BACKUP_MAX_HORAS}h. ¿Sigue corriendo el cron?"
     else
-        fallar "no hay ningún respaldo en $DESTINO/. Ver «Copias de seguridad» en el README"
+        fallar "no hay ningún respaldo en $DESTINO/ ni en el volumen del programador. Ver «Copias de seguridad» en el README"
     fi
-else
+elif [ "$ULTIMO" != "programador" ]; then
     # Un archivo que existe pero pesa nada es un respaldo fallido disfrazado
     # de respaldo hecho.
     BYTES="$(wc -c < "$ULTIMO" 2>/dev/null || echo 0)"

@@ -500,6 +500,7 @@
                 </x-form.campo>
             </x-common.component-card>
 
+            @puede('registros.eliminar')
             <x-common.component-card title="Disponibilidad">
                 <x-form.check name="activo" :checked="$producto->activo ?? true"
                     label="Producto disponible para la venta" />
@@ -508,6 +509,7 @@
                     ventas ya emitidas.
                 </p>
             </x-common.component-card>
+            @endpuede
 
             {{-- Todo lo que se puede completar después. Plegado por defecto:
                  es lo que hacía que dar de alta un producto pareciera un

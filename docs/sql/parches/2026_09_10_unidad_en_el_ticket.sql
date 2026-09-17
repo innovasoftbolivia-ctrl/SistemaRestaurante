@@ -37,6 +37,8 @@
 --  Idempotente: la columna se agrega solo si falta.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 SET @falta := (
     SELECT COUNT(*) = 0
     FROM information_schema.COLUMNS

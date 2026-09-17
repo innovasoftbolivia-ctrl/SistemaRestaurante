@@ -26,6 +26,9 @@ class AppServiceProvider extends ServiceProvider
         // negocio factura (config/ventas.php, `mostrar_facturacion`).
         Blade::if('facturacion', fn () => Config::facturacionVisible());
 
+        // El número de envío único de un formulario (ver UnSoloEnvio).
+        Blade::directive('unEnvio', fn () => '<input type="hidden" name="_envio" value="<?php echo e(\Illuminate\Support\Str::uuid()); ?>">');
+
         // Registrado a mano y no por descubrimiento automático: así queda a
         // la vista que `/up` comprueba la base, que es lo que le da sentido
         // al monitoreo (ver el docblock del listener).

@@ -30,7 +30,19 @@ fi
 # ya existente de una instalación vieja puede seguir siendo de root. Se
 # corrige aquí, mientras el entrypoint todavía corre como root, para que los
 # workers de php-fpm (que corren como www-data) puedan escribir en ellos.
-chown -R www-data:www-data storage/app/public storage/logs 2>/dev/null || true
+mkdir -p storage/app/respaldos
+chown -R www-data:www-data storage/app/public storage/logs storage/app/respaldos 2>/dev/null || true
+
+# La copia externa de los respaldos (RESPALDOS_COPIA), si está montada: el
+# programador corre como www-data y tiene que poder escribir ahí. En un disco
+# con formato que no guarda dueños (FAT, exFAT) el chown no hace nada y el
+# montaje ya tiene que venir escribible.
+if [ -n "${RESPALDOS_COPIA:-}" ] && [ -d "$RESPALDOS_COPIA" ]; then
+    chown www-data:www-data "$RESPALDOS_COPIA" 2>/dev/null || true
+    if ! su-exec www-data test -w "$RESPALDOS_COPIA"; then
+        log "AVISO: $RESPALDOS_COPIA no es escribible por la aplicación: la copia externa de los respaldos va a fallar."
+    fi
+fi
 
 # --- Espera a MySQL ---------------------------------------------------------
 # El healthcheck de compose cubre el caso normal; este bucle protege el

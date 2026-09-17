@@ -352,6 +352,10 @@ class Inventario
 
         $producto->newQuery()->whereKey($producto->id)->update(['stock_actual' => $stockResultante]);
         $producto->stock_actual = $stockResultante;
+        // Ya está en la base: marcado como sincronizado, un `save()` posterior
+        // del mismo modelo (el costo, por ejemplo) no vuelve a escribir este
+        // stock encima del de una venta que confirmó en el medio.
+        $producto->syncOriginalAttribute('stock_actual');
 
         return MovimientoInventario::create([
             'producto_id' => $producto->id,

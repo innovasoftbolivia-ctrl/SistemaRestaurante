@@ -254,6 +254,12 @@ class Respaldos
         }
 
         try {
+            // El modo SQL con que corre la base. El volcado lo relaja para cargar
+            // los datos, pero procedimientos y triggers GUARDAN el modo con que
+            // se crean: sin volver a ponerlo, tras restaurar un dato fuera de
+            // rango dentro de un procedimiento pasaba como aviso y no como error.
+            $modoOriginal = (string) $pdo->query('SELECT @@SESSION.sql_mode')->fetchColumn();
+
             $colacion = $pdo->query(
                 'SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '.$pdo->quote($base)
             )->fetch(PDO::FETCH_NUM);
@@ -299,6 +305,7 @@ class Respaldos
                 // (error 1267, visto en este proyecto). Se iguala antes de crearlos.
                 $escribir("-- La colación de la base, para que las rutinas nazcan con la misma que las tablas.\n");
                 $escribir("ALTER DATABASE CHARACTER SET {$colacion[0]} COLLATE {$colacion[1]};\n\n");
+                $escribir('SET SQL_MODE = '.$pdo->quote($modoOriginal).";\n\n");
             }
 
             foreach ($vistas as $vista) {

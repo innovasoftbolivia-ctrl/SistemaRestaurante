@@ -32,6 +32,8 @@
 --  porque es el punto por donde se podría colar un cobro que nunca entró.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS cobros_qr (
     id                  INT UNSIGNED    NOT NULL AUTO_INCREMENT,
 

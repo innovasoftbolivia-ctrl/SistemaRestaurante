@@ -18,6 +18,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 INSERT IGNORE INTO permisos (codigo, modulo, descripcion)
 VALUES ('respaldos.gestionar', 'Sistema', 'Hacer y descargar respaldos de la base');

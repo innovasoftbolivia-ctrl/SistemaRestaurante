@@ -47,6 +47,12 @@ class CategoriaController extends Controller
     {
         $datos = $this->validar($request, $categoria);
 
+        // Desactivar es la forma de «eliminar» lo que tiene historial: sin el
+        // permiso de eliminar, el estado queda como estaba.
+        if (! $request->user()->tienePermiso('registros.eliminar')) {
+            unset($datos['activo']);
+        }
+
         $categoria->update($datos);
 
         Auditor::registrar('CATEGORIA_ACTUALIZADA', 'categorias', $categoria->id, $datos);

@@ -326,6 +326,7 @@
 
                     <form method="POST" action="{{ route('inventario.ingreso') }}" class="space-y-5">
                         @csrf
+                        @unEnvio
                         <input type="hidden" name="producto_id" :value="sel.id" />
 
                         {{-- Las expresiones apuntan a `sel`, que es el producto de la
@@ -429,6 +430,7 @@
 
                     <form method="POST" action="{{ route('inventario.ajuste') }}" class="space-y-5">
                         @csrf
+                        @unEnvio
                         <input type="hidden" name="producto_id" :value="sel.id" />
 
                         <x-form.campo label="Stock realmente contado" for="aju_contado" name="stock_contado" required>

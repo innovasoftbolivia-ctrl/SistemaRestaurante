@@ -310,4 +310,42 @@ class QrBanecoTest extends TestCase
 
         $this->assertSame('PASARELA', $cobro->fresh()->confirmado_por);
     }
+
+    // ================================================================ cierre de caja
+
+    /**
+     * Al cerrar, un QR que el sistema todavía veía pendiente se consulta al
+     * banco antes de cancelarlo: si el cliente pagó segundos antes, queda
+     * PAGADO (y a la vista como «pagado sin venta»), no vencido con el dinero
+     * en el banco.
+     */
+    public function test_cerrar_la_caja_pregunta_al_banco_antes_de_cancelar_un_qr(): void
+    {
+        $this->banco($this->pago(18.00));
+        $turno = $this->turno();
+        $cobro = CobrosQr::generar($turno, $this->cajero(), 18.00);
+        $this->assertSame(CobroQr::PENDIENTE, $cobro->estado);
+
+        $admin = Usuario::where('usuario', 'admin')->firstOrFail();
+        $turno = $turno->fresh();
+        Cajas::cerrar($turno, $admin, $turno->efectivoEsperado(), null, 0, $turno->huella());
+
+        $this->assertSame(CobroQr::PAGADO, $cobro->fresh()->estado);
+        Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/api/qrsimple/cancelQR'));
+    }
+
+    /** Y uno que de verdad sigue pendiente sí se cancela en el banco. */
+    public function test_cerrar_la_caja_cancela_el_qr_que_sigue_pendiente(): void
+    {
+        $this->banco();
+        $turno = $this->turno();
+        $cobro = CobrosQr::generar($turno, $this->cajero(), 18.00);
+
+        $admin = Usuario::where('usuario', 'admin')->firstOrFail();
+        $turno = $turno->fresh();
+        Cajas::cerrar($turno, $admin, $turno->efectivoEsperado(), null, 0, $turno->huella());
+
+        $this->assertSame(CobroQr::EXPIRADO, $cobro->fresh()->estado);
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/api/qrsimple/cancelQR'));
+    }
 }

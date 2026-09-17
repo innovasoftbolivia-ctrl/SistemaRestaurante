@@ -177,7 +177,10 @@ class Devoluciones
         if (! $recorte) {
             // Completar hasta lo cobrado solo tiene sentido cuando ya no queda
             // nada por devolver, y solo si el hueco es de redondeo.
-            if ($venta->estado !== 'DEVUELTA' || $diferencia == 0 || $diferencia > 0.10) {
+            // Sin tope: el precio neto se redondea por unidad, y con muchas
+            // unidades el desvío pasa de los 10 centavos (300 × 0,4933 → 0,49
+            // devolvía Bs 147 de Bs 148 cobrados, y la venta ya no admitía más).
+            if ($venta->estado !== 'DEVUELTA' || $diferencia == 0) {
                 return;
             }
         }

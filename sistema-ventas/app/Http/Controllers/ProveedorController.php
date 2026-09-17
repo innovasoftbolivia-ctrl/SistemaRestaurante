@@ -78,6 +78,12 @@ class ProveedorController extends Controller
     {
         $datos = $this->validar($request, $proveedor);
 
+        // Desactivar es la forma de «eliminar» lo que tiene historial: sin el
+        // permiso de eliminar, el estado queda como estaba.
+        if (! $request->user()->tienePermiso('registros.eliminar')) {
+            unset($datos['activo']);
+        }
+
         $proveedor->update($datos);
 
         Auditor::registrar('PROVEEDOR_ACTUALIZADO', 'proveedores', $proveedor->id, $datos);

@@ -55,6 +55,15 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------- 1. columnas
+-- Este parche se ordena ANTES que 2026_09_11_lotes_y_vencimiento.sql y su tabla
+-- de detalle referencia `lotes`: en una base anterior al 11/09 MySQL rechazaba el
+-- CREATE (error 1824). Sin revisar llaves mientras corre, la referencia queda
+-- creada y se cumple en cuanto el parche de lotes crea su tabla.
+SET NAMES utf8mb4;
+
+SET @fk_antes := @@FOREIGN_KEY_CHECKS;
+SET FOREIGN_KEY_CHECKS = 0;
+
 SET @falta := (
     SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'compra_detalle'
@@ -174,3 +183,5 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- Si esta instalación es de servidor propio y se quiere la vista al día, basta
 -- con volver a ejecutar su bloque `CREATE OR REPLACE VIEW v_kardex` desde
 -- 01_schema_mysql.sql.
+
+SET FOREIGN_KEY_CHECKS = @fk_antes;

@@ -165,7 +165,9 @@
                             placeholder="Qué tipo de productos agrupa" />
                     </x-form.campo>
 
+                    @puede('registros.eliminar')
                     <x-form.check name="activo" model="activo" label="Categoría disponible para asignar" />
+                    @endpuede
 
                     <div class="flex justify-end gap-3">
                         <x-ui.button type="button" variant="outline" size="sm" @click="abierto = false">Cancelar</x-ui.button>

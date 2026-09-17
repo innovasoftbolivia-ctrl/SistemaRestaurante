@@ -4,3 +4,6 @@
 
 # Copias de seguridad generadas por scripts/backup-db.sh.
 /backups/
+
+# Copia externa de los respaldos cuando no se configura otra carpeta (docker-compose.prod.yml).
+respaldos-copia/

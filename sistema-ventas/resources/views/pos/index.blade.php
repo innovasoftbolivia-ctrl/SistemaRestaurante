@@ -15,7 +15,7 @@
         </div>
     @else
         {{-- `pb-28` deja sitio en móvil a la barra flotante del carrito. --}}
-        <div x-data="mostrador()" x-init="cargar(); $nextTick(() => $refs.buscador?.focus())"
+        <div x-data="mostrador()" x-init="restaurarVentaEnCurso(); cargar(); $nextTick(() => $refs.buscador?.focus())"
         @keydown.window="atajos($event)"
             class="grid grid-cols-1 gap-6 pb-28 xl:grid-cols-5 xl:pb-0">
 
@@ -411,6 +411,24 @@
                     {{-- Pago --}}
                     <div class="space-y-4 border-t border-gray-100 px-5 py-4 dark:border-gray-800">
 
+                        {{-- Un QR que el cliente ya pagó y no llegó a venta: se puede
+                             usar en esta, así nadie paga dos veces. --}}
+                        <div x-show="qrLibres.length" x-cloak class="rounded-xl bg-warning-50 px-4 py-3 dark:bg-orange-500/10" data-qr-libres>
+                            <p class="text-theme-xs font-medium text-warning-700 dark:text-orange-400">
+                                QR ya pagados que no llegaron a una venta:
+                            </p>
+                            <template x-for="c in qrLibres" :key="c.id">
+                                <div class="mt-2 flex items-center justify-between gap-2">
+                                    <span class="text-theme-sm text-warning-700 dark:text-orange-400"
+                                        x-text="'#' + c.id + ' · {{ $moneda }} ' + c.monto.toFixed(2)"></span>
+                                    <button type="button" @click="usarQrPagado(c)"
+                                        class="min-h-11 rounded-lg border border-warning-300 px-3 text-theme-xs font-medium text-warning-700 hover:bg-warning-100 dark:border-orange-500/40 dark:text-orange-400">
+                                        Usar en esta venta
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+
                         {{-- Una tarjeta por forma de pago. Con una sola línea se ve
                              igual que antes; la segunda aparece solo si el cliente
                              parte el pago. --}}
@@ -802,6 +820,8 @@
                             qrError: '',
                         }],
                         metodosQr: @js($metodosQr),
+                        qrSinVenta: @js($qrSinVenta),
+                        huboError: @js($huboError),
                         exigeReferencia: @js(\App\Models\MetodoPago::exigeReferencia()),
                         qrSimulado: {{ $qrSimulado ? 'true' : 'false' }},
                         qrSegundos: {{ $qrSegundosConsulta }},
@@ -835,6 +855,29 @@
                         puedeDescontar: {{ $puedeDescontar ? 'true' : 'false' }},
                         efectivos: @js($metodosPago->where('codigo', 'EFECTIVO')->pluck('id')->values()),
                         metodos: @js($metodosPago->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre])->values()),
+
+                        restaurarVentaEnCurso() {
+                            let guardada = null;
+
+                            try {
+                                guardada = JSON.parse(sessionStorage.getItem('pos-venta-en-curso') || 'null');
+                                sessionStorage.removeItem('pos-venta-en-curso');
+                            } catch (err) {}
+
+                            if (!guardada || !this.huboError) return;
+
+                            this.carrito = guardada.carrito || [];
+                            this.clienteId = guardada.clienteId ?? this.clienteId;
+                            this.descuento = guardada.descuento ?? 0;
+                            this.descuentoModo = guardada.descuentoModo || 'monto';
+
+                            if (Array.isArray(guardada.pagos) && guardada.pagos.length) {
+                                this.pagos = guardada.pagos;
+                                this.pagos.forEach(p => {
+                                    if (p.qr && !p.qr.pagado) this.$nextTick(() => { this.pintarQr(p); this.vigilarQr(p); });
+                                });
+                            }
+                        },
 
                         async cargar() {
                             const url = new URL('{{ route('pos.productos') }}', window.location.origin);
@@ -1331,21 +1374,88 @@
                             else pago.qrError = datos.error ?? 'No se pudo confirmar el pago.';
                         },
 
+                        /* Cancela el QR en el banco. Si el banco dice que ya se pagó,
+                           el QR se queda —pagado— para usarlo: antes se borraba igual
+                           y el cajero generaba otro que el cliente volvía a pagar. */
                         async anularQr(pago) {
-                            if (!pago.qr) return;
+                            if (!pago.qr) return true;
 
-                            await fetch(this.rutaQr + '/' + pago.qr.id + '/anular', {
-                                method: 'POST',
-                                headers: this.cabecera,
-                            });
+                            try {
+                                const r = await fetch(this.rutaQr + '/' + pago.qr.id + '/anular', {
+                                    method: 'POST',
+                                    headers: this.cabecera,
+                                });
+                                const datos = await r.json().catch(() => ({}));
+
+                                if (!r.ok) {
+                                    const consulta = await fetch(this.rutaQr + '/' + pago.qr.id, { headers: { 'Accept': 'application/json' } });
+                                    if (consulta.ok) pago.qr = await consulta.json();
+                                    pago.qrError = datos.error ?? 'No se pudo cancelar el QR.';
+                                    return false;
+                                }
+                            } catch (e) {
+                                pago.qrError = 'No se pudo cancelar el QR: revisa la conexión y vuelve a intentar.';
+                                return false;
+                            }
 
                             pago.qr = null;
                             pago.qrError = '';
+                            return true;
                         },
 
-                        quitarPago(indice) {
+                        /* Los QR pagados sin venta que todavía no se están usando. */
+                        get qrLibres() {
+                            const enUso = this.pagos.filter(p => p.qr).map(p => p.qr.id);
+                            return this.qrSinVenta.filter(c => !enUso.includes(c.id));
+                        },
+
+                        usarQrPagado(cobro) {
+                            const metodoQr = this.metodosQr[0];
+                            if (!metodoQr) return;
+
+                            // Si la única forma de pago está vacía, esa pasa a ser el QR.
+                            const libre = this.pagos.length === 1 && !this.pagos[0].qr && this.vacio(this.pagos[0])
+                                ? this.pagos[0] : null;
+
+                            if (libre && this.total <= cobro.monto + 0.001) {
+                                libre.metodoId = metodoQr;
+                                libre.qr = cobro;
+                                libre.qrError = '';
+                                return;
+                            }
+
+                            if (this.lineasSinMonto >= 1) {
+                                this.pagos.forEach(p => {
+                                    if (this.vacio(p)) p.monto = this.montoDe(p).toFixed(2);
+                                });
+                            }
+
+                            this.pagos.push({
+                                metodoId: metodoQr,
+                                monto: cobro.monto.toFixed(2),
+                                recibido: null,
+                                referencia: '',
+                                qr: cobro,
+                                qrCargando: false,
+                                qrError: '',
+                            });
+                        },
+
+                        async quitarPago(indice) {
                             if (this.pagos.length <= 1) return;
-                            this.pagos.splice(indice, 1);
+
+                            const pago = this.pagos[indice];
+
+                            // Un QR pagado no se descarta en silencio: ese dinero ya está en el banco.
+                            if (pago.qr && pago.qr.pagado) {
+                                pago.qrError = 'Ese QR ya está pagado: úsalo en la venta o avisa al administrador.';
+                                return;
+                            }
+
+                            // Uno pendiente se cancela en el banco antes de quitarlo.
+                            if (pago.qr && !(await this.anularQr(pago))) return;
+
+                            this.pagos.splice(this.pagos.indexOf(pago), 1);
 
                             // Si queda una sola, vuelve a ser «el resto».
                             if (this.pagos.length === 1) this.pagos[0].monto = '';
@@ -1490,6 +1600,19 @@
                         /* Se arma el formulario en el momento de enviar: el carrito vive en Alpine. */
                         preparar(e) {
                             this.enviando = true;
+
+                            /* Si el servidor rechaza la venta (vuelto, precio, stock), la
+                               página vuelve vacía: se guarda lo armado para restaurarlo,
+                               QR pagado incluido. */
+                            try {
+                                sessionStorage.setItem('pos-venta-en-curso', JSON.stringify({
+                                    carrito: this.carrito,
+                                    pagos: this.pagos.map(p => ({ ...p, qrCargando: false })),
+                                    clienteId: this.clienteId,
+                                    descuento: this.descuento,
+                                    descuentoModo: this.descuentoModo,
+                                }));
+                            } catch (err) {}
 
                             const campos = this.$refs.campos;
                             campos.innerHTML = '';

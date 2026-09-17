@@ -187,7 +187,10 @@ class Lotes
             return;
         }
 
-        $lote->refresh();
+        // Con candado, no `refresh()`: la lectura sin bloqueo veía la cantidad
+        // de antes de una venta de este lote confirmada en el medio, y la
+        // devolución la sobrescribía.
+        $lote = Lote::whereKey($lote->id)->lockForUpdate()->first() ?? $lote;
         $sale = min((float) $lote->cantidad_actual, round($cantidad, 3));
 
         if ($sale > 0) {

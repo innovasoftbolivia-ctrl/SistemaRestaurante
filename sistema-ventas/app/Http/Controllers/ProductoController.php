@@ -188,6 +188,12 @@ class ProductoController extends Controller
     {
         $datos = $this->validar($request, $producto);
 
+        // Descatalogar es la forma de «eliminar» un producto con historial: sin
+        // el permiso de eliminar, el estado queda como estaba.
+        if (! $request->user()->tienePermiso('registros.eliminar')) {
+            unset($datos['activo']);
+        }
+
         $datos = $this->resolverImagen($request, $producto, $datos);
 
         $precioAnterior = (float) $producto->precio_venta;

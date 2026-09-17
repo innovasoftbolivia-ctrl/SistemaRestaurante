@@ -295,15 +295,21 @@ class Cajas
         $sesion->refresh();
 
         // Un QR que quedó esperando pago ya no puede terminar en una venta: la
-        // venta exige el mismo turno. Se cancela en el banco para que el cliente
-        // no pague a un turno cerrado. Si el banco no contesta, lo recoge
-        // después `qr:vencer`.
+        // venta exige el mismo turno. Primero se le pregunta al banco —si el
+        // cliente alcanzó a pagar, queda PAGADO y a la vista como «QR pagado sin
+        // venta»— y solo si sigue pendiente se cancela. Antes se cancelaba sin
+        // preguntar, y un pago de segundos antes quedaba como vencido con el
+        // dinero en el banco. Si el banco no contesta, lo recoge `qr:vencer`.
         CobroQr::where('sesion_caja_id', $sesion->id)
             ->where('estado', CobroQr::PENDIENTE)
             ->get()
             ->each(function (CobroQr $cobro) {
                 try {
-                    CobrosQr::vencer($cobro);
+                    $cobro = CobrosQr::refrescar($cobro);
+
+                    if ($cobro->estaPendiente()) {
+                        CobrosQr::vencer($cobro);
+                    }
                 } catch (\Throwable $e) {
                     report($e);
                 }

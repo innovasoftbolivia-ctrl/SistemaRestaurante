@@ -27,6 +27,8 @@
 --  vista corregida.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 CREATE OR REPLACE VIEW v_productos_mas_vendidos AS
 SELECT p.id, p.codigo, p.nombre, c.nombre AS categoria,
        SUM(n.unidades_netas)                                            AS unidades_vendidas,

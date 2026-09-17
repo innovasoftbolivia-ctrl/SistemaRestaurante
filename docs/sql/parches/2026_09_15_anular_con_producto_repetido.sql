@@ -15,6 +15,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 SET @repetidas := (SELECT COUNT(*) FROM (SELECT venta_id FROM venta_detalle
                                           GROUP BY venta_id, producto_id HAVING COUNT(*) > 1) x);

@@ -41,6 +41,8 @@
 --  la vieja, y el CHECK se suelta solo si existe.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 SET @esEntero := (
     SELECT COUNT(*)
     FROM information_schema.COLUMNS

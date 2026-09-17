@@ -40,6 +40,8 @@
 --  crea estas tablas.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS compras (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     proveedor_id        INT UNSIGNED NOT NULL,

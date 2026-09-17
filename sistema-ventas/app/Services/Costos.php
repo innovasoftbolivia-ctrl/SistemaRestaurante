@@ -41,7 +41,12 @@ class Costos
         // `forceFill` y no `update`: `precio_compra` es asignable en masa, pero
         // aquí se escribe una sola columna a propósito, sin arrastrar nada más
         // de lo que traiga el modelo en memoria.
-        $producto->forceFill(['precio_compra' => $nuevo])->save();
+        // Una sola columna, directo: `save()` escribía también cualquier otro
+        // atributo cambiado en memoria —el stock del ingreso— y pisaba el de
+        // una venta hecha mientras tanto.
+        $producto->newQuery()->whereKey($producto->id)->update(['precio_compra' => $nuevo]);
+        $producto->precio_compra = $nuevo;
+        $producto->syncOriginalAttribute('precio_compra');
 
         Auditor::registrar('CAMBIO_COSTO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,

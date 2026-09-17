@@ -92,6 +92,23 @@
             </div>
         @endif
 
+        {{-- Para cotejar con el extracto del banco: el arqueo no los controla. --}}
+        @if ($qrAMano->isNotEmpty())
+            <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]" data-qr-a-mano>
+                <p class="text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                    {{ $qrAMano->count() }} cobro(s) por QR confirmados a mano: {{ Config::importe($qrAMano->sum('monto')) }}
+                </p>
+                <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">
+                    Se dieron por pagados sin la confirmación del banco. Revisa que estén en el extracto de la cuenta.
+                </p>
+                <ul class="mt-2 space-y-1 text-theme-xs text-gray-600 dark:text-gray-300">
+                    @foreach ($qrAMano as $cobro)
+                        <li>#{{ $cobro->id }} · {{ Config::importe($cobro->monto) }} · {{ $cobro->pagado_en?->format('H:i') }} · {{ $cobro->confirmadoPor?->usuario ?? '—' }}{{ $cobro->referencia_bancaria ? ' · ref. '.$cobro->referencia_bancaria : '' }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
         {{-- Arqueo --}}
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
             @php
@@ -218,6 +235,7 @@
 
                         <form method="POST" action="{{ route('caja.movimiento', $sesion) }}" class="space-y-5">
                             @csrf
+                            @unEnvio
                             <input type="hidden" name="tipo" :value="tipo" />
 
                             <div class="grid grid-cols-2 gap-3">

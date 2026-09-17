@@ -146,11 +146,22 @@ class CobrosQr
             throw new RuntimeException('Ese cobro fue cancelado: genera uno nuevo.');
         }
 
+        // Un QR vencido ya no se puede pagar: darlo por pagado a mano sería
+        // aceptar un comprobante que no puede existir.
+        if ($cobro->estado === CobroQr::EXPIRADO) {
+            throw new RuntimeException('El QR venció sin que se registrara el pago. Genera uno nuevo.');
+        }
+
         if (! self::estaSimulado()) {
             try {
                 $cobro = self::refrescar($cobro);
             } catch (RuntimeException) {
-                // El banco no contesta: se sigue con la confirmación a mano.
+                // El banco no contesta: se sigue con la confirmación a mano,
+                // pero no sobre un QR cuyo plazo ya pasó.
+                if ($cobro->expira_en !== null && $cobro->expira_en->isPast()) {
+                    throw new RuntimeException('El banco no responde y el QR ya venció: cobra por otro medio.');
+                }
+
                 return self::marcarPagado($cobro, 'MANUAL', $usuario, $referencia);
             }
 
@@ -175,13 +186,24 @@ class CobrosQr
      */
     public static function vencer(CobroQr $cobro): CobroQr
     {
-        if (! $cobro->estaPendiente()) {
+        // Releído con candado: un aviso del banco que llega en el mismo
+        // instante no se pisa con el vencimiento.
+        $cobro = DB::transaction(function () use ($cobro) {
+            $bloqueado = CobroQr::whereKey($cobro->id)->lockForUpdate()->first() ?? $cobro;
+
+            if (! $bloqueado->estaPendiente()) {
+                return $bloqueado;
+            }
+
+            self::pasarela()->anular($bloqueado);
+            $bloqueado->update(['estado' => CobroQr::EXPIRADO]);
+
+            return $bloqueado;
+        });
+
+        if ($cobro->estado !== CobroQr::EXPIRADO) {
             return $cobro;
         }
-
-        self::pasarela()->anular($cobro);
-
-        $cobro->update(['estado' => CobroQr::EXPIRADO]);
 
         Auditor::registrar('COBRO_QR_VENCIDO', 'cobros_qr', $cobro->id, [
             'monto' => $cobro->monto,

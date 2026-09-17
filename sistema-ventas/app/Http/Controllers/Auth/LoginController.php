@@ -26,6 +26,15 @@ class LoginController extends Controller
     private const BLOQUEO_SEGUNDOS = 60;
 
     /**
+     * Tope por CUENTA, sin importar desde dónde: el de arriba es por cuenta y
+     * dirección juntas, y cambiando de dirección se probaban contraseñas sin
+     * fin contra el administrador.
+     */
+    private const MAX_INTENTOS_CUENTA = 10;
+
+    private const BLOQUEO_CUENTA_SEGUNDOS = 900;
+
+    /**
      * Hash de una contraseña que no existe, para comparar contra ella cuando
      * el usuario no existe. Sin esto, `usuario inexistente` respondía sin
      * pasar por bcrypt mientras `contraseña incorrecta` sí (~100-300ms de
@@ -64,6 +73,7 @@ class LoginController extends Controller
 
         if (! $cuenta || ! $claveValida) {
             RateLimiter::hit($this->claveThrottle($request), self::BLOQUEO_SEGUNDOS);
+            RateLimiter::hit($this->claveCuenta($request), self::BLOQUEO_CUENTA_SEGUNDOS);
             $cuenta?->increment('intentos_fallidos');
 
             Auditor::registrar('LOGIN_FALLIDO', 'usuarios', $cuenta?->id, [
@@ -93,6 +103,7 @@ class LoginController extends Controller
         }
 
         RateLimiter::clear($this->claveThrottle($request));
+        RateLimiter::clear($this->claveCuenta($request));
 
         Auth::login($cuenta);
         $request->session()->regenerate();
@@ -123,8 +134,21 @@ class LoginController extends Controller
         return 'login:'.mb_strtolower((string) $request->input('usuario')).'|'.$request->ip();
     }
 
+    private function claveCuenta(Request $request): string
+    {
+        return 'login-cuenta:'.mb_strtolower((string) $request->input('usuario'));
+    }
+
     private function verificarBloqueo(Request $request): void
     {
+        if (RateLimiter::tooManyAttempts($this->claveCuenta($request), self::MAX_INTENTOS_CUENTA)) {
+            $minutos = (int) ceil(RateLimiter::availableIn($this->claveCuenta($request)) / 60);
+
+            throw ValidationException::withMessages([
+                'usuario' => "Demasiados intentos fallidos con esta cuenta. Queda bloqueada {$minutos} minuto(s); si no fuiste tú, avisa al administrador.",
+            ]);
+        }
+
         if (! RateLimiter::tooManyAttempts($this->claveThrottle($request), self::MAX_INTENTOS)) {
             return;
         }

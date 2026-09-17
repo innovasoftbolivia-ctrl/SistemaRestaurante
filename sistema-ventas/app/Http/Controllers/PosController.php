@@ -72,6 +72,17 @@ class PosController extends Controller
             // El mostrador necesita saber QUÉ métodos se cobran por QR para
             // mostrar el código en vez de un campo de referencia.
             'metodosQr' => MetodoPago::activos()->where('codigo', 'QR')->pluck('id')->values(),
+            // Los QR que este cajero cobró en su turno y no terminaron en venta
+            // (la venta falló, se recargó la página): se ofrecen para usarlos.
+            'qrSinVenta' => $sesion
+                ? $sesion->cobrosQrSinVenta()->where('usuario_id', Auth::id())->get()
+                    ->map(fn ($c) => [
+                        'id' => $c->id, 'estado' => $c->estado, 'monto' => (float) $c->monto,
+                        'pagado' => true, 'imagen' => false, 'payload' => null,
+                        'referencia' => $c->referencia_bancaria,
+                    ])->values()
+                : collect(),
+            'huboError' => session()->has('error') || session()->has('errors'),
             'qrSimulado' => CobrosQr::estaSimulado(),
             'qrSegundosConsulta' => (int) config('qr.segundos_consulta', 4),
         ]);

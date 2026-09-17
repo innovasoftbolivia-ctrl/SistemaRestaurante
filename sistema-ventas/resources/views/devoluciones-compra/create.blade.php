@@ -36,6 +36,7 @@
         x-data="devolucionNueva(@js($filas), @js($loteElegido))"
         @submit="if (!hayLineas) { $event.preventDefault(); avisoSinLineas = true; }">
         @csrf
+        @unEnvio
 
         @if ($errors->any())
             <x-ui.alert variant="error" title="La devolución no se pudo registrar" :message="$errors->first()" />

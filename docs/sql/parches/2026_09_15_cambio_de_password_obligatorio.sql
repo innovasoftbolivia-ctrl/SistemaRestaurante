@@ -13,6 +13,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 SET @falta := (SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'debe_cambiar_password');

@@ -11,6 +11,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 ALTER TABLE cobros_qr MODIFY payload MEDIUMTEXT NULL;
 

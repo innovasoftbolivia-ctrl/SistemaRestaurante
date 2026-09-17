@@ -30,6 +30,8 @@
 --  ya no le da `caja.cerrar` al Cajero desde el alta.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 DELETE rp FROM rol_permiso rp
 JOIN roles r    ON r.id = rp.rol_id
 JOIN permisos p ON p.id = rp.permiso_id

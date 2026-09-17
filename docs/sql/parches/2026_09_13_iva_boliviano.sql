@@ -20,6 +20,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 UPDATE configuracion
    SET descripcion = 'Tasa del IVA (en Bolivia, 13 %)'

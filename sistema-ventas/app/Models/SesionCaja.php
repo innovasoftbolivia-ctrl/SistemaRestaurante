@@ -81,6 +81,19 @@ class SesionCaja extends Model
             ->orderBy('id');
     }
 
+    /**
+     * Cobros por QR de este turno que el cajero dio por pagados a mano (el
+     * banco no respondía o es el simulador). Un QR no pasa por el cajón, así
+     * que el arqueo no los controla: hay que cotejarlos con el extracto.
+     */
+    public function cobrosQrConfirmadosAMano(): HasMany
+    {
+        return $this->hasMany(CobroQr::class, 'sesion_caja_id')
+            ->where('estado', CobroQr::PAGADO)
+            ->where('confirmado_por', 'MANUAL')
+            ->orderBy('id');
+    }
+
     public function scopeAbiertas(Builder $query): Builder
     {
         return $query->where('estado', 'ABIERTA');

@@ -13,6 +13,7 @@
     <form method="POST" action="{{ route('compras.store') }}" class="space-y-6" x-data="compraNueva()"
         @submit="if (!lineas.length) { $event.preventDefault(); avisoSinLineas = true; }">
         @csrf
+        @unEnvio
 
         @if ($errors->any())
             <x-ui.alert variant="error" title="La compra no se pudo registrar" :message="$errors->first()" />

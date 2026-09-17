@@ -19,5 +19,6 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 SELECT 'Sin efecto: sp_recalcular_venta lo define 2026_09_15_precios_con_impuesto_incluido.sql' AS aviso;

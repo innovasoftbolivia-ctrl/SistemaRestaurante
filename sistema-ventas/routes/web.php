@@ -166,7 +166,7 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
 
     Route::middleware('permiso:devoluciones.registrar')->group(function () {
         Route::get('ventas/{venta}/devolver', [DevolucionController::class, 'create'])->name('devoluciones.create');
-        Route::post('ventas/{venta}/devolver', [DevolucionController::class, 'store'])->name('devoluciones.store');
+        Route::post('ventas/{venta}/devolver', [DevolucionController::class, 'store'])->middleware('un.envio')->name('devoluciones.store');
     });
 
     // ---- Reportes ----
@@ -198,7 +198,7 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         ->middleware('permiso:caja.abrir')->name('caja.abrir');
 
     Route::post('caja/{sesion}/movimiento', [CajaController::class, 'movimiento'])
-        ->middleware('permiso:caja.abrir')->name('caja.movimiento');
+        ->middleware('permiso:caja.abrir')->middleware('un.envio')->name('caja.movimiento');
 
     Route::post('caja/{sesion}/cerrar', [CajaController::class, 'cerrar'])
         ->middleware('permiso:caja.cerrar')->name('caja.cerrar');
@@ -279,11 +279,11 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
     // sitio donde cambia el stock.
     Route::post('productos/{producto}/ingreso', [ProductoController::class, 'ingresar'])
         ->middleware('permiso:inventario.ingresar')
-        ->name('productos.ingreso');
+        ->middleware('un.envio')->name('productos.ingreso');
 
     Route::post('productos/{producto}/ajuste', [ProductoController::class, 'ajustar'])
         ->middleware('permiso:inventario.ajustar')
-        ->name('productos.ajuste');
+        ->middleware('un.envio')->name('productos.ajuste');
 
     // ---- Inventario: el almacén como módulo propio ----
     // Se puede mirar con cualquiera de los tres permisos: quien carga, quien
@@ -296,11 +296,11 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
 
     Route::post('inventario/ingreso', [InventarioController::class, 'ingreso'])
         ->middleware('permiso:inventario.ingresar')
-        ->name('inventario.ingreso');
+        ->middleware('un.envio')->name('inventario.ingreso');
 
     Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
         ->middleware('permiso:inventario.ajustar')
-        ->name('inventario.ajuste');
+        ->middleware('un.envio')->name('inventario.ajuste');
 
     // ---- Toma de inventario: contar el local entero ----
     // La mira quien mira el inventario; contar y cerrar es ajustar stock, así
@@ -350,7 +350,7 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('compras/productos', [CompraController::class, 'buscar'])
             ->middleware('throttle:60,1')
             ->name('compras.productos');
-        Route::post('compras', [CompraController::class, 'store'])->name('compras.store');
+        Route::post('compras', [CompraController::class, 'store'])->middleware('un.envio')->name('compras.store');
     });
 
     // ---- Devoluciones al proveedor: lo que se va de vuelta ----
@@ -376,13 +376,13 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('compras/{compra}/devolucion', [DevolucionCompraController::class, 'create'])
             ->name('devoluciones-compra.create');
         Route::post('compras/{compra}/devolucion', [DevolucionCompraController::class, 'store'])
-            ->name('devoluciones-compra.store');
+            ->middleware('un.envio')->name('devoluciones-compra.store');
 
         // Lo que el proveedor trajo después. Es una entrada de mercadería, así
         // que pide el mismo permiso que cargar una compra.
         Route::post('devoluciones-compra/{devolucionCompra}/reposicion',
             [DevolucionCompraController::class, 'reponer'])
-            ->name('devoluciones-compra.reponer');
+            ->middleware('un.envio')->name('devoluciones-compra.reponer');
     });
 
     // Va al final del bloque a propósito: `compras/{compra}` es un comodín y,

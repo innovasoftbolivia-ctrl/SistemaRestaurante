@@ -205,6 +205,14 @@
             </p>
         @endif
 
+        @if ($qrAMano->isNotEmpty())
+            <h2>QR confirmados a mano</h2>
+            <p data-qr-a-mano>
+                {{ $qrAMano->count() }} cobro(s) por {{ Config::importe($qrAMano->sum('monto')) }} dados por pagados sin la
+                confirmación del banco: cotejarlos con el extracto de la cuenta.
+            </p>
+        @endif
+
         <h2>Ventas por método de pago</h2>
         <table style="margin-bottom: 20px;">
             <thead>

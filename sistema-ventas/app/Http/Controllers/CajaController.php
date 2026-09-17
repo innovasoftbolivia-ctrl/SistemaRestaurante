@@ -81,6 +81,7 @@ class CajaController extends Controller
                 ? Auth::user()->tienePermiso('caja.abrir')
                 : Auth::user()->tienePermiso('caja.cerrar'),
             'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
+            'qrAMano' => self::arquea(Auth::user()) ? $sesion->cobrosQrConfirmadosAMano()->with('confirmadoPor:id,usuario')->get() : collect(),
         ]);
     }
 
@@ -115,6 +116,7 @@ class CajaController extends Controller
             'desglose' => $sesion->desgloseDelEfectivo(),
             'porMetodo' => $this->porMetodoPago($sesion),
             'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
+            'qrAMano' => $sesion->cobrosQrConfirmadosAMano()->with('confirmadoPor:id,usuario')->get(),
             'negocio' => [
                 'nombre' => Config::get('negocio_nombre', config('app.name')),
                 'documento' => Config::get('negocio_documento'),

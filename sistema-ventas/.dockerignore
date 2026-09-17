@@ -21,6 +21,10 @@ storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
 storage/logs/*
+# Los respaldos y la contraseña del primer acceso de ESTA máquina no viajan a la
+# imagen: aparecerían en la lista de respaldos del cliente.
+storage/app/respaldos/
+storage/app/private/
 .git/
 .env
 .env.docker

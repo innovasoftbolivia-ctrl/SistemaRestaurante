@@ -49,6 +49,8 @@
 --  Idempotente: la columna y la tabla se crean solo si faltan.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 SET @faltaColumna := (
     SELECT COUNT(*) = 0
     FROM information_schema.COLUMNS

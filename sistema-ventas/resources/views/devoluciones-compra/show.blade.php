@@ -173,6 +173,7 @@
                 <form method="POST" action="{{ route('devoluciones-compra.reponer', $devolucion) }}"
                     x-data="reposicion(@js($faltan))">
                     @csrf
+                    @unEnvio
 
                     <x-common.component-card title="El proveedor trajo el reemplazo"
                         desc="Anota lo que llegó. Puede venir en partes: lo que no pongas queda como pendiente.">

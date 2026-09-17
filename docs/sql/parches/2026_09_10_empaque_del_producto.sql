@@ -46,6 +46,8 @@
 --  aplicar el parche sobre una base ya parchada no aborte el script entero.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 SET @faltan := (
     SELECT COUNT(*)
     FROM information_schema.COLUMNS
@@ -56,7 +58,7 @@ SET @faltan := (
 
 SET @sql := IF(@faltan = 0, '
     ALTER TABLE productos
-        ADD COLUMN contenido_empaque SMALLINT UNSIGNED NULL
+        ADD COLUMN contenido_empaque DECIMAL(10,3) UNSIGNED NULL
             COMMENT "unidades de venta que trae un empaque; NULL = no viene en empaque"
             AFTER unidad_medida_id,
         ADD COLUMN nombre_empaque VARCHAR(20) NULL
@@ -64,7 +66,7 @@ SET @sql := IF(@faltan = 0, '
             AFTER contenido_empaque,
         ADD CONSTRAINT ck_productos_empaque CHECK (
             (contenido_empaque IS NULL AND nombre_empaque IS NULL)
-            OR (contenido_empaque >= 2 AND nombre_empaque IS NOT NULL)
+            OR (contenido_empaque > 1 AND nombre_empaque IS NOT NULL)
         )
 ', 'DO 0');
 

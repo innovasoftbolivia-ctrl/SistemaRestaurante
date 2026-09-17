@@ -43,6 +43,8 @@
 -- =============================================================================
 
 -- ------------------------------------------- 1. el estado de la cabecera
+SET NAMES utf8mb4;
+
 SET @falta := (
     SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'devoluciones_compra'

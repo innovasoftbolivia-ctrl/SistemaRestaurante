@@ -301,6 +301,7 @@
                             },
                         }">
                         @csrf
+                        @unEnvio
 
                         <x-form.cantidad-empaque :help="$unidad?->permite_decimal ? 'Admite decimales.' : 'Solo números enteros.'"
                             :hay-empaque="$producto->tieneEmpaque() ? 'true' : 'false'"
@@ -404,6 +405,7 @@
 
                     <form method="POST" action="{{ route('productos.ajuste', $producto) }}" class="space-y-5">
                         @csrf
+                        @unEnvio
 
                         <x-form.campo label="Stock contado" for="stock_contado" name="stock_contado" required>
                             <x-form.input id="stock_contado" name="stock_contado" type="number" step="{{ $paso }}"

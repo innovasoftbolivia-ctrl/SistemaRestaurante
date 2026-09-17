@@ -13,6 +13,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 INSERT IGNORE INTO configuracion (clave, valor, descripcion) VALUES
     ('dias_max_devolucion', '7',                     'Días máximos tras la venta para aceptar una devolución'),

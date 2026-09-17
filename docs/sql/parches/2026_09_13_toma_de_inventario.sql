@@ -20,6 +20,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 -- Toma de inventario: contar toda la tienda (o una categoría) de una vez.
 --

@@ -10,6 +10,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 -- De qué lote salió cada línea de venta. Sin esto, lo anulado o devuelto
 -- volvía al lote que vence antes entre los abiertos —o a uno que vence en un

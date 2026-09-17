@@ -52,6 +52,7 @@
             ])))"
             class="grid grid-cols-1 gap-6 lg:grid-cols-3">
             @csrf
+            @unEnvio
 
             <div class="space-y-6 lg:col-span-2">
                 <x-common.component-card title="Qué devuelve el cliente"

@@ -44,6 +44,8 @@
 --  crea el procedimiento corregido.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 DROP PROCEDURE IF EXISTS sp_cerrar_caja;
 
 DELIMITER $$

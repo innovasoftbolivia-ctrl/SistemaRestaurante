@@ -12,6 +12,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 INSERT IGNORE INTO configuracion (clave, valor, descripcion) VALUES
     ('egreso_max_cajero', '200.00', 'Egreso máximo (Bs) que el cajero registra sin autorización');

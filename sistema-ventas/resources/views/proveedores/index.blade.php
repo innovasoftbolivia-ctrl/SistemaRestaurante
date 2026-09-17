@@ -223,7 +223,9 @@
                         </x-form.campo>
                     </div>
 
+                    @puede('registros.eliminar')
                     <x-form.check name="activo" model="activo" label="Proveedor disponible para asignar" />
+                    @endpuede
 
                     <div class="flex justify-end gap-3">
                         <x-ui.button type="button" variant="outline" size="sm" @click="abierto = false">Cancelar</x-ui.button>

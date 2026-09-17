@@ -21,6 +21,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 INSERT IGNORE INTO permisos (codigo, modulo, descripcion) VALUES
     ('clientes.editar',    'Ventas',  'Editar los datos de un cliente ya registrado'),

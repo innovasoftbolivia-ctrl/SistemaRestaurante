@@ -130,6 +130,10 @@ que no hay que acordarse a mano:
 ./scripts/aplicar-parches.sh --aplicar    # aplica lo pendiente, en el orden correcto
 ```
 
+Encuentra solo el contenedor de MySQL, de producción (`ventas_mysql_prod`) o de desarrollo
+(`ventas_mysql`); si usa otro nombre, `VENTAS_MYSQL=...`. Los cuatro parches de catálogo del
+2026-08-23 quedan fuera siempre, salvo que se pida `--catalogo`.
+
 Para otra base que no sea `ventas_db` (por ejemplo, la de un cliente instalado aparte):
 
 ```bash
@@ -886,14 +890,18 @@ sus propios datos de negocio.
 
 5. **Primer acceso.** La base de producción se crea con `docs/sql/produccion/02_datos_base.sql`:
    sin productos, clientes ni empleados de ejemplo, y con una sola cuenta, `admin`. Su contraseña
-   es aleatoria y sale **una sola vez** en el log del primer arranque:
+   es aleatoria y queda en un archivo dentro del contenedor:
 
    ```bash
    docker compose -f docker-compose.prod.yml exec app cat storage/app/respaldos/PRIMER-ACCESO.txt
    ```
 
    La contraseña **no** sale en el log del contenedor a propósito: ahí quedaría guardada para
-   siempre. Bórrala del servidor (`rm storage/app/respaldos/PRIMER-ACCESO.txt`) en cuanto entres.
+   siempre. Borra el archivo en cuanto entres:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml exec app rm storage/app/respaldos/PRIMER-ACCESO.txt
+   ```
 
    Al entrar, el sistema obliga a cambiarla antes de hacer cualquier otra cosa.
 
@@ -944,13 +952,42 @@ sus propios datos de negocio.
     - `APP_URL=https://…` — con eso la cookie de sesión pasa sola a viajar solo cifrada
       (`SESSION_SECURE_COOKIE` ya no hace falta; si tu `.env.docker` es viejo y la tiene en
       `false`, bórrala). La cabecera `Strict-Transport-Security` ya la manda el nginx del proyecto.
-    - `TRUSTED_PROXIES` con la IP de ese proxy (o `*` si está en la misma red privada) — sin
-      esto la bitácora registra la IP del proxy en vez de la del cliente, y las URLs que arma
-      Laravel salen en `http://` aunque el visitante haya entrado por `https://`.
+    - `TRUSTED_PROXIES=172.16.0.0/12` si el proxy corre en el mismo servidor: la aplicación no ve
+      llegar la IP del proxy sino la de la red interna de Docker. Sin esto la bitácora registra
+      la IP del proxy en vez de la del cliente, y las URLs que arma Laravel salen en `http://`
+      aunque el visitante haya entrado por `https://`.
+    - En el `.env` de la raíz, `APP_PUERTO=127.0.0.1:8100`: así nadie entra por el puerto 8100
+      saltándose el HTTPS. En un local sin proxy, donde las cajas entran por la red, se deja 8100.
+
+    Después de cambiar `.env.docker` o `.env`: `docker compose -f docker-compose.prod.yml up -d`
+    (recrea los contenedores con los valores nuevos; `restart` no los vuelve a leer).
 
 ---
 
 ## Copias de seguridad
+
+**En producción ya hay un respaldo automático**: el contenedor `programador` corre
+`respaldo:crear` todas las noches a la 01:00 y lo guarda en el volumen `ventas_respaldos`
+(se ve y se descarga en **Sistema → Respaldos**). Para que además quede una copia **fuera del
+servidor**, monta un disco externo o una carpeta sincronizada:
+
+```bash
+# en el servidor: la carpeta, escribible por www-data del contenedor (uid 82)
+sudo mkdir -p /media/usb/respaldos-ventas && sudo chown 82:82 /media/usb/respaldos-ventas
+```
+
+y en el `.env` de la raíz `RESPALDOS_COPIA_SERVIDOR=/media/usb/respaldos-ventas`, en
+`sistema-ventas/.env.docker` `RESPALDOS_COPIA=/respaldos-copia`, y `up -d`. Si la copia falla, el
+respaldo nocturno queda como fallido en la bitácora y en el log del programador.
+
+`scripts/revisar-salud.sh` da por bueno un respaldo reciente tanto en `backups/` como en ese
+volumen. Para restaurar uno del volumen, primero sácalo al servidor:
+
+```bash
+docker cp ventas_app_prod:/var/www/html/storage/app/respaldos/<archivo>.sql.gz backups/
+```
+
+Además, `scripts/backup-db.sh` hace una copia desde el servidor, con cron:
 
 `scripts/backup-db.sh`, desde la raíz del repositorio, guarda **dos** archivos en `backups/`
 (que no se sube al repositorio), con la fecha y hora en el nombre:

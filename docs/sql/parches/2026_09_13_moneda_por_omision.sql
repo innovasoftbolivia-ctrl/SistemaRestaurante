@@ -21,6 +21,7 @@
 -- =============================================================================
 
 USE ventas_db;
+SET NAMES utf8mb4;
 
 ALTER TABLE comprobantes ALTER COLUMN moneda SET DEFAULT 'BOB';
 

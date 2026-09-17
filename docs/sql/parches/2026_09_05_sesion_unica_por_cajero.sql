@@ -41,6 +41,8 @@
 --  trae la columna y el índice desde el alta.
 -- =============================================================================
 
+SET NAMES utf8mb4;
+
 SET @existe_columna = (
     SELECT COUNT(*) FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE()
