@@ -1424,12 +1424,10 @@
                                 return;
                             }
 
-                            if (this.lineasSinMonto >= 1) {
-                                this.pagos.forEach(p => {
-                                    if (this.vacio(p)) p.monto = this.montoDe(p).toFixed(2);
-                                });
-                            }
-
+                            /* La forma de pago que va «por el resto» se deja así: el QR
+                               entra con su importe fijo y ella cubre la diferencia.
+                               Fijarla en el total dejaba lo pagado por encima del total
+                               y el botón de cobrar apagado. */
                             this.pagos.push({
                                 metodoId: metodoQr,
                                 monto: cobro.monto.toFixed(2),
