@@ -73,8 +73,11 @@
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <p class="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">
                 Registrar al cliente es <b>opcional</b>: la venta al paso se cobra sin pedir ningún dato y el recibo
-                sale a nombre genérico. Solo la <b>factura</b> obliga a identificarlo, y para eso tiene que ser
-                persona jurídica con NIT y dirección fiscal.
+                sale a nombre genérico.
+                @facturacion
+                    Solo la <b>factura</b> obliga a identificarlo, y para eso tiene que ser persona jurídica con NIT y
+                    dirección fiscal.
+                @endfacturacion
             </p>
 
             <form method="GET" action="{{ route('clientes.index') }}"
@@ -156,8 +159,13 @@
                                     {{ $cliente->documento ? $cliente->tipo_documento.' '.$cliente->documento : '—' }}
                                 </td>
                                 <td class="px-5 py-4">
-                                    <x-ui.estado :estado="$cliente->llevaFactura() ? 'PLAZO_FIJO' : 'PRACTICAS'"
-                                        :texto="$cliente->esJuridica() ? 'Jurídica — factura' : ($cliente->llevaFactura() ? 'Natural con NIT — factura' : 'Natural — recibo')" />
+                                    @facturacion
+                                        <x-ui.estado :estado="$cliente->llevaFactura() ? 'PLAZO_FIJO' : 'PRACTICAS'"
+                                            :texto="$cliente->esJuridica() ? 'Jurídica — factura' : ($cliente->llevaFactura() ? 'Natural con NIT — factura' : 'Natural — recibo')" />
+                                    @else
+                                        <x-ui.estado :estado="$cliente->esJuridica() ? 'PLAZO_FIJO' : 'PRACTICAS'"
+                                            :texto="$cliente->esJuridica() ? 'Empresa' : 'Persona'" />
+                                    @endfacturacion
                                 </td>
                                 <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
                                     {{ collect([$cliente->telefono, $cliente->email])->filter()->implode(' · ') ?: '—' }}
@@ -227,7 +235,7 @@
                                 : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
                             class="rounded-xl border-2 px-4 py-3 text-left transition">
                             <span class="block text-sm font-medium">Persona natural</span>
-                            <span class="block text-theme-xs opacity-75">Recibe recibo</span>
+                            @facturacion<span class="block text-theme-xs opacity-75">Recibe recibo</span>@endfacturacion
                         </button>
                         <button type="button" @click="cambiarPersona('JURIDICA')"
                             :class="juridica
@@ -235,7 +243,7 @@
                                 : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
                             class="rounded-xl border-2 px-4 py-3 text-left transition">
                             <span class="block text-sm font-medium">Persona jurídica</span>
-                            <span class="block text-theme-xs opacity-75">Recibe factura</span>
+                            @facturacion<span class="block text-theme-xs opacity-75">Recibe factura</span>@endfacturacion
                         </button>
                     </div>
 
@@ -254,7 +262,7 @@
 
                             <x-form.campo label="Tipo de documento" for="cliente-tipodoc" name="tipo_documento" required>
                                 <x-form.select id="cliente-tipodoc" name="tipo_documento" x-model="f.tipo_documento"
-                                    :opciones="['CI' => 'CI (cédula de identidad)', 'NIT' => 'NIT (unipersonal: recibe factura)', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
+                                    :opciones="['CI' => 'CI (cédula de identidad)', 'NIT' => App\Support\Config::facturacionVisible() ? 'NIT (unipersonal: recibe factura)' : 'NIT', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
                             </x-form.campo>
 
                             <x-form.campo label="Documento" for="cliente-doc-nat" name="documento">
@@ -275,7 +283,7 @@
                             </div>
 
                             <x-form.campo label="NIT" for="cliente-nit" name="documento" required
-                                help="Sin NIT no se puede emitir factura.">
+                                :help="App\Support\Config::facturacionVisible() ? 'Sin NIT no se puede emitir factura.' : null">
                                 <x-form.input id="cliente-nit" name="documento" x-model="f.documento" inputmode="numeric"
                                     placeholder="1023456027" />
                                 <input type="hidden" name="tipo_documento" value="NIT" />
@@ -300,7 +308,7 @@
                         <div class="sm:col-span-2">
                             <x-form.campo label="Dirección" for="cliente-direccion" name="direccion"
                                 ::required="juridica"
-                                help="Obligatoria para la factura: es la dirección fiscal.">
+                                :help="App\Support\Config::facturacionVisible() ? 'Obligatoria para la factura: es la dirección fiscal.' : null">
                                 <x-form.input id="cliente-direccion" name="direccion" x-model="f.direccion"
                                     placeholder="Av. Cañoto 450, Santa Cruz" />
                             </x-form.campo>

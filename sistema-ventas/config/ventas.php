@@ -59,4 +59,18 @@ return [
 
     'pdf_max_filas' => (int) env('PDF_MAX_FILAS', 250),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Facturación e impuestos a la vista
+    |--------------------------------------------------------------------------
+    |
+    | Mientras el negocio no factura, las pantallas no hablan de impuesto, IVA
+    | ni facturas: todo sale como recibo y sin desglose. El código queda entero
+    | —el cálculo del IVA, las facturas, el libro de ventas— y se vuelve a ver
+    | poniendo MOSTRAR_FACTURACION=true.
+    |
+    */
+
+    'mostrar_facturacion' => (bool) env('MOSTRAR_FACTURACION', false),
+
 ];

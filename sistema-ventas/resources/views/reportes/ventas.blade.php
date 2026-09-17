@@ -98,7 +98,7 @@
             </span>
         </p>
 
-        @if (Config::tasaImpuesto() > 0)
+        @if (Config::tasaImpuesto() > 0 && Config::facturacionVisible())
             <p class="text-theme-xs text-gray-500 dark:text-gray-400">
                 Impuesto del período: {{ Config::importe($resumen['impuesto']) }} (incluido en lo vendido).
             </p>

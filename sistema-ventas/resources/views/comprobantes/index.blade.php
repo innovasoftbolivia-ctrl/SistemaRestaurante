@@ -6,6 +6,7 @@
 
 @section('content')
     <div class="space-y-6">
+        @facturacion
         <x-ui.en-construccion titulo="Régimen tributario en construcción">
             @if (Config::tasaImpuesto() > 0)
                 La tasa de impuesto ({{ number_format(Config::tasaImpuesto() * 100, 0) }}%) y la identificación fiscal
@@ -16,6 +17,7 @@
             trazabilidad sí están terminados: lo que falta es fijar los datos tributarios y, más adelante, la
             facturación electrónica.
         </x-ui.en-construccion>
+        @endfacturacion
 
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <p class="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">

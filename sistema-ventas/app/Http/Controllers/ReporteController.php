@@ -135,7 +135,7 @@ class ReporteController extends Controller
             ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'revirtieron su stock'],
         ];
 
-        if ($tasa > 0) {
+        if ($tasa > 0 && Config::facturacionVisible()) {
             $indicadores[] = ['etiqueta' => 'Impuesto', 'valor' => $resumen['impuesto'], 'formato' => 'moneda', 'nota' => 'incluido en lo vendido'];
         }
 

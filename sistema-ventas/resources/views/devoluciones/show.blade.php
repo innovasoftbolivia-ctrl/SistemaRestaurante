@@ -71,7 +71,7 @@
                     <div class="px-6 py-5">
                         <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Mercadería devuelta</h2>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            Al precio y con la tasa de impuesto del día en que se vendió, no los de hoy.
+                            Al precio{{ App\Support\Config::facturacionVisible() ? ' y con la tasa de impuesto' : '' }} del día en que se vendió, no los de hoy.
                         </p>
                     </div>
 
@@ -106,7 +106,7 @@
                                         </td>
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                             {{ Config::importe($linea->precio_unitario) }}
-                                            @if ($linea->afecto_impuesto)
+                                            @if ($linea->afecto_impuesto && Config::facturacionVisible())
                                                 <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
                                                     + {{ Config::importe($linea->impuesto_linea) }} imp.
                                                 </span>
@@ -126,11 +126,13 @@
                     </div>
 
                     <div class="space-y-2 border-t border-gray-100 px-6 py-5 dark:border-gray-800">
+                        @facturacion
                         <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
                             <span>Base (sin impuesto)</span>
                             <span>{{ Config::importe($devolucion->base) }}</span>
                         </div>
-                        @if ($devolucion->impuesto_devuelto > 0)
+                        @endfacturacion
+                        @if ($devolucion->impuesto_devuelto > 0 && Config::facturacionVisible())
                             <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
                                 <span>Impuesto reintegrado</span>
                                 <span>{{ Config::importe($devolucion->impuesto_devuelto) }}</span>

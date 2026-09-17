@@ -8,6 +8,7 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Comprobantes;
 use App\Services\Ventas;
+use App\Support\Config;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -104,7 +105,8 @@ class VentaController extends Controller
             'title' => 'Venta #'.$venta->id,
             'trail' => ['Ventas' => route('ventas.index')],
             'venta' => $venta,
-            'puedeSustituir' => $comprobante && Comprobantes::puedeSustituirse($comprobante),
+            // Sustituir es para cambiar un recibo por una factura: sin facturación, no se ofrece.
+            'puedeSustituir' => Config::facturacionVisible() && $comprobante && Comprobantes::puedeSustituirse($comprobante),
             'bloqueoSustitucion' => $comprobante ? Comprobantes::motivoBloqueo($comprobante) : null,
             'venceSustitucion' => Comprobantes::venceEl($venta),
             // Para pasar de recibo a factura hay que asignar una persona jurídica.

@@ -294,19 +294,19 @@
                         </label>
                         <select id="cliente" x-model.number="clienteId"
                             class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-                            <option value="">{{ $clienteGenerico }} (venta al paso — recibo)</option>
+                            <option value="">{{ $clienteGenerico }} (venta al paso{{ App\Support\Config::facturacionVisible() ? ' — recibo' : '' }})</option>
                             @foreach ($clientes as $c)
                                 <option value="{{ $c['id'] }}" data-juridica="{{ $c['juridica'] ? '1' : '0' }}">
-                                    {{ $c['etiqueta'] }}{{ $c['juridica'] ? ' — factura' : '' }}
+                                    {{ $c['etiqueta'] }}{{ $c['juridica'] && App\Support\Config::facturacionVisible() ? ' — factura' : '' }}
                                 </option>
                             @endforeach
                             {{-- Los que se registran sin salir del mostrador, en esta misma venta. --}}
                             <template x-for="c in clientesNuevos" :key="c.id">
-                                <option :value="c.id" x-text="c.etiqueta + (c.factura ? ' — factura' : '')"></option>
+                                <option :value="c.id" x-text="{{ App\Support\Config::facturacionVisible() ? "c.etiqueta + (c.factura ? ' — factura' : '')" : 'c.etiqueta' }}"></option>
                             </template>
                         </select>
                         <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-                            Persona jurídica recibe <b>factura</b>; el resto, <b>recibo</b>.
+                            @facturacion Persona jurídica recibe <b>factura</b>; el resto, <b>recibo</b>. @endfacturacion
                             <button type="button" @click="abrirNuevoCliente()"
                                 class="-my-2 px-1 py-2 font-medium text-brand-500 dark:text-brand-400 hover:text-brand-600">Registrar cliente</button>
                         </p>
@@ -371,7 +371,7 @@
                             @endif
                         </p>
 
-                        @if ($tasaImpuesto > 0)
+                        @if ($tasaImpuesto > 0 && App\Support\Config::facturacionVisible())
                             <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400" data-impuesto-del-total>
                                 <span>{{ $impuestoIncluido ? 'IVA incluido' : 'Impuesto' }} ({{ rtrim(rtrim(number_format($tasaImpuesto * 100, 2), '0'), '.') }}%)</span>
                                 <span x-text="'{{ $moneda }} ' + impuesto.toFixed(2)"></span>
@@ -663,7 +663,7 @@
                                     : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
                                 class="rounded-xl border-2 px-4 py-3 text-left transition">
                                 <span class="block text-sm font-medium">Persona natural</span>
-                                <span class="block text-theme-xs opacity-75">Recibe recibo</span>
+                                @facturacion<span class="block text-theme-xs opacity-75">Recibe recibo</span>@endfacturacion
                             </button>
                             <button type="button" @click="nuevoCliente.persona = 'JURIDICA'; nuevoCliente.tipo_documento = 'NIT'"
                                 :class="nuevoCliente.persona === 'JURIDICA'
@@ -671,7 +671,7 @@
                                     : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-400'"
                                 class="rounded-xl border-2 px-4 py-3 text-left transition">
                                 <span class="block text-sm font-medium">Persona jurídica</span>
-                                <span class="block text-theme-xs opacity-75">Recibe factura</span>
+                                @facturacion<span class="block text-theme-xs opacity-75">Recibe factura</span>@endfacturacion
                             </button>
                         </div>
 
@@ -692,7 +692,7 @@
                                     <select x-model="nuevoCliente.tipo_documento"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                                         <option value="CI">CI</option>
-                                        <option value="NIT">NIT (recibe factura)</option>
+                                        <option value="NIT">NIT{{ App\Support\Config::facturacionVisible() ? ' (recibe factura)' : '' }}</option>
                                         <option value="CE">Carné de extranjería</option>
                                         <option value="PAS">Pasaporte</option>
                                         <option value="SIN">Sin documento</option>
@@ -719,7 +719,7 @@
                                     </label>
                                     <input x-model="nuevoCliente.documento" placeholder="1023456027"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
-                                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Sin NIT no se puede emitir factura.</p>
+                                    @facturacion<p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Sin NIT no se puede emitir factura.</p>@endfacturacion
                                 </div>
                                 <div class="sm:col-span-2">
                                     <label class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
@@ -727,7 +727,7 @@
                                     </label>
                                     <input x-model="nuevoCliente.direccion" placeholder="Av. Cañoto 450, Santa Cruz"
                                         class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
-                                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Obligatoria para la factura: es la dirección fiscal.</p>
+                                    @facturacion<p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Obligatoria para la factura: es la dirección fiscal.</p>@endfacturacion
                                 </div>
                             </div>
                         </template>

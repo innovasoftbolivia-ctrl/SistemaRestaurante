@@ -410,7 +410,7 @@
             @endif
             @else
             <tr>
-                <td class="tenue">Subtotal (base imponible)</td>
+                <td class="tenue">@facturacion Subtotal (base imponible) @else Subtotal @endfacturacion</td>
                 <td class="derecha">{{ $moneda }} {{ number_format((float) $comprobante->subtotal, 2) }}</td>
             </tr>
             @if ((float) $comprobante->descuento > 0)

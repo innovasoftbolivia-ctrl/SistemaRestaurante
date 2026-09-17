@@ -210,6 +210,7 @@
                             Sale del cajón: <b>{{ $moneda }} <span x-text="efectivo.toFixed(2)"></span></b>
                         </p>
 
+                        @facturacion
                         <div x-show="impuesto > 0" x-cloak
                             class="mt-3 space-y-1 border-t border-gray-200 pt-3 dark:border-gray-700">
                             <div class="flex justify-between text-theme-xs text-gray-500 dark:text-gray-400">
@@ -221,6 +222,7 @@
                                 <span>{{ $moneda }} <span x-text="impuesto.toFixed(2)"></span></span>
                             </div>
                         </div>
+                        @endfacturacion
                     </div>
 
                     {{-- De qué cajón sale: con una sola caja, el turno abierto del
@@ -238,7 +240,7 @@
                     @endif
 
                     <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-                        Se devuelve lo que el cliente pagó: el precio y la tasa de impuesto del día de la venta, no los
+                        Se devuelve lo que el cliente pagó: el precio{{ App\Support\Config::facturacionVisible() ? ' y la tasa de impuesto' : '' }} del día de la venta, no los
                         de hoy. El arqueo de caja descuenta lo que sale del cajón. Esta versión no emite nota de crédito:
                         la devolución revierte stock y dinero, y queda auditada.
                     </p>

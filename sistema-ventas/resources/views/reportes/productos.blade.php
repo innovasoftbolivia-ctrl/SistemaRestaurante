@@ -156,7 +156,7 @@
                 <div class="px-6 py-5">
                     <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Más vendidos del período</h2>
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Por monto vendido neto de devoluciones. Los importes van sin impuesto.
+                        Por monto vendido neto de devoluciones.{{ App\Support\Config::facturacionVisible() ? ' Los importes van sin impuesto.' : '' }}
                     </p>
                 </div>
                 <div class="px-3 pb-3">

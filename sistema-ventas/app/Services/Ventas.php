@@ -425,7 +425,25 @@ class Ventas
     /** La serie a usar sale de la configuración del negocio. */
     public static function seriePara(?Cliente $cliente): SerieComprobante
     {
-        $clave = $cliente?->llevaFactura() ? 'serie_factura' : 'serie_recibo';
+        // Sin facturación a la vista no se emiten facturas: todo sale como
+        // recibo aunque el cliente tenga NIT. La excepción es la empresa: el
+        // recibo es solo para personas naturales, así que a ella le toca la
+        // nota de venta, que vale para cualquiera y tampoco lleva impuesto.
+        if (! Config::facturacionVisible() && $cliente?->esJuridica()) {
+            $notaDeVenta = SerieComprobante::with('tipo')
+                ->whereHas('tipo', fn ($q) => $q->where('codigo', 'NV'))
+                ->where('activo', 1)
+                ->orderBy('id')
+                ->first();
+
+            if (! $notaDeVenta) {
+                throw new RuntimeException('No hay una serie de nota de venta activa para venderle a una empresa.');
+            }
+
+            return $notaDeVenta;
+        }
+
+        $clave = Config::facturacionVisible() && $cliente?->llevaFactura() ? 'serie_factura' : 'serie_recibo';
         $id = (int) Config::get($clave, '0');
 
         $serie = SerieComprobante::with('tipo')->find($id);

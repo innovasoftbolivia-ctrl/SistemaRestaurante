@@ -83,7 +83,9 @@ class Menu
                 'items' => [
                     ['icon' => 'reportes', 'name' => 'Ventas', 'path' => '/reportes/ventas'],
                     ['icon' => 'inventario', 'name' => 'Productos e inventario', 'path' => '/reportes/productos'],
-                    ['icon' => 'comprobantes', 'name' => 'Libro de Ventas IVA', 'path' => '/reportes/libro-ventas'],
+                    ...(Config::facturacionVisible()
+                        ? [['icon' => 'comprobantes', 'name' => 'Libro de Ventas IVA', 'path' => '/reportes/libro-ventas']]
+                        : []),
                 ],
             ];
         }

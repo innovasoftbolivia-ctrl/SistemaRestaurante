@@ -75,7 +75,10 @@
             </x-common.component-card>
 
             {{-- Impuesto y precios: lo decide el negocio (y su contador). Afecta solo
-                 a las ventas nuevas: cada venta guarda la tasa y el modo con que se hizo. --}}
+                 a las ventas nuevas: cada venta guarda la tasa y el modo con que se hizo.
+                 Sin facturación a la vista, el apartado no se muestra y sus valores
+                 viajan tal cual en campos ocultos. --}}
+            @facturacion
             <x-common.component-card title="Impuesto y precios"
                 desc="Si el negocio cobra IVA y cómo van tus precios. Cambiarlo afecta solo a las ventas nuevas: las ya registradas conservan la tasa y el modo con que se hicieron.">
                 <div class="space-y-5" data-impuesto-y-precios>
@@ -145,6 +148,14 @@
                     </p>
                 </div>
             </x-common.component-card>
+            @else
+                <input type="hidden" name="cobra_impuesto" value="{{ $actual['cobra_impuesto'] }}">
+                <input type="hidden" name="tasa_impuesto" value="{{ $actual['tasa_impuesto'] }}">
+                <input type="hidden" name="precios_incluyen_impuesto" value="{{ $actual['precios_incluyen_impuesto'] }}">
+                <input type="hidden" name="serie_factura" value="{{ $actual['serie_factura'] }}">
+                <input type="hidden" name="serie_recibo" value="{{ $actual['serie_recibo'] }}">
+                <input type="hidden" name="dias_max_sustitucion" value="{{ $actual['dias_max_sustitucion'] }}">
+            @endfacturacion
 
             <x-common.component-card title="Mostrador"
                 desc="Lo que el cajero puede hacer sin pedir autorización, y lo que se imprime cuando la venta no tiene cliente.">
@@ -163,12 +174,14 @@
                             min="0" inputmode="decimal" :value="$actual['egreso_max_cajero']" required />
                     </x-form.campo>
 
+                    @facturacion
                     <x-form.campo label="Días para sustituir un comprobante" for="dias_max_sustitucion"
                         name="dias_max_sustitucion" required
                         help="Plazo para cambiar un recibo por una factura después de la venta.">
                         <x-form.input id="dias_max_sustitucion" name="dias_max_sustitucion" type="number" step="1"
                             min="0" max="30" inputmode="numeric" :value="$actual['dias_max_sustitucion']" required />
                     </x-form.campo>
+                    @endfacturacion
 
                     <x-form.campo label="Días para aceptar una devolución" for="dias_max_devolucion"
                         name="dias_max_devolucion" required
@@ -194,6 +207,7 @@
                 </div>
             </x-common.component-card>
 
+            @facturacion
             <x-common.component-card title="Comprobantes"
                 desc="La serie con la que se numera cada tipo de documento. La factura se emite cuando el cliente es una empresa; el recibo, cuando es una persona.">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -208,6 +222,7 @@
                     </x-form.campo>
                 </div>
             </x-common.component-card>
+            @endfacturacion
 
             <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p class="text-theme-xs text-gray-500 dark:text-gray-400">

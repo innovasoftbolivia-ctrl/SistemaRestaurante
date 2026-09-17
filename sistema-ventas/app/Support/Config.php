@@ -20,6 +20,16 @@ class Config
         return self::$valores[$clave] ?? $porDefecto;
     }
 
+    /**
+     * ¿Las pantallas muestran impuesto, IVA y facturas? Mientras el negocio no
+     * factura, no: todo sale como recibo y sin desglose, aunque el código
+     * siga entero (config/ventas.php, `MOSTRAR_FACTURACION`).
+     */
+    public static function facturacionVisible(): bool
+    {
+        return (bool) config('ventas.mostrar_facturacion', false);
+    }
+
     /** Tasa del impuesto a las ventas como fracción: 0.13 para el IVA boliviano del 13 %. */
     public static function tasaImpuesto(): float
     {

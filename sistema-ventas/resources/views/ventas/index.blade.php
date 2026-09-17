@@ -12,10 +12,10 @@
             // tarjeta no aporta nada: sería un «Bs 0.00» fijo en pantalla.
             $tarjetas = [
                 ['Operaciones', number_format($resumen['operaciones']), 'text-gray-800 dark:text-white/90', 'sin contar anuladas'],
-                ['Vendido', Config::importe($resumen['vendido']), 'text-success-700 dark:text-success-500', 'con impuesto'],
+                ['Vendido', Config::importe($resumen['vendido']), 'text-success-700 dark:text-success-500', Config::facturacionVisible() ? 'con impuesto' : null],
             ];
 
-            if (App\Support\Config::tasaImpuesto() > 0) {
+            if (App\Support\Config::tasaImpuesto() > 0 && App\Support\Config::facturacionVisible()) {
                 $tarjetas[] = ['Impuesto', Config::importe($resumen['impuesto']), 'text-gray-800 dark:text-white/90', 'incluido en el total'];
             }
 

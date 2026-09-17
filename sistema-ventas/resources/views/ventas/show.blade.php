@@ -106,8 +106,10 @@
                                     <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Producto</th>
                                     <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Cantidad</th>
                                     <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">P. unitario</th>
+                                    @facturacion
                                     <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Importe</th>
                                     <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Impuesto</th>
+                                    @endfacturacion
                                     <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Total</th>
                                 </tr>
                             </thead>
@@ -134,12 +136,14 @@
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                             {{ Config::importe($linea->precio_unitario) }}
                                         </td>
+                                        @facturacion
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm text-gray-500 dark:text-gray-400">
                                             {{ Config::importe($linea->importe) }}
                                         </td>
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-xs text-gray-500 dark:text-gray-400">
                                             {{ $linea->afecto_impuesto ? Config::importe($linea->impuesto_linea) : 'exonerado' }}
                                         </td>
+                                        @endfacturacion
                                         <td class="px-5 py-4 text-right whitespace-nowrap text-theme-sm font-medium text-gray-800 dark:text-white/90">
                                             {{ Config::importe($linea->total_linea) }}
                                         </td>
@@ -167,7 +171,7 @@
                                 <span class="font-medium text-gray-800 dark:text-white/90">Total</span>
                                 <span class="text-title-sm font-semibold text-brand-500 dark:text-brand-400">{{ Config::importe($venta->total) }}</span>
                             </div>
-                            @if ((float) $venta->impuesto > 0)
+                            @if ((float) $venta->impuesto > 0 && Config::facturacionVisible())
                                 <div class="flex justify-between text-theme-xs text-gray-500 dark:text-gray-400" data-iva-incluido>
                                     <span>Incluye IVA · base {{ Config::importe((float) $venta->total - (float) $venta->impuesto) }}</span>
                                     <span>{{ Config::importe($venta->impuesto) }}</span>
@@ -175,7 +179,7 @@
                             @endif
                         @else
                             <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
-                                <span>Subtotal (base imponible)</span>
+                                <span>@facturacion Subtotal (base imponible) @else Subtotal @endfacturacion</span>
                                 <span>{{ Config::importe($venta->subtotal) }}</span>
                             </div>
                             @if ((float) $venta->descuento > 0)
@@ -184,10 +188,12 @@
                                     <span>− {{ Config::importe($venta->descuento) }}</span>
                                 </div>
                             @endif
+                            @facturacion
                             <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
                                 <span>Impuesto</span>
                                 <span>{{ Config::importe($venta->impuesto) }}</span>
                             </div>
+                            @endfacturacion
                             <div class="flex items-baseline justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
                                 <span class="font-medium text-gray-800 dark:text-white/90">Total</span>
                                 <span class="text-title-sm font-semibold text-brand-500 dark:text-brand-400">{{ Config::importe($venta->total) }}</span>
