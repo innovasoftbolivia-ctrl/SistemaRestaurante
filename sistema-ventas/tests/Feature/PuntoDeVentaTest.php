@@ -390,10 +390,11 @@ class PuntoDeVentaTest extends TestCase
     }
 
     /**
-     * El régimen tributario todavía no está definido. Mientras tanto el
-     * documento lo dice, en vez de aparentar una validez que no tiene.
+     * El negocio todavía no factura con impuesto: el comprobante que recibe el
+     * cliente sale limpio, sin el aviso de régimen tributario en construcción.
+     * El aviso queda solo en la pantalla interna de comprobantes.
      */
-    public function test_el_documento_avisa_que_lo_tributario_esta_en_construccion(): void
+    public function test_el_documento_del_cliente_no_lleva_el_aviso_tributario(): void
     {
         $sesion = $this->turno();
         $venta = $this->vender($sesion, $this->producto());
@@ -401,8 +402,8 @@ class PuntoDeVentaTest extends TestCase
         $this->actingAs($this->cajero())
             ->get("/comprobantes/{$venta->comprobante->id}/imprimir")
             ->assertOk()
-            ->assertSee('EN CONSTRUCCIÓN')
-            ->assertSee('Sin validez tributaria');
+            ->assertDontSee('EN CONSTRUCCIÓN')
+            ->assertDontSee('Sin validez tributaria');
 
         $this->actingAs($this->cajero())
             ->get('/comprobantes')

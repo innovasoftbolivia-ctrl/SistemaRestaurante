@@ -129,17 +129,6 @@
             letter-spacing: 2px;
         }
 
-        .obra {
-            border: 1px dashed #b54708;
-            color: #b54708;
-            padding: 6px 8px;
-            margin-top: 12px;
-            font-size: 10px;
-            line-height: 1.35;
-        }
-
-        .obra strong { letter-spacing: 1px; }
-
         .acciones {
             max-width: {{ $ticket ? '80mm' : '210mm' }};
             margin: 0 auto 12px;
@@ -476,20 +465,6 @@
         <div class="centro tenue">
             <div>¡Gracias por su compra!</div>
             <div>{{ $comprobante->numero_completo }} · venta #{{ $venta->id }}</div>
-        </div>
-
-        {{-- El régimen tributario todavía no está definido: mientras tanto se
-             dice en el propio documento, en vez de aparentar que ya lo está. --}}
-        <div class="obra">
-            <strong>EN CONSTRUCCIÓN</strong> — La parte tributaria de este documento está pendiente de definir:
-            @if (App\Support\Config::tasaImpuesto() > 0)
-                la tasa de impuesto ({{ number_format(App\Support\Config::tasaImpuesto() * 100, 0) }}%) y la
-                identificación fiscal del negocio son provisionales.
-            @else
-                el precio cobrado no lleva impuesto desglosado, y la identificación fiscal del negocio es
-                provisional.
-            @endif
-            Sin validez tributaria.
         </div>
     </div>
 </body>
