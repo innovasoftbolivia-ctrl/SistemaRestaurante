@@ -135,6 +135,8 @@ class Compras
             costoUnitario: $costo,
             motivo: self::motivo($linea['detalle'] ?? null),
             compraId: $compra->id,
+            // Quien registró la compra, y no quien tenga la sesión abierta.
+            usuarioId: $compra->usuario_id,
             // La fecha que trae la caja abre la tanda. Se pasa siempre: si el
             // producto no lleva control de vencimiento, `Lotes` la ignora.
             vence: $linea['vence'] ?? null,

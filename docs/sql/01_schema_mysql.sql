@@ -1018,6 +1018,10 @@ CREATE TABLE auditoria (
     PRIMARY KEY (id),
     KEY ix_auditoria_usuario (usuario_id, fecha),
     KEY ix_auditoria_entidad (entidad, entidad_id),
+    -- La bitácora se lee de la más nueva a la más vieja y se filtra por acción:
+    -- sin estos dos, cada página ordenaba la tabla entera.
+    KEY ix_auditoria_fecha   (fecha, id),
+    KEY ix_auditoria_accion  (accion, fecha),
     CONSTRAINT fk_auditoria_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 ) ENGINE=InnoDB;
 
@@ -1187,6 +1191,33 @@ BEGIN
         SET MESSAGE_TEXT = 'Las ventas no se eliminan. Use la anulación (RNF6).';
 END$$
 
+-- 10.3.bis Una venta solo entra en un turno de caja ABIERTO. La aplicación ya
+--      lo comprobaba, pero una venta cargada por script en un turno cerrado
+--      cambiaba el arqueo de un cierre que ya se firmó.
+CREATE TRIGGER trg_ventas_before_insert
+BEFORE INSERT ON ventas
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sesiones_caja
+                    WHERE id = NEW.sesion_caja_id AND estado = 'ABIERTA') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La venta debe registrarse en un turno de caja abierto';
+    END IF;
+END$$
+
+-- 10.3.ter Todo movimiento del kardex tiene responsable. La única excepción es
+--      la carga INICIAL del inventario, que corre un script antes de que
+--      exista nadie a quien atribuírsela.
+CREATE TRIGGER trg_movimientos_inventario_before_insert
+BEFORE INSERT ON movimientos_inventario
+FOR EACH ROW
+BEGIN
+    IF NEW.usuario_id IS NULL AND NEW.origen <> 'INICIAL' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El movimiento de inventario necesita un responsable';
+    END IF;
+END$$
+
 -- 10.4 El comprobante debe corresponder al tipo de persona del cliente:
 --      FACTURA solo a persona jurídica con NIT, RECIBO solo a persona natural.
 CREATE TRIGGER trg_comprobantes_before_insert
@@ -1226,6 +1257,15 @@ BEGIN
        AND NOT (v_aplica = 'JURIDICA' AND NEW.cliente_tipo_documento = 'NIT') THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'El tipo de comprobante no corresponde al tipo de persona del cliente';
+    END IF;
+
+    -- Lo pagado tiene que sumar el total de la venta. El comprobante es el
+    -- último paso de registrar una venta: si llega hasta acá descuadrada, el
+    -- arqueo y el comprobante dirían cifras distintas.
+    IF (SELECT COALESCE(SUM(monto), 0) FROM venta_pagos WHERE venta_id = NEW.venta_id)
+       <> (SELECT total FROM ventas WHERE id = NEW.venta_id) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Lo pagado no coincide con el total de la venta';
     END IF;
 END$$
 
@@ -1765,3 +1805,57 @@ SELECT DATE(v.fecha) AS dia, mp.nombre AS metodo_pago,
   JOIN ventas v        ON v.id  = vp.venta_id AND v.estado <> 'ANULADA'
   JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
  GROUP BY DATE(v.fecha), mp.nombre;
+
+-- =============================================================================
+--  13. REGISTRO DE PARCHES
+--
+--  `scripts/aplicar-parches.sh` anota acá cada parche que aplica. Una base
+--  creada con este archivo ya trae todo lo que corrigen los parches de esquema,
+--  así que nacen registrados: sin esto, el script los veía a los treinta y
+--  tantos como pendientes y aplicarlos a ciegas volvía a correr también los de
+--  catálogo. Los de catálogo (datos de un negocio concreto) NO se registran: se
+--  aplican solo si esta instalación los quiere.
+--
+--  Cada parche nuevo se agrega a esta lista (lo exige InstalacionLimpiaTest).
+-- =============================================================================
+
+CREATE TABLE parches_aplicados (
+    archivo     VARCHAR(150) NOT NULL PRIMARY KEY,
+    aplicado_en DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT INTO parches_aplicados (archivo) VALUES
+    ('2026_08_21_devolucion_con_impuesto.sql'),
+    ('2026_08_21_mas_vendidos_neto.sql'),
+    ('2026_08_26_devolucion_solo_efectivo.sql'),
+    ('2026_09_04_cajero_no_cierra_caja.sql'),
+    ('2026_09_04_compras_normalizadas.sql'),
+    ('2026_09_05_sesion_unica_por_cajero.sql'),
+    ('2026_09_09_cobros_qr.sql'),
+    ('2026_09_10_configuracion_muerta.sql'),
+    ('2026_09_10_documentos_bolivia.sql'),
+    ('2026_09_10_empaque_con_decimales.sql'),
+    ('2026_09_10_empaque_del_producto.sql'),
+    ('2026_09_10_unidad_en_el_ticket.sql'),
+    ('2026_09_11_devolucion_al_proveedor.sql'),
+    ('2026_09_11_lotes_y_vencimiento.sql'),
+    ('2026_09_11_reposicion_pendiente.sql'),
+    ('2026_09_13_iva_boliviano.sql'),
+    ('2026_09_13_moneda_por_omision.sql'),
+    ('2026_09_13_permiso_bitacora.sql'),
+    ('2026_09_13_permiso_respaldos.sql'),
+    ('2026_09_13_toma_de_inventario.sql'),
+    ('2026_09_14_devolucion_medio_de_reembolso.sql'),
+    ('2026_09_14_egreso_max_cajero.sql'),
+    ('2026_09_14_qr_imagen_del_banco.sql'),
+    ('2026_09_15_anular_con_producto_repetido.sql'),
+    ('2026_09_15_caja_fondo_y_nota_de_cierre.sql'),
+    ('2026_09_15_cambio_de_password_obligatorio.sql'),
+    ('2026_09_15_costo_historico_y_ranking.sql'),
+    ('2026_09_15_devolucion_con_impuesto_incluido.sql'),
+    ('2026_09_15_factura_a_persona_natural_con_nit.sql'),
+    ('2026_09_15_impuesto_con_descuento_exacto.sql'),
+    ('2026_09_15_lote_salidas.sql'),
+    ('2026_09_15_plazo_devolucion_y_referencia_de_pago.sql'),
+    ('2026_09_15_precios_con_impuesto_incluido.sql'),
+    ('2026_09_16_reglas_en_la_base.sql');

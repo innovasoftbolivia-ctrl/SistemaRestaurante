@@ -146,6 +146,22 @@
                     <p x-show="!cambiaModo && incluido === '0' && cobra" x-cloak class="text-theme-xs text-gray-500 dark:text-gray-400">
                         Con el IVA sumado al cobrar, cambiar la tasa cambia lo que paga el cliente.
                     </p>
+
+                    {{-- El formulario de deshacer va fuera de este (no se anidan
+                         formularios): el botón lo envía con el atributo `form`. --}}
+                    @if ($conversion)
+                        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800" data-deshacer-conversion>
+                            <p class="text-theme-xs text-gray-500 dark:text-gray-400">
+                                El {{ $conversion->fecha->format('d/m/Y H:i') }} se ajustó el precio de
+                                {{ count($conversion->detalle['precios']) }} producto(s) al cambiar de modo.
+                            </p>
+                            <button type="submit" form="deshacer-conversion"
+                                onclick="return confirm('¿Volver los precios y el modo a como estaban antes de ese ajuste?')"
+                                class="rounded-lg border border-gray-300 px-3 py-2 text-theme-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]">
+                                Deshacer ese ajuste
+                            </button>
+                        </div>
+                    @endif
                 </div>
             </x-common.component-card>
             @else
@@ -252,4 +268,12 @@
             </div>
         </div>
     </form>
+
+    @facturacion
+        @if ($conversion)
+            <form id="deshacer-conversion" method="POST" action="{{ route('configuracion.deshacer-conversion') }}" class="hidden">
+                @csrf
+            </form>
+        @endif
+    @endfacturacion
 @endsection

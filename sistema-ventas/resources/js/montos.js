@@ -60,9 +60,26 @@ export function impuestoConDescuento(bruto, base, descuento) {
     return Math.floor((2 * numerador + b) / (2 * b)) / 100;
 }
 
+/**
+ * Lo que paga el cliente por una línea: la columna generada
+ * `venta_detalle.total_linea`. Con el impuesto encima es el importe más SU
+ * impuesto redondeado; con el impuesto incluido, el importe tal cual.
+ *
+ * El carrito mostraba precio de estante × cantidad, y el precio de estante ya
+ * viene redondeado por unidad: con el IVA encima y precios como 1,17, las
+ * líneas sumaban hasta tres centavos distinto del total cobrado.
+ */
+export function totalLinea(precio, cantidad, afecto, tasa, incluido) {
+    const importe = importeLinea(precio, cantidad);
+
+    if (!afecto || incluido) return importe;
+
+    return (centavos(importe) + centavos(impuestoDe(importe, tasa))) / 100;
+}
+
 /** Suma importes sin arrastrar error de coma flotante. */
 export function sumar(importes) {
     return importes.reduce((total, importe) => total + centavos(importe), 0) / 100;
 }
 
-window.montos = { centavos, importeLinea, impuestoDe, impuestoIncluido, impuestoConDescuento, sumar };
+window.montos = { centavos, importeLinea, totalLinea, impuestoDe, impuestoIncluido, impuestoConDescuento, sumar };

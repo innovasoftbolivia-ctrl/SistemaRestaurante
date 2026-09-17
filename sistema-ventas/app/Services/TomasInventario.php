@@ -102,6 +102,10 @@ class TomasInventario
             $toma = TomaInventario::whereKey($linea->toma_id)->sharedLock()->firstOrFail();
             self::exigirAbierta($toma, 'cambiar un conteo');
 
+            if (TomaInventarioDetalle::whereKey($linea->id)->lockForUpdate()->value('movimiento_id') !== null) {
+                throw new RuntimeException('Ese conteo ya se aplicó al stock al cerrar la toma: no se puede cambiar.');
+            }
+
             if ($contado === null) {
                 $linea->update([
                     'contado' => null, 'stock_sistema' => null, 'costo_unitario' => null,
@@ -128,61 +132,94 @@ class TomasInventario
     }
 
     /**
-     * Aplica las diferencias y cierra la toma. Todo o nada: si un ajuste
-     * falla, no queda la mitad del local corregida.
+     * Aplica las diferencias y cierra la toma.
+     *
+     * Cada producto se ajusta en su propia transacción corta. Antes era una
+     * sola para toda la tienda, y cada producto quedaba bloqueado desde que se
+     * ajustaba hasta el último: con cientos de productos, una venta de
+     * cualquiera de ellos esperaba —o se caía por tiempo— hasta que terminara
+     * el cierre entero.
+     *
+     * Lo que sostiene esto es que cada línea recuerda su ajuste
+     * (`movimiento_id`): si el cierre se corta a la mitad, la toma sigue
+     * ABIERTA, volver a cerrarla continúa donde quedó y nada se aplica dos
+     * veces. Mientras tanto, lo ya aplicado no se puede recontar ni cancelar.
      *
      * @return array{total: int, contados: int, con_diferencia: int, faltante: float, sobrante: float, ajustados: int}
      */
     public static function cerrar(TomaInventario $toma, Usuario $usuario): array
     {
-        return DB::transaction(function () use ($toma, $usuario) {
-            $bloqueada = TomaInventario::whereKey($toma->id)->lockForUpdate()->firstOrFail();
-            self::exigirAbierta($bloqueada, 'cerrarla');
+        $vigente = TomaInventario::whereKey($toma->id)->firstOrFail();
+        self::exigirAbierta($vigente, 'cerrarla');
 
-            $resumen = self::resumen($bloqueada);
+        if (self::resumen($vigente)['contados'] === 0) {
+            throw new RuntimeException('No se contó ningún producto. Si no se va a contar, cancela la toma.');
+        }
 
-            if ($resumen['contados'] === 0) {
-                throw new RuntimeException('No se contó ningún producto. Si no se va a contar, cancela la toma.');
-            }
+        // Un cierre a la vez: dos personas apretando «Cerrar» no recorren las
+        // líneas en paralelo. El candado es de la conexión, no de una
+        // transacción, así que no retiene ninguna fila.
+        $candado = "toma_inventario_cierre_{$vigente->id}";
 
-            $motivo = "Toma de inventario #{$bloqueada->id}";
-            $ajustados = 0;
+        if (! (int) DB::selectOne('SELECT GET_LOCK(?, 0) AS ok', [$candado])->ok) {
+            throw new RuntimeException('Alguien ya está cerrando esta toma. Espera un momento y recarga la página.');
+        }
 
-            $lineas = TomaInventarioDetalle::where('toma_id', $bloqueada->id)
+        try {
+            $motivo = "Toma de inventario #{$vigente->id}";
+
+            $pendientes = TomaInventarioDetalle::where('toma_id', $vigente->id)
                 ->whereNotNull('contado')
                 ->where('diferencia', '<>', 0)
-                ->with('producto')
+                ->whereNull('movimiento_id')
                 ->orderBy('id')
-                ->get();
+                ->pluck('id');
 
-            foreach ($lineas as $linea) {
-                $movimiento = Inventario::corregir($linea->producto, (float) $linea->diferencia, $motivo);
+            foreach ($pendientes as $id) {
+                DB::transaction(function () use ($id, $motivo) {
+                    $linea = TomaInventarioDetalle::whereKey($id)->lockForUpdate()->with('producto')->first();
 
-                if ($movimiento) {
-                    $linea->update(['movimiento_id' => $movimiento->id]);
-                    $ajustados++;
-                }
+                    // Otro ajuste la dejó sin contar, o ya se aplicó.
+                    if (! $linea || $linea->contado === null || $linea->movimiento_id !== null || (float) $linea->diferencia === 0.0) {
+                        return;
+                    }
+
+                    $movimiento = Inventario::corregir($linea->producto, (float) $linea->diferencia, $motivo);
+
+                    if ($movimiento) {
+                        $linea->update(['movimiento_id' => $movimiento->id]);
+                    }
+                }, 3);
             }
 
-            $bloqueada->update([
-                'estado' => 'CERRADA',
-                'usuario_cierre_id' => $usuario->id,
-                'fecha_cierre' => now(),
-            ]);
+            return DB::transaction(function () use ($vigente, $usuario) {
+                $bloqueada = TomaInventario::whereKey($vigente->id)->lockForUpdate()->firstOrFail();
+                self::exigirAbierta($bloqueada, 'cerrarla');
 
-            $resumen['ajustados'] = $ajustados;
+                $bloqueada->update([
+                    'estado' => 'CERRADA',
+                    'usuario_cierre_id' => $usuario->id,
+                    'fecha_cierre' => now(),
+                ]);
 
-            Auditor::registrar('TOMA_INVENTARIO_CERRADA', 'tomas_inventario', $bloqueada->id, [
-                'alcance' => $bloqueada->alcance,
-                'productos' => $resumen['total'],
-                'contados' => $resumen['contados'],
-                'ajustados' => $ajustados,
-                'faltante' => $resumen['faltante'],
-                'sobrante' => $resumen['sobrante'],
-            ], $usuario->id);
+                $resumen = self::resumen($bloqueada);
+                $resumen['ajustados'] = TomaInventarioDetalle::where('toma_id', $bloqueada->id)->whereNotNull('movimiento_id')->count();
+                $ajustados = $resumen['ajustados'];
 
-            return $resumen;
-        }, 3);
+                Auditor::registrar('TOMA_INVENTARIO_CERRADA', 'tomas_inventario', $bloqueada->id, [
+                    'alcance' => $bloqueada->alcance,
+                    'productos' => $resumen['total'],
+                    'contados' => $resumen['contados'],
+                    'ajustados' => $ajustados,
+                    'faltante' => $resumen['faltante'],
+                    'sobrante' => $resumen['sobrante'],
+                ], $usuario->id);
+
+                return $resumen;
+            }, 3);
+        } finally {
+            DB::selectOne('SELECT RELEASE_LOCK(?) AS ok', [$candado]);
+        }
     }
 
     /** Se abandona sin tocar el stock: los conteos quedan guardados como constancia. */
@@ -191,6 +228,10 @@ class TomasInventario
         DB::transaction(function () use ($toma, $usuario) {
             $bloqueada = TomaInventario::whereKey($toma->id)->lockForUpdate()->firstOrFail();
             self::exigirAbierta($bloqueada, 'cancelarla');
+
+            if (TomaInventarioDetalle::where('toma_id', $bloqueada->id)->whereNotNull('movimiento_id')->exists()) {
+                throw new RuntimeException('Un cierre ya empezó a ajustar el stock de esta toma: termina de cerrarla en vez de cancelarla.');
+            }
 
             $bloqueada->update([
                 'estado' => 'CANCELADA',
@@ -270,6 +311,7 @@ class TomasInventario
         $linea = TomaInventarioDetalle::query()
             ->where('producto_id', $producto->id)
             ->whereNotNull('contado')
+            ->whereNull('movimiento_id')
             ->whereHas('toma', fn ($q) => $q->where('estado', 'ABIERTA'))
             ->first();
 

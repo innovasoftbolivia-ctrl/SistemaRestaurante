@@ -26,7 +26,9 @@
 #     lista de pendientes antes de aplicar con --aplicar, no lo hagas a ciegas.
 #
 # El registro de qué se aplicó vive en la propia base, en la tabla
-# `parches_aplicados` (se crea sola la primera vez que corre este script).
+# `parches_aplicados`. Una base creada con 01_schema_mysql.sql ya la trae con
+# los parches de esquema anotados (los de catálogo quedan pendientes a
+# propósito); en una base más vieja se crea sola la primera vez.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

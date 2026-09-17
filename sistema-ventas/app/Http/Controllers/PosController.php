@@ -26,9 +26,22 @@ use Throwable;
  */
 class PosController extends Controller
 {
-    public function index(): View
+    /** Cuántos clientes trae la lista del mostrador; el resto se busca. */
+    private const CLIENTES_EN_LISTA = 50;
+
+    public function index(Request $request): View
     {
         $sesion = Cajas::sesionDe(Auth::user());
+
+        $clientes = Cliente::activos()->orderBy('nombre')->limit(self::CLIENTES_EN_LISTA)->get();
+
+        // Si se llegó con un cliente elegido (?cliente=), tiene que estar en la
+        // lista aunque por orden alfabético quede fuera.
+        $pedido = (int) $request->query('cliente');
+
+        if ($pedido && ! $clientes->contains('id', $pedido) && ($cliente = Cliente::activos()->find($pedido))) {
+            $clientes->push($cliente);
+        }
 
         return view('pos.index', [
             'title' => 'Punto de venta',
@@ -41,7 +54,9 @@ class PosController extends Controller
                 ->having('productos_count', '>', 0)
                 ->orderBy('nombre')
                 ->get(['id', 'nombre']),
-            'clientes' => Cliente::activos()->orderBy('nombre')->limit(50)->get()
+            'clientesEnLista' => self::CLIENTES_EN_LISTA,
+            'hayMasClientes' => Cliente::activos()->count() > self::CLIENTES_EN_LISTA,
+            'clientes' => $clientes
                 ->map(fn (Cliente $c) => [
                     'id' => $c->id,
                     'nombre' => $c->nombre,
@@ -161,8 +176,8 @@ class PosController extends Controller
             'pagos' => ['required', 'array', 'min:1'],
             'pagos.*.metodo_pago_id' => ['required', Rule::exists('metodos_pago', 'id')->where('activo', 1)],
             // Sin importe significa «el resto»: lo calcula el servidor.
-            'pagos.*.monto' => ['nullable', 'numeric', 'gt:0', 'decimal:0,2'],
-            'pagos.*.monto_recibido' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
+            'pagos.*.monto' => ['nullable', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
+            'pagos.*.monto_recibido' => ['nullable', 'numeric', 'min:0', 'max:9999999999', 'decimal:0,2'],
             'pagos.*.referencia' => ['nullable', 'string', 'max:60'],
             // El pago por QR viene respaldado por su cobro. Que esté pagado,
             // sea de este turno, libre y por el importe exacto lo controla

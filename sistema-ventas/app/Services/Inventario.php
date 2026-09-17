@@ -70,8 +70,10 @@ class Inventario
         ?string $vence = null,
         ?string $lote = null,
         ?int $compraDetalleId = null,
+        ?int $usuarioId = null,
     ): MovimientoInventario {
         $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'COMPRA', [
+            'usuario_id' => $usuarioId ?? Auth::id(),
             'proveedor_id' => $proveedorId,
             'documento_externo' => $documentoExterno,
             'compra_id' => $compraId,
@@ -106,8 +108,10 @@ class Inventario
         ?float $costoUnitario = null,
         ?string $motivo = null,
         ?Lote $lote = null,
+        ?int $usuarioId = null,
     ): MovimientoInventario {
         $movimiento = self::mover($producto, $cantidad, 'SALIDA', 'DEVOLUCION_COMPRA', [
+            'usuario_id' => $usuarioId ?? Auth::id(),
             'devolucion_compra_id' => $devolucionCompraId,
             'proveedor_id' => $proveedorId,
             'documento_externo' => $documentoExterno,
@@ -135,8 +139,10 @@ class Inventario
         ?string $documentoExterno = null,
         ?float $costoUnitario = null,
         ?string $vence = null,
+        ?int $usuarioId = null,
     ): MovimientoInventario {
         $movimiento = self::mover($producto, $cantidad, 'ENTRADA', 'DEVOLUCION_COMPRA', [
+            'usuario_id' => $usuarioId ?? Auth::id(),
             'devolucion_compra_id' => $devolucionCompraId,
             'proveedor_id' => $proveedorId,
             'documento_externo' => $documentoExterno,
@@ -323,12 +329,20 @@ class Inventario
         float $stockResultante,
         array $extra = [],
     ): MovimientoInventario {
+        // Todo movimiento tiene responsable; solo la carga INICIAL puede no
+        // tenerlo. La base lo exige con un trigger; aquí se exige también para
+        // el modo sin triggers, y antes de tocar el stock.
+        $usuarioId = array_key_exists('usuario_id', $extra) ? $extra['usuario_id'] : Auth::id();
+
+        if ($usuarioId === null && $origen !== 'INICIAL') {
+            throw new RuntimeException('El movimiento de inventario necesita un responsable');
+        }
+
         $producto->newQuery()->whereKey($producto->id)->update(['stock_actual' => $stockResultante]);
         $producto->stock_actual = $stockResultante;
 
         return MovimientoInventario::create([
             'producto_id' => $producto->id,
-            'usuario_id' => Auth::id(),
             'tipo' => $tipo,
             'origen' => $origen,
             'cantidad' => $cantidad,
@@ -336,6 +350,7 @@ class Inventario
             'stock_resultante' => $stockResultante,
             'fecha' => now(),
             ...$extra,
+            'usuario_id' => $usuarioId,
         ]);
     }
 }

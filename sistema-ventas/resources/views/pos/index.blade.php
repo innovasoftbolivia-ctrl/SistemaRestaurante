@@ -260,7 +260,7 @@
                                             class="h-11 w-11 text-base rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.05]">+</button>
                                     </div>
                                     <span class="text-theme-sm font-semibold text-gray-800 dark:text-white/90"
-                                        x-text="'{{ $moneda }} ' + montos.importeLinea(l.precio_estante, l.cantidad).toFixed(2)"></span>
+                                        x-text="'{{ $moneda }} ' + montos.totalLinea(l.precio, l.cantidad, l.afecto, tasa, incluido).toFixed(2)"></span>
                                 </div>
 
                                 <p x-show="l.cantidad > l.stock" class="mt-1 text-theme-xs text-error-600 dark:text-error-400">
@@ -292,6 +292,26 @@
                         <label for="cliente" class="mb-1.5 block text-theme-xs font-medium text-gray-500 dark:text-gray-400">
                             Cliente
                         </label>
+                        {{-- La lista trae los primeros {{ $clientesEnLista }} por nombre. Con más,
+                             los del final se buscan: antes no había forma de elegirlos. --}}
+                        @if ($hayMasClientes)
+                            <div class="mb-2">
+                                <input type="search" x-model="clienteQ" @input.debounce.300ms="buscarCliente()"
+                                    aria-label="Buscar cliente por nombre o documento" placeholder="Buscar por nombre o documento"
+                                    data-buscar-cliente
+                                    class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                <ul x-show="clientesEncontrados.length" x-cloak class="mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-800">
+                                    <template x-for="c in clientesEncontrados" :key="c.id">
+                                        <li>
+                                            <button type="button" @click="elegirCliente(c)" x-text="c.etiqueta"
+                                                class="block w-full px-3 py-2 text-left text-theme-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.03]"></button>
+                                        </li>
+                                    </template>
+                                </ul>
+                                <p x-show="clienteQ.trim().length >= 2 && !buscandoCliente && !clientesEncontrados.length" x-cloak
+                                    class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">Ningún cliente coincide.</p>
+                            </div>
+                        @endif
                         <select id="cliente" x-model.number="clienteId"
                             class="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                             <option value="">{{ $clienteGenerico }} (venta al paso{{ App\Support\Config::facturacionVisible() ? ' — recibo' : '' }})</option>
@@ -319,7 +339,7 @@
                     <div class="space-y-2 border-t border-gray-100 px-5 py-4 dark:border-gray-800"
                         aria-live="polite" aria-atomic="true">
                         <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
-                            <span>Subtotal (base)</span>
+                            <span>{{ App\Support\Config::facturacionVisible() ? 'Subtotal (base)' : 'Subtotal' }}</span>
                             <span x-text="'{{ $moneda }} ' + subtotal.toFixed(2)"></span>
                         </div>
 
@@ -791,8 +811,13 @@
                         verificando: false,
                         precioActualizado: false,
 
-                        // Alta rápida de cliente desde el mostrador.
+                        // Alta rápida de cliente desde el mostrador, y los que se
+                        // eligen desde el buscador (no venían en la lista).
                         clientesNuevos: [],
+                        clientesEnLista: @js($clientes->pluck('id')->values()),
+                        clienteQ: '',
+                        clientesEncontrados: [],
+                        buscandoCliente: false,
                         nuevoClienteAbierto: false,
                         nuevoClienteGuardando: false,
                         nuevoClienteError: '',
@@ -818,6 +843,42 @@
 
                             const respuesta = await fetch(url, { headers: { 'Accept': 'application/json' } });
                             this.productos = await respuesta.json();
+                        },
+
+                        async buscarCliente() {
+                            const texto = this.clienteQ.trim();
+
+                            if (texto.length < 2) {
+                                this.clientesEncontrados = [];
+                                return;
+                            }
+
+                            this.buscandoCliente = true;
+
+                            try {
+                                const url = new URL('{{ route('clientes.buscar') }}', window.location.origin);
+                                url.searchParams.set('q', texto);
+                                const respuesta = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                                // Si se siguió tecleando, esta respuesta ya es vieja.
+                                if (texto === this.clienteQ.trim()) {
+                                    this.clientesEncontrados = respuesta.ok ? await respuesta.json() : [];
+                                }
+                            } catch (e) {
+                                this.clientesEncontrados = [];
+                            } finally {
+                                this.buscandoCliente = false;
+                            }
+                        },
+
+                        elegirCliente(c) {
+                            const yaEsta = this.clientesEnLista.includes(c.id) || this.clientesNuevos.some(n => n.id === c.id);
+                            if (!yaEsta) this.clientesNuevos.push(c);
+
+                            // Después de que Alpine dibuje la opción: si no, el
+                            // select no tiene todavía a quién seleccionar.
+                            this.$nextTick(() => { this.clienteId = c.id; });
+                            this.clienteQ = '';
+                            this.clientesEncontrados = [];
                         },
 
                         abrirNuevoCliente() {

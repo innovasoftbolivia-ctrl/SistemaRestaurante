@@ -229,6 +229,15 @@ class ReglasEnPhp
             && ! ($tipo->aplica_persona === 'JURIDICA' && ($datos['cliente_tipo_documento'] ?? null) === 'NIT')) {
             throw new RuntimeException('El tipo de comprobante no corresponde al tipo de persona del cliente');
         }
+
+        // Lo pagado tiene que sumar el total de la venta: el comprobante es el
+        // último paso de registrarla.
+        $pagado = round((float) DB::table('venta_pagos')->where('venta_id', $datos['venta_id'])->sum('monto'), 2);
+        $total = round((float) DB::table('ventas')->where('id', $datos['venta_id'])->value('total'), 2);
+
+        if ($pagado !== $total) {
+            throw new RuntimeException('Lo pagado no coincide con el total de la venta');
+        }
     }
 
     /**

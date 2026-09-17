@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Producto;
 use App\Services\Hojas;
 use App\Support\Config;
+use App\Support\TopeExcel;
 use App\Support\TopePdf;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
@@ -57,20 +58,27 @@ class ReporteController extends Controller
 
     // -------------------------------------------------------------- exportación
 
-    public function ventasExcel(Request $request): StreamedResponse
+    public function ventasExcel(Request $request): StreamedResponse|RedirectResponse
     {
         [$desde, $hasta] = $this->rango($request);
 
-        return (new Hojas($this->documentoVentas($desde, $hasta)))
-            ->descargar($this->nombreFichero('ventas', $desde, $hasta, 'xlsx'));
+        return $this->excel($this->documentoVentas($desde, $hasta), $this->nombreFichero('ventas', $desde, $hasta, 'xlsx'));
     }
 
-    public function productosExcel(Request $request): StreamedResponse
+    public function productosExcel(Request $request): StreamedResponse|RedirectResponse
     {
         [$desde, $hasta] = $this->rango($request);
 
-        return (new Hojas($this->documentoProductos($desde, $hasta)))
-            ->descargar($this->nombreFichero('productos', $desde, $hasta, 'xlsx'));
+        return $this->excel($this->documentoProductos($desde, $hasta), $this->nombreFichero('productos', $desde, $hasta, 'xlsx'));
+    }
+
+    private function excel(array $documento, string $nombreFichero): StreamedResponse|RedirectResponse
+    {
+        if ($aviso = TopeExcel::excedido($documento)) {
+            return back()->with('error', $aviso);
+        }
+
+        return (new Hojas($documento))->descargar($nombreFichero);
     }
 
     public function ventasPdf(Request $request): Response|RedirectResponse

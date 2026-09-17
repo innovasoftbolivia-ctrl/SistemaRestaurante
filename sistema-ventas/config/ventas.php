@@ -60,6 +60,21 @@ return [
     'pdf_max_filas' => (int) env('PDF_MAX_FILAS', 250),
 
     /*
+    | Filas máximas de un Excel (ver App\Support\TopeExcel). 20.000 filas de 17
+    | columnas caben en 512 MB.
+    */
+
+    'excel_max_filas' => (int) env('EXCEL_MAX_FILAS', 20000),
+
+    /*
+    | El billete más grande que circula (Bs 200). Si el vuelto llega a ese
+    | monto, el cliente entregó un billete que no hacía falta: casi siempre es
+    | un error al teclear lo recibido (5000 en vez de 50).
+    */
+
+    'billete_mayor' => (float) env('BILLETE_MAYOR', 200),
+
+    /*
     |--------------------------------------------------------------------------
     | Facturación e impuestos a la vista
     |--------------------------------------------------------------------------

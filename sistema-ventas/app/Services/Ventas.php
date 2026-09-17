@@ -311,6 +311,15 @@ class Ventas
                 $recibido = null;
             } elseif ($recibido !== null && $recibido < $monto) {
                 throw new RuntimeException('El efectivo recibido es menor que el importe a cobrar.');
+            } elseif ($recibido !== null && round($recibido - $monto, 2) >= self::billeteMayor()) {
+                // Un vuelto igual o mayor al billete más grande quiere decir
+                // que sobraba un billete entero: casi siempre es un cero de
+                // más al teclear, y el ticket imprimía un vuelto absurdo.
+                throw new RuntimeException(sprintf(
+                    'El efectivo recibido (%s) deja un vuelto de %s: revisa lo que tecleaste.',
+                    Config::importe($recibido),
+                    Config::importe($recibido - $monto),
+                ));
             }
 
             $referencia = trim((string) ($pago['referencia'] ?? ''));
@@ -420,6 +429,12 @@ class Ventas
         }
 
         return Comprobante::findOrFail($id);
+    }
+
+    /** El billete más grande que circula: un vuelto así ya no tiene sentido. */
+    public static function billeteMayor(): float
+    {
+        return max(1.0, (float) config('ventas.billete_mayor', 200));
     }
 
     /** La serie a usar sale de la configuración del negocio. */

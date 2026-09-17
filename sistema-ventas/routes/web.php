@@ -213,6 +213,8 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         // pantalla se cambiaban por SQL.
         Route::get('configuracion', [ConfiguracionController::class, 'edit'])->name('configuracion.edit');
         Route::put('configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
+        Route::post('configuracion/deshacer-conversion', [ConfiguracionController::class, 'deshacerConversion'])
+            ->name('configuracion.deshacer-conversion');
     });
 
     // La bitácora, solo para leer. Permiso propio: quién hizo qué es

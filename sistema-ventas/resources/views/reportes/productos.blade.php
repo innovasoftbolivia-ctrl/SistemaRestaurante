@@ -169,9 +169,9 @@
             <div class="px-6 py-5">
                 <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ranking del período</h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Todas las cifras van <b>netas de devoluciones</b>: lo que el negocio se quedó. El margen es
-                    estimado, porque compara lo vendido contra el precio de compra <b>actual</b> del producto, que
-                    puede no ser el que tenía al venderse.
+                    Todas las cifras van <b>netas de devoluciones</b>: lo que el negocio se quedó. El margen
+                    compara lo vendido contra el <b>costo que tenía el producto el día de cada venta</b>; en las
+                    ventas anteriores al 15/09/2026 se usa el costo que tenía ese día.
                 </p>
             </div>
 

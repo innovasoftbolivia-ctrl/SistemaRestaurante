@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Los datos del negocio y los parámetros del sistema.
@@ -58,7 +59,26 @@ class ConfiguracionController extends Controller
                 'REC' => $this->seriesDe('REC'),
             ],
             'modificado' => DB::table('configuracion')->max('actualizado_en'),
+            'conversion' => Precios::ultimaConversion(),
         ]);
+    }
+
+    /** Deshace la última conversión de precios: el catálogo y el modo vuelven a como estaban. */
+    public function deshacerConversion(Request $request): RedirectResponse
+    {
+        try {
+            $resultado = Precios::deshacerUltimaConversion($request->user());
+        } catch (RuntimeException $e) {
+            return redirect()->route('configuracion.edit')->with('error', $e->getMessage());
+        }
+
+        $mensaje = "Se restauró el precio de {$resultado['restaurados']} producto(s) y el modo de precios anterior.";
+
+        if ($resultado['omitidos'] > 0) {
+            $mensaje .= " {$resultado['omitidos']} ya se habían editado a mano y se dejaron como están.";
+        }
+
+        return redirect()->route('configuracion.edit')->with('exito', $mensaje);
     }
 
     public function update(Request $request): RedirectResponse
@@ -161,27 +181,30 @@ class ConfiguracionController extends Controller
 
             return $convertir
                 ? Precios::convertirAlModo($nuevos['precios_incluyen_impuesto'] === '1', $tasaAnterior, $tasaNueva)
-                : 0;
+                : [];
         });
 
         Config::olvidar();
 
         Auditor::registrar('CONFIGURACION_ACTUALIZADA', 'configuracion', null, $cambios);
 
-        if ($convertidos > 0) {
+        if ($convertidos) {
+            // Con el precio anterior de cada producto: es lo que permite
+            // deshacer la conversión (Precios::deshacerUltimaConversion).
             Auditor::registrar('PRECIOS_CONVERTIDOS', 'productos', null, [
-                'productos' => $convertidos,
+                'productos' => count($convertidos),
                 'precios_incluyen_impuesto' => $nuevos['precios_incluyen_impuesto'],
                 'tasa_anterior' => $tasaAnterior,
                 'tasa_nueva' => $tasaNueva,
+                'precios' => $convertidos,
             ]);
         }
 
         $cuantos = count($cambios);
         $mensaje = $cuantos === 1 ? 'Se guardó 1 cambio.' : "Se guardaron {$cuantos} cambios.";
 
-        if ($convertidos > 0) {
-            $mensaje .= " Se ajustó el precio de {$convertidos} producto(s) para que el cliente siga pagando lo mismo.";
+        if ($convertidos) {
+            $mensaje .= ' Se ajustó el precio de '.count($convertidos).' producto(s) para que el cliente siga pagando lo mismo.';
         }
 
         return redirect()->route('configuracion.edit')->with('exito', $mensaje);

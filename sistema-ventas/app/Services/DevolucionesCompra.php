@@ -131,7 +131,7 @@ class DevolucionesCompra
             $repuestas = 0;
 
             foreach ($lineas as $linea) {
-                $repuestas += self::reponerLinea($devolucion, $linea, $documentoExterno) ? 1 : 0;
+                $repuestas += self::reponerLinea($usuario, $devolucion, $linea, $documentoExterno) ? 1 : 0;
             }
 
             if ($repuestas === 0) {
@@ -161,7 +161,7 @@ class DevolucionesCompra
      *
      * @param  array<string, mixed>  $linea
      */
-    private static function reponerLinea(DevolucionCompra $devolucion, array $linea, ?string $documentoExterno): bool
+    private static function reponerLinea(Usuario $usuario, DevolucionCompra $devolucion, array $linea, ?string $documentoExterno): bool
     {
         $cantidad = round((float) ($linea['cantidad'] ?? 0), 3);
 
@@ -200,6 +200,7 @@ class DevolucionesCompra
             proveedorId: $devolucion->compra?->proveedor_id,
             documentoExterno: $documentoExterno ?: $devolucion->documento_externo,
             costoUnitario: (float) $original->costo_unitario,
+            usuarioId: $usuario->id,
             // Lo repuesto abre su propia tanda: el reemplazo de algo vencido
             // viene, por definición, con otra fecha.
             vence: $linea['vence'] ?? null,
@@ -282,6 +283,7 @@ class DevolucionesCompra
             costoUnitario: (float) $original->costo_unitario,
             motivo: $devolucion->etiqueta_motivo,
             lote: $lote,
+            usuarioId: $devolucion->usuario_id,
         );
 
         // El cambio en el momento: lo repuesto entra de vuelta, con su fecha
@@ -297,6 +299,7 @@ class DevolucionesCompra
                 documentoExterno: $devolucion->documento_externo,
                 costoUnitario: (float) $original->costo_unitario,
                 vence: $linea['vence_repuesto'] ?? null,
+                usuarioId: $devolucion->usuario_id,
             );
         }
     }

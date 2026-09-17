@@ -89,7 +89,7 @@ class Hojas
         $fila++;
 
         // --- indicadores, en tres columnas: etiqueta | valor | nota
-        $hoja->setCellValue([1, $fila], 'INDICADORES DEL PERÍODO');
+        $this->poner($hoja, [1, $fila], 'INDICADORES DEL PERÍODO');
         $hoja->mergeCells([1, $fila, 4, $fila]);
         $this->tituloSeccion($hoja, $fila, 4);
         $fila++;
@@ -97,10 +97,10 @@ class Hojas
         $primera = $fila;
 
         foreach ($this->doc['indicadores'] as $ind) {
-            $hoja->setCellValue([1, $fila], $ind['etiqueta']);
+            $this->poner($hoja, [1, $fila], $ind['etiqueta']);
             $hoja->mergeCells([1, $fila, 2, $fila]);
-            $hoja->setCellValue([3, $fila], $ind['valor']);
-            $hoja->setCellValue([4, $fila], $ind['nota'] ?? '');
+            $this->poner($hoja, [3, $fila], $ind['valor']);
+            $this->poner($hoja, [4, $fila], $ind['nota'] ?? '');
 
             $hoja->getStyle([1, $fila])->getFont()->setBold(true)->getColor()->setARGB(self::TINTA);
             $hoja->getStyle([3, $fila])->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
@@ -125,7 +125,7 @@ class Hojas
             ->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setARGB(self::LINEA);
 
         $fila += 2;
-        $hoja->setCellValue([1, $fila], 'Este libro tiene una hoja por cada desglose del reporte.');
+        $this->poner($hoja, [1, $fila], 'Este libro tiene una hoja por cada desglose del reporte.');
         $hoja->getStyle([1, $fila])->getFont()->setItalic(true)->setSize(9)->getColor()->setARGB(self::TENUE);
 
         foreach ([38, 14, 18, 44] as $i => $ancho) {
@@ -148,13 +148,13 @@ class Hojas
         $fila = $this->cabeceraDocumento($hoja, $columnas);
         $fila++;
 
-        $hoja->setCellValue([1, $fila], mb_strtoupper($tabla['nombre']));
+        $this->poner($hoja, [1, $fila], mb_strtoupper($tabla['nombre']));
         $hoja->mergeCells([1, $fila, $columnas, $fila]);
         $this->tituloSeccion($hoja, $fila, $columnas);
         $fila++;
 
         if (! empty($tabla['nota'])) {
-            $hoja->setCellValue([1, $fila], $tabla['nota']);
+            $this->poner($hoja, [1, $fila], $tabla['nota']);
             $hoja->mergeCells([1, $fila, $columnas, $fila]);
             $hoja->getStyle([1, $fila])->getFont()->setItalic(true)->setSize(9)->getColor()->setARGB(self::TENUE);
             $fila++;
@@ -162,7 +162,7 @@ class Hojas
 
         $filaCabecera = $fila;
         foreach ($tabla['cabeceras'] as $i => $texto) {
-            $hoja->setCellValue([$i + 1, $filaCabecera], $texto);
+            $this->poner($hoja, [$i + 1, $filaCabecera], $texto);
         }
         $this->estilarCabecera($hoja, $filaCabecera, $columnas, $tabla['alineacion'] ?? []);
         $fila++;
@@ -182,15 +182,7 @@ class Hojas
                     );
                 }
 
-                // Un texto que empieza con = + - @ se guarda como texto, nunca
-                // como fórmula. Si no, un cliente dado de alta como
-                // «=HYPERLINK(...)» salía como fórmula viva en el Libro de
-                // Ventas de quien lo abriera.
-                if (is_string($valor) && preg_match('/^[=+\-@\t\r]/', $valor)) {
-                    $hoja->setCellValueExplicit([$i + 1, $fila], $valor, DataType::TYPE_STRING);
-                } else {
-                    $hoja->setCellValue([$i + 1, $fila], $valor);
-                }
+                $this->poner($hoja, [$i + 1, $fila], $valor);
             }
 
             if ($n % 2 === 1) {
@@ -205,7 +197,7 @@ class Hojas
         $ultimaDato = $fila - 1;
 
         if ($n === 0) {
-            $hoja->setCellValue([1, $fila], $tabla['vacia'] ?? 'Sin datos en el período.');
+            $this->poner($hoja, [1, $fila], $tabla['vacia'] ?? 'Sin datos en el período.');
             $hoja->mergeCells([1, $fila, $columnas, $fila]);
             $hoja->getStyle([1, $fila])->getFont()->setItalic(true)->getColor()->setARGB(self::TENUE);
             $hoja->getStyle([1, $fila])->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -217,7 +209,7 @@ class Hojas
         if ($n > 0 && ! empty($tabla['totales'])) {
             foreach (array_values($tabla['totales']) as $i => $valor) {
                 if ($valor !== null) {
-                    $hoja->setCellValue([$i + 1, $fila], $valor);
+                    $this->poner($hoja, [$i + 1, $fila], $valor);
                 }
             }
 
@@ -256,7 +248,7 @@ class Hojas
     {
         $negocio = $this->doc['negocio'];
 
-        $hoja->setCellValue([1, 1], $negocio['nombre']);
+        $this->poner($hoja, [1, 1], $negocio['nombre']);
         $hoja->mergeCells([1, 1, $columnas, 1]);
         $hoja->getStyle([1, 1])->getFont()->setBold(true)->setSize(16)->getColor()->setARGB(self::MARCA);
         $hoja->getRowDimension(1)->setRowHeight(24);
@@ -267,11 +259,11 @@ class Hojas
             $negocio['telefono'],
         ]);
 
-        $hoja->setCellValue([1, 2], $this->doc['titulo'].($datos ? '  ·  '.implode('  ·  ', $datos) : ''));
+        $this->poner($hoja, [1, 2], $this->doc['titulo'].($datos ? '  ·  '.implode('  ·  ', $datos) : ''));
         $hoja->mergeCells([1, 2, $columnas, 2]);
         $hoja->getStyle([1, 2])->getFont()->setSize(10)->getColor()->setARGB(self::TENUE);
 
-        $hoja->setCellValue([1, 3], $this->doc['periodo'].'  ·  Generado el '.$this->doc['generado']);
+        $this->poner($hoja, [1, 3], $this->doc['periodo'].'  ·  Generado el '.$this->doc['generado']);
         $hoja->mergeCells([1, 3, $columnas, 3]);
         $hoja->getStyle([1, 3])->getFont()->setSize(10)->getColor()->setARGB(self::TENUE);
 
@@ -365,7 +357,30 @@ class Hojas
             $config->setRowsToRepeatAtTopByStartAndEnd($filaCabecera, $filaCabecera);
         }
 
-        $hoja->getHeaderFooter()->setOddFooter('&L&9'.$this->doc['negocio']['nombre'].'&C&9&P / &N&R&9'.$this->doc['generado']);
+        // En el pie, `&` es un código de Excel (&P es la página): un negocio
+        // llamado «Pérez & Hijos» imprimía «Pérez Hijos» con basura. Se dobla.
+        $nombre = str_replace('&', '&&', $this->doc['negocio']['nombre']);
+        $hoja->getHeaderFooter()->setOddFooter('&L&9'.$nombre.'&C&9&P / &N&R&9'.$this->doc['generado']);
+    }
+
+    /**
+     * Toda celda entra por aquí. Un texto que empieza con = + - @ se guarda
+     * como texto, nunca como fórmula: un cliente dado de alta como
+     * «=HYPERLINK(...)» salía como fórmula viva en el Libro de Ventas de quien
+     * lo abriera. Antes solo lo filtraban las filas de datos; el nombre del
+     * negocio, los títulos, las notas y los totales entraban sin pasar por él.
+     *
+     * @param  array{0: int, 1: int}  $celda
+     */
+    private function poner(Worksheet $hoja, array $celda, mixed $valor): void
+    {
+        if (is_string($valor) && preg_match('/^[=+\-@\t\r]/', $valor)) {
+            $hoja->setCellValueExplicit($celda, $valor, DataType::TYPE_STRING);
+
+            return;
+        }
+
+        $hoja->setCellValue($celda, $valor);
     }
 
     /** Excel corta a 31 caracteres y no admite : \ / ? * [ ] */
