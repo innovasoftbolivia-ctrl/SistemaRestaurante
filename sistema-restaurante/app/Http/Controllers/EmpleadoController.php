@@ -114,6 +114,12 @@ class EmpleadoController extends Controller
             return back()->with('error', Administracion::MENSAJE)->withInput();
         }
 
+        // Dar de baja al empleado le corta el acceso a su cuenta: no se le
+        // puede hacer a alguien con más permisos que uno.
+        if ($datos['estado'] !== $empleado->estado && Administracion::rolPorEncima($empleado->usuario?->rol)) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
+        }
+
         $estadoAnterior = $empleado->estado;
         $empleado->update($datos);
 
@@ -145,6 +151,10 @@ class EmpleadoController extends Controller
 
         if (Administracion::restantes(empleadoFuera: $empleado->id) === 0) {
             return back()->with('error', Administracion::MENSAJE);
+        }
+
+        if (Administracion::rolPorEncima($empleado->usuario?->rol)) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA);
         }
 
         $empleado->update([

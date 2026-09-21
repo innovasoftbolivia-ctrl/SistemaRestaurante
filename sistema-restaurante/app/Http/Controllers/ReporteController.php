@@ -315,11 +315,38 @@ class ReporteController extends Controller
      */
     private function rango(Request $request): array
     {
-        $hasta = $request->date('hasta')?->endOfDay() ?? Carbon::parse(Config::jornadaActual())->endOfDay();
-        $desde = $request->date('desde')?->startOfDay() ?? $hasta->copy()->subDays(29)->startOfDay();
+        $hasta = $this->fecha($request, 'hasta')?->endOfDay() ?? Carbon::parse(Config::jornadaActual())->endOfDay();
+        $desde = $this->fecha($request, 'desde')?->startOfDay() ?? $hasta->copy()->subDays(29)->startOfDay();
 
         // Un rango al revés no dice nada: se endereza en vez de devolver vacío.
-        return $desde->gt($hasta) ? [$hasta->copy()->startOfDay(), $desde->copy()->endOfDay()] : [$desde, $hasta];
+        if ($desde->gt($hasta)) {
+            [$desde, $hasta] = [$hasta->copy()->startOfDay(), $desde->copy()->endOfDay()];
+        }
+
+        // Con tope: un año mal tecleado (0202) armaba millones de días en
+        // memoria y dejaba el proceso colgado hasta el límite de tiempo.
+        $minimo = $hasta->copy()->subDays(self::MAX_DIAS_RANGO - 1)->startOfDay();
+
+        return [$desde->lt($minimo) ? $minimo : $desde, $hasta];
+    }
+
+    /** Días que abarca como mucho un reporte: diez años, de sobra para el histórico. */
+    private const MAX_DIAS_RANGO = 3653;
+
+    /** Una fecha del filtro, o null si falta o no se entiende (en vez de un 500). */
+    private function fecha(Request $request, string $campo): ?Carbon
+    {
+        $valor = $request->query($campo);
+
+        if (! is_string($valor) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+            return null;
+        }
+
+        try {
+            return Carbon::createFromFormat('!Y-m-d', $valor) ?: null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     // ----------------------------------------------------------------- ventas

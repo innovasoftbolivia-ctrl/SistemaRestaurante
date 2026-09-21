@@ -1,4 +1,6 @@
-# scripts/*.sh corren en el servidor (Linux) vía shebang: un CRLF en la
-# primera línea rompe el intérprete con "bash^M: No such file or directory".
-# Sin esto, un checkout en Windows con autocrlf activado los convertiría.
-scripts/*.sh text eol=lf
+# Los *.sh corren en Linux vía shebang (los de scripts/ en el servidor, y
+# docs/sql/produccion/03_usuario_app.sh dentro del contenedor de MySQL al
+# crear la base): un CRLF en la primera línea rompe el intérprete con
+# "bash^M: No such file or directory". Sin esto, un checkout en Windows con
+# autocrlf activado los convertiría.
+*.sh text eol=lf

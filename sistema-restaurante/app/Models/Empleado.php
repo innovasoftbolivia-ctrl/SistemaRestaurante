@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  *
  * `estado` es el vínculo laboral, no el acceso: al pasar a CESADO o
  * SUSPENDIDO un trigger de la base desactiva la cuenta asociada. Donde no hay
- * triggers, lo hace el evento de abajo (ver config/ventas.php).
+ * triggers, lo hace el evento de abajo (ver config/restaurante.php).
  */
 class Empleado extends Model
 {

@@ -23,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
         Blade::if('puede', fn (string $codigo) => Menu::puede($codigo));
 
         // `@facturacion … @else … @endfacturacion`: lo que solo se ve cuando el
-        // negocio factura (config/ventas.php, `mostrar_facturacion`).
+        // negocio factura (config/restaurante.php, `mostrar_facturacion`).
         Blade::if('facturacion', fn () => Config::facturacionVisible());
 
         // El número de envío único de un formulario (ver UnSoloEnvio).

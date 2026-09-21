@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\Rol;
 use App\Models\Usuario;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Que el sistema nunca se quede sin nadie que pueda administrar usuarios.
@@ -31,6 +33,29 @@ class Administracion
                 ->whereHas('permisos', fn ($p) => $p->where('codigo', self::PERMISO)))
             ->count();
     }
+
+    /**
+     * Si `$permisoIds` incluye algún permiso que la cuenta en sesión no tiene.
+     *
+     * Quien administra usuarios no puede repartir más de lo que tiene: sin
+     * esto, un «Supervisor» con `usuarios.gestionar` se agregaba todos los
+     * permisos a su propio rol, o se ponía el de Administrador, en un clic.
+     */
+    public static function otorgaDeMas(array $permisoIds): bool
+    {
+        $actor = Auth::user();
+        $propios = $actor?->rol?->activo ? $actor->rol->permisos->pluck('id')->all() : [];
+
+        return array_diff(array_map('intval', $permisoIds), array_map('intval', $propios)) !== [];
+    }
+
+    /** Si el rol tiene algún permiso que la cuenta en sesión no tiene. */
+    public static function rolPorEncima(?Rol $rol): bool
+    {
+        return $rol !== null && self::otorgaDeMas($rol->permisos()->pluck('permisos.id')->all());
+    }
+
+    public const MENSAJE_POR_ENCIMA = 'No puedes otorgar permisos que tu propio rol no tiene, ni administrar cuentas o roles con más permisos que el tuyo.';
 
     public const MENSAJE = 'Ese cambio dejaría el sistema sin ninguna cuenta que pueda administrar usuarios. Asigna antes ese permiso a otra cuenta activa.';
 }

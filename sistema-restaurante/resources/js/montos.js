@@ -19,8 +19,8 @@ export function centavos(importe) {
 
 /** ROUND(cantidad × precio, 2), exacto. */
 export function importeLinea(precio, cantidad) {
-    const p = Math.round(Number(precio || 0) * 10000);   // diezmilésimas
-    const q = Math.round(Number(cantidad || 0) * 1000);  // milésimas
+    const p = Math.round(Number(precio || 0) * 10000); // diezmilésimas
+    const q = Math.round(Number(cantidad || 0) * 1000); // milésimas
 
     return Math.floor((p * q + 50000) / 100000) / 100;
 }
@@ -82,4 +82,12 @@ export function sumar(importes) {
     return importes.reduce((total, importe) => total + centavos(importe), 0) / 100;
 }
 
-window.montos = { centavos, importeLinea, totalLinea, impuestoDe, impuestoIncluido, impuestoConDescuento, sumar };
+window.montos = {
+    centavos,
+    importeLinea,
+    totalLinea,
+    impuestoDe,
+    impuestoIncluido,
+    impuestoConDescuento,
+    sumar,
+};

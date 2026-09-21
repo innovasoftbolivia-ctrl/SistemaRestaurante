@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Pedido;
 use App\Models\SerieComprobante;
 use App\Models\TipoComprobante;
 use App\Services\Auditor;
@@ -179,6 +180,13 @@ class ConfiguracionController extends Controller
         if (! $cambios) {
             return redirect()->route('configuracion.edit')
                 ->with('aviso', 'No había nada que cambiar.');
+        }
+
+        // Un pedido que quedó por volver a cobrar guarda sus precios en el modo
+        // en que se pidió: cobrado en el otro modo, el cliente pagaría el
+        // impuesto de menos (o de más). Primero se cobran o se cancelan.
+        if (isset($cambios['precios_incluyen_impuesto']) && Pedido::abiertos()->exists()) {
+            return back()->withInput()->with('error', 'Hay pedidos por volver a cobrar. Cóbralos o cancélalos antes de cambiar cómo van los precios.');
         }
 
         // Al cambiar de modo, el menú se ajusta para que el cliente siga

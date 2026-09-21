@@ -780,7 +780,7 @@ orquesta; el resto ya vive en `docs/sql`:
 Reescribir eso en PHP habría dado dos fuentes de verdad que se contradicen con el tiempo.
 
 La excepción es un hosting que no deja crear procedimientos ni triggers. Para ese caso,
-`LOGICA_EN_PHP=true` (ver `config/ventas.php`) hace que `App\Services\ReglasEnPhp` ejecute esas
+`LOGICA_EN_PHP=true` (ver `config/restaurante.php`) hace que `App\Services\ReglasEnPhp` ejecute esas
 mismas reglas, paso por paso y en el mismo orden, dentro de la misma transacción. Las dos vías
 corren la misma batería de pruebas, justamente para que no se separen. Los triggers que solo
 **impiden** algo que la aplicación nunca hace —borrar una venta, borrar un pedido— no tienen
@@ -1173,8 +1173,11 @@ sus propios datos de negocio.
 ## Copias de seguridad
 
 **En producción ya hay un respaldo automático**: el contenedor `programador` corre
-`respaldo:crear` todas las noches a la 01:00, lo guarda en el volumen `restaurante_respaldos` (14
-días) y lo sube a **Google Drive**.
+`respaldo:crear` todas las noches a la 01:00 y lo guarda en el volumen `restaurante_respaldos` (14
+días). **Ese volumen está en el mismo disco que la base**: si el disco del servidor muere, se
+pierden los dos. Antes de entregar, configura al menos una copia fuera del servidor —la subida
+con rclone (`RESPALDOS_NUBE`, abajo) o un disco externo (`RESPALDOS_COPIA`)—; con los dos vacíos,
+que es como viene `.env.docker.example`, no hay ninguna.
 
 **No tiene pantalla, a propósito.** Un respaldo es la base entera —clientes, ventas y los hashes
 de las contraseñas—, y restaurarlo es trabajo de quien mantiene el sistema, no del local: nadie,
@@ -1199,11 +1202,11 @@ Se conecta **una vez por servidor**:
 2. En el servidor, con la aplicación levantada:
 
    ```bash
-   bash scripts/conectar-drive.sh
+   CARPETA=<enlace o id de la carpeta> bash scripts/conectar-drive.sh
    ```
 
-   Pide la línea (no se ve al pegarla), deja el remoto `drive` apuntando a la carpeta —ya trae
-   su id; para otra: `CARPETA=<enlace o id>`— y prueba subir, leer y borrar un archivo.
+   Pide la línea (no se ve al pegarla), deja el remoto `drive` apuntando a la carpeta de este
+   cliente (`CARPETA=<enlace o id>`, obligatoria) y prueba subir, leer y borrar un archivo.
 3. En `sistema-restaurante/.env.docker`, `RESPALDOS_NUBE=drive:`, y `up -d` para que lo lean la
    aplicación y el programador. Para probar sin esperar a la noche:
 
@@ -1247,8 +1250,8 @@ Además, `scripts/backup-db.sh` hace una copia desde el servidor, con cron:
   sin imágenes el día que haya que recuperar.
 
 Borra solas las copias de más de 14 días (`RETENTION_DAYS` para cambiarlo). Encuentra solo los
-contenedores —el de producción o el de desarrollo, el que esté corriendo—. Ventas anterior,
-en ese orden y prefiriendo el que esté corriendo—, igual que `restore-db.sh`; `RESTAURANTE_MYSQL` y
+contenedores —el de producción o el de desarrollo, en ese orden y prefiriendo el que esté
+corriendo—, igual que `restore-db.sh`; `RESTAURANTE_MYSQL` y
 `RESTAURANTE_APP` quedan para un contenedor con otro nombre.
 
 ```bash

@@ -81,7 +81,13 @@ class PedidoController extends Controller
             'sesion' => $sesion,
             // Cada agrupado con el nombre del plato y de cuántas tandas viene:
             // el cajero tiene que poder explicarle el pedido al cliente.
+            //
+            // Y con el precio que paga el cliente, como en el mostrador: con el
+            // impuesto encima, `precio_unitario` es la base, y la pantalla
+            // mostraba el Lomo a 9.65 cuando en el menú y en el ticket es 10.90.
             'lineas' => array_map(fn (array $l) => $l + [
+                'precio_cliente' => $this->conImpuesto((float) $l['precio_unitario'], $productos[$l['producto_id']] ?? null),
+                'importe_cliente' => $this->conImpuesto(round($l['cantidad'] * $l['precio_unitario'], 2), $productos[$l['producto_id']] ?? null),
                 'nombre' => $productos[$l['producto_id']]?->nombre ?? '—',
                 'tandas' => $pedido->detalle
                     ->where('producto_id', $l['producto_id'])
@@ -214,5 +220,15 @@ class PedidoController extends Controller
         return redirect()->route('pos.index')
             ->with('exito', "{$pedido->numero_visible} cancelado.")
             ->with('comanda_pendiente', $aviso);
+    }
+
+    /** Lo que paga el cliente por un importe: con el impuesto encima, el importe más SU impuesto. */
+    private function conImpuesto(float $importe, ?Producto $producto): float
+    {
+        if (Config::preciosIncluyenImpuesto() || ! $producto?->afecto_impuesto) {
+            return $importe;
+        }
+
+        return round($importe + Config::impuestoDe($importe), 2);
     }
 }

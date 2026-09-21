@@ -771,7 +771,7 @@ class Pedidos
 
             $impuesto += $incluido
                 ? Config::impuestoDentroDe($importe, $tasa)
-                : round($importe * $tasa, 2);
+                : Config::impuestoDe($importe, $tasa);
         }
 
         return [
@@ -812,7 +812,7 @@ class Pedidos
 
             $importes[$linea->id] = $incluido || ! $afecto
                 ? round($base, 2)
-                : round($base * (1 + $tasa), 2);
+                : round($base + Config::impuestoDe($base, $tasa), 2);
         }
 
         return [

@@ -25,7 +25,7 @@ class Config
     /**
      * ¿Las pantallas muestran impuesto, IVA y facturas? Mientras el negocio no
      * factura, no: todo sale como recibo y sin desglose, aunque el código
-     * siga entero (config/ventas.php, `MOSTRAR_FACTURACION`).
+     * siga entero (config/restaurante.php, `MOSTRAR_FACTURACION`).
      */
     public static function facturacionVisible(): bool
     {
@@ -59,6 +59,21 @@ class Config
         $d = 10000 + $t;
 
         return intdiv(2 * $centavos * $t + $d, 2 * $d) / 100;
+    }
+
+    /**
+     * ROUND(importe × tasa, 2), exacto: el impuesto que se SUMA a un importe.
+     *
+     * En centavos enteros, como MySQL y `montos.js`. PHP 8.4 dejó de
+     * pre-redondear `round()`: `round(1.5 * 0.15, 2)` da 0.22 y la base 0.23,
+     * y el precio mostrado quedaba un centavo por debajo del cobrado.
+     */
+    public static function impuestoDe(float $importe, ?float $tasa = null): float
+    {
+        $centavos = (int) round($importe * 100);
+        $t = (int) round(($tasa ?? self::tasaImpuesto()) * 10000);
+
+        return intdiv(2 * $centavos * $t + 10000, 20000) / 100;
     }
 
     /**

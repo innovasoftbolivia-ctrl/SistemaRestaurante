@@ -1523,7 +1523,9 @@
                                 return Math.floor(centavos * Math.min(d, 100) / 100 + 1e-9) / 100;
                             }
 
-                            return Math.min(d, this.subtotal);
+                            // Al centavo: así viaja al servidor (toFixed(2)), y con
+                            // 1,555 la pantalla y la venta daban totales distintos.
+                            return Math.round(Math.min(d, this.subtotal) * 100) / 100;
                         },
 
                         descontarPorcentaje(porcentaje) {

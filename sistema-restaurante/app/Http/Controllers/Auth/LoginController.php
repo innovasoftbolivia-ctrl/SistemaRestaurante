@@ -9,6 +9,7 @@ use App\Support\Menu;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +34,9 @@ class LoginController extends Controller
     private const MAX_INTENTOS_CUENTA = 10;
 
     private const BLOQUEO_CUENTA_SEGUNDOS = 900;
+
+    /** La misma regla con la que `UsuarioController` crea las cuentas. */
+    private const PATRON_USUARIO = '/^[a-z0-9._-]+$/';
 
     /**
      * Hash de una contraseña que no existe, para comparar contra ella cuando
@@ -61,9 +65,14 @@ class LoginController extends Controller
 
         $this->verificarBloqueo($request);
 
-        $cuenta = Usuario::with(['empleado', 'rol'])
-            ->where('usuario', $datos['usuario'])
-            ->first();
+        // Solo se busca un nombre que cumpla la regla con la que se crean las
+        // cuentas. La columna compara sin distinguir acentos (`ai_ci`): sin
+        // este filtro, `ádmin` o `ａｄｍｉｎ` entraban a `admin` con un contador
+        // de intentos propio cada una, y el bloqueo por cuenta no frenaba nada.
+        $nombre = $this->nombreNormalizado($request);
+        $cuenta = preg_match(self::PATRON_USUARIO, $nombre)
+            ? Usuario::with(['empleado', 'rol'])->where('usuario', $nombre)->first()
+            : null;
 
         // Siempre se calcula un Hash::check, exista o no la cuenta —contra el
         // hash real o contra el dummy—: así ambos casos tardan lo mismo.
@@ -74,7 +83,13 @@ class LoginController extends Controller
         if (! $cuenta || ! $claveValida) {
             RateLimiter::hit($this->claveThrottle($request), self::BLOQUEO_SEGUNDOS);
             RateLimiter::hit($this->claveCuenta($request), self::BLOQUEO_CUENTA_SEGUNDOS);
-            $cuenta?->increment('intentos_fallidos');
+            // Con tope: la columna es TINYINT y el intento 256 reventaba con
+            // un 500 antes de llegar a la bitácora.
+            if ($cuenta) {
+                Usuario::whereKey($cuenta->id)->update([
+                    'intentos_fallidos' => DB::raw('LEAST(intentos_fallidos + 1, 255)'),
+                ]);
+            }
 
             Auditor::registrar('LOGIN_FALLIDO', 'usuarios', $cuenta?->id, [
                 'usuario' => $datos['usuario'],
@@ -129,14 +144,20 @@ class LoginController extends Controller
         return redirect()->route('login');
     }
 
+    /** El nombre tal como se busca y se cuenta: sin espacios y en minúsculas. */
+    private function nombreNormalizado(Request $request): string
+    {
+        return mb_strtolower(trim((string) $request->input('usuario')));
+    }
+
     private function claveThrottle(Request $request): string
     {
-        return 'login:'.mb_strtolower((string) $request->input('usuario')).'|'.$request->ip();
+        return 'login:'.$this->nombreNormalizado($request).'|'.$request->ip();
     }
 
     private function claveCuenta(Request $request): string
     {
-        return 'login-cuenta:'.mb_strtolower((string) $request->input('usuario'));
+        return 'login-cuenta:'.$this->nombreNormalizado($request);
     }
 
     private function verificarBloqueo(Request $request): void

@@ -949,7 +949,7 @@ aplicación, con la fila bloqueada dentro de la transacción:
 ### Dos vías para la misma lógica
 
 Las reglas de los procedimientos y los triggers tienen un gemelo en PHP,
-`App\Services\ReglasEnPhp`, que se activa con `LOGICA_EN_PHP=true` (`config/ventas.php`). Es
+`App\Services\ReglasEnPhp`, que se activa con `LOGICA_EN_PHP=true` (`config/restaurante.php`). Es
 para un hosting compartido que no deja crear procedimientos ni triggers (exige el privilegio
 `SUPER`). La vía por omisión (`false`) es la de la base, y es la que conviene para datos
 reales. Las dos vías corren la misma batería de pruebas para que no se separen. Con

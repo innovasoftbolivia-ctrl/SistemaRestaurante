@@ -260,7 +260,7 @@ class Ventas
             ];
 
             // Sin triggers en la base, el régimen de impuesto lo copia PHP
-            // (ver config/ventas.php).
+            // (ver config/restaurante.php).
             ReglasEnPhp::activa()
                 ? VentaDetalle::create(ReglasEnPhp::antesDeInsertarLineaVenta($datos))
                 : VentaDetalle::create($datos);

@@ -7,6 +7,7 @@ use App\Models\Empleado;
 use App\Models\Rol;
 use App\Models\Usuario;
 use App\Services\Auditor;
+use App\Support\Administracion;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -80,6 +81,10 @@ class UsuarioController extends Controller
             'activo' => ['boolean'],
         ], $this->mensajes(), $this->atributos());
 
+        if (Administracion::rolPorEncima(Rol::find($datos['rol_id']))) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
+        }
+
         $cuenta = Usuario::create([
             'empleado_id' => $datos['empleado_id'],
             'rol_id' => $datos['rol_id'],
@@ -132,6 +137,12 @@ class UsuarioController extends Controller
             'activo' => ['boolean'],
         ], $this->mensajes(), $this->atributos());
 
+        // Ni tocar una cuenta de más rango (restablecerle la clave es quedarse
+        // con ella) ni subir a nadie por encima de uno mismo.
+        if (! $esPropia && (Administracion::rolPorEncima($usuario->rol) || Administracion::rolPorEncima(Rol::find($datos['rol_id'])))) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
+        }
+
         // Nadie puede quitarse a sí mismo el acceso ni cambiar su propio rol:
         // dejaría el sistema sin administrador por accidente.
         $cambios = [
@@ -154,6 +165,14 @@ class UsuarioController extends Controller
 
         $usuario->update($cambios);
 
+        // `auth.session` guarda al final de la petición la huella de la clave
+        // del usuario EN SESIÓN, que es otra instancia: sin esto se quedaba
+        // con la vieja y la siguiente página echaba a quien acababa de
+        // cambiar su propia contraseña.
+        if ($esPropia) {
+            Auth::setUser($usuario);
+        }
+
         Auditor::registrar('USUARIO_ACTUALIZADO', 'usuarios', $usuario->id, [
             'usuario' => $usuario->usuario,
             'rol_id' => $usuario->rol_id,
@@ -169,6 +188,10 @@ class UsuarioController extends Controller
     {
         if ($usuario->id === Auth::id()) {
             return back()->with('error', 'No puedes desactivar tu propia cuenta.');
+        }
+
+        if (Administracion::rolPorEncima($usuario->rol)) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA);
         }
 
         if (! $usuario->activo && $usuario->empleado?->estado !== 'ACTIVO') {
@@ -191,6 +214,10 @@ class UsuarioController extends Controller
     {
         if ($usuario->id === Auth::id()) {
             return back()->with('error', 'No puedes eliminar tu propia cuenta.');
+        }
+
+        if (Administracion::rolPorEncima($usuario->rol)) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA);
         }
 
         $nombre = $usuario->usuario;
@@ -258,6 +285,7 @@ class UsuarioController extends Controller
             'rol_id' => 'rol',
             'usuario' => 'usuario',
             'password' => 'contraseña',
+            'password_actual' => 'contraseña actual',
         ];
     }
 }

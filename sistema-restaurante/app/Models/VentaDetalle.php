@@ -22,7 +22,7 @@ class VentaDetalle extends Model
 
     // `afecto_impuesto` y `tasa_impuesto` los pone normalmente un trigger de la
     // base, pero tienen que ser asignables para la vía sin triggers, donde los
-    // calcula PHP (ver config/ventas.php). Con el trigger activo llegan en 0 y
+    // calcula PHP (ver config/restaurante.php). Con el trigger activo llegan en 0 y
     // él los pisa, así que estar en esta lista no cambia nada en esa vía.
     protected $fillable = [
         'venta_id', 'producto_id', 'descripcion',

@@ -77,6 +77,16 @@
                         <x-form.input id="password_confirmation" name="password_confirmation" type="password"
                             autocomplete="new-password" :required="! $esEdicion" />
                     </x-form.campo>
+
+                    {{-- La cuenta propia pide la clave actual, igual que Perfil
+                         (ver UsuarioController::update). --}}
+                    @if ($esEdicion && $usuario->id === auth()->id())
+                        <x-form.campo label="Tu contraseña actual" for="password_actual" name="password_actual"
+                            help="Solo hace falta si cambias tu contraseña." class="sm:col-span-2">
+                            <x-form.input id="password_actual" name="password_actual" type="password"
+                                autocomplete="current-password" />
+                        </x-form.campo>
+                    @endif
                 </div>
             </x-common.component-card>
         </div>

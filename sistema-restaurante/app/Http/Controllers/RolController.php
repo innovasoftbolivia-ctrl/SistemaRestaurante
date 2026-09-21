@@ -32,6 +32,10 @@ class RolController extends Controller
     {
         $datos = $this->validar($request);
 
+        if (Administracion::otorgaDeMas($datos['permisos'] ?? [])) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
+        }
+
         $rol = Rol::create([
             'nombre' => $datos['nombre'],
             'descripcion' => $datos['descripcion'] ?? null,
@@ -51,6 +55,10 @@ class RolController extends Controller
     public function update(Request $request, Rol $rol): RedirectResponse
     {
         $datos = $this->validar($request, $rol);
+
+        if (Administracion::rolPorEncima($rol) || Administracion::otorgaDeMas($datos['permisos'] ?? [])) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
+        }
 
         $conservaAdministracion = ($datos['activo'] ?? $rol->activo)
             && in_array(Permiso::where('codigo', Administracion::PERMISO)->value('id'), array_map('intval', $datos['permisos'] ?? []), true);
@@ -77,6 +85,10 @@ class RolController extends Controller
 
     public function destroy(Rol $rol): RedirectResponse
     {
+        if (Administracion::rolPorEncima($rol)) {
+            return back()->with('error', Administracion::MENSAJE_POR_ENCIMA);
+        }
+
         if ($rol->usuarios()->exists()) {
             if (Administracion::restantes(rolSinPermiso: $rol->id) === 0) {
                 return back()->with('error', Administracion::MENSAJE);

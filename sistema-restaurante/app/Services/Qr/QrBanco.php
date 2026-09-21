@@ -3,6 +3,7 @@
 namespace App\Services\Qr;
 
 use App\Models\CobroQr;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -154,9 +155,17 @@ class QrBanco implements PasarelaQr
             ->withHeaders($this->config['cabeceras'] ?? [])
             ->withToken((string) ($this->config['token'] ?? ''));
 
-        $respuesta = $metodo === 'get'
-            ? $peticion->get($base.$ruta)
-            : $peticion->post($base.$ruta, $cuerpo);
+        // Sin respuesta del banco, el mismo aviso que un error suyo: quien
+        // llama solo sabe manejar RuntimeException (ver QrBaneco::llamar).
+        try {
+            $respuesta = $metodo === 'get'
+                ? $peticion->get($base.$ruta)
+                : $peticion->post($base.$ruta, $cuerpo);
+        } catch (ConnectionException $e) {
+            Log::warning('La pasarela de QR no respondió.', ['pasarela' => $this->codigo, 'ruta' => $ruta, 'error' => $e->getMessage()]);
+
+            throw new RuntimeException('El banco no respondió. Cobra por otro medio.');
+        }
 
         if ($respuesta->failed()) {
             Log::error('La pasarela de QR respondió con error.', [

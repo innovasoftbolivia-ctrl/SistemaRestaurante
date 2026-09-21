@@ -72,12 +72,12 @@ echo
 
 # --- 1. Contenedores ----------------------------------------------------------
 for par in "MySQL:${RESTAURANTE_MYSQL:-}:restaurante_mysql_prod:restaurante_mysql" \
-           "aplicación:${RESTAURANTE_APP:-}:restaurante_app_prod:restaurante_app:ventas_app" \
-           "nginx:${RESTAURANTE_NGINX:-}:restaurante_nginx_prod:restaurante_nginx:ventas_nginx"; do
-    IFS=':' read -r etiqueta explicito n1 n2 n3 <<< "$par"
+           "aplicación:${RESTAURANTE_APP:-}:restaurante_app_prod:restaurante_app" \
+           "nginx:${RESTAURANTE_NGINX:-}:restaurante_nginx_prod:restaurante_nginx"; do
+    IFS=':' read -r etiqueta explicito n1 n2 <<< "$par"
 
-    if ! nombre="$(detectar "$explicito" "$n1" "$n2" "$n3")"; then
-        fallar "no encuentro el contenedor de $etiqueta ($n1, $n2 ni $n3)"
+    if ! nombre="$(detectar "$explicito" "$n1" "$n2")"; then
+        fallar "no encuentro el contenedor de $etiqueta ($n1 ni $n2)"
         continue
     fi
 
@@ -88,6 +88,17 @@ for par in "MySQL:${RESTAURANTE_MYSQL:-}:restaurante_mysql_prod:restaurante_mysq
         fallar "el contenedor de $etiqueta ($nombre) está «$estado», no «running»"
     fi
 done
+
+# El programador de tareas solo existe en producción. Sin él no corren los
+# respaldos nocturnos ni `qr:vencer`, y nada más lo delata: la app sigue
+# respondiendo normal.
+if docker inspect restaurante_app_prod >/dev/null 2>&1; then
+    if [ "$(docker inspect -f '{{.State.Running}}' restaurante_programador_prod 2>/dev/null)" = "true" ]; then
+        pasar "programador de tareas (restaurante_programador_prod) corriendo"
+    else
+        fallar "el programador de tareas (restaurante_programador_prod) no está corriendo: sin él no hay respaldos nocturnos ni vencen los cobros QR"
+    fi
+fi
 
 # --- 2. Aplicación y base ------------------------------------------------------
 # Sin `|| echo 000`: cuando la conexión falla, curl ya escribe `000` por
@@ -129,7 +140,7 @@ ULTIMO="$(find "$DESTINO" -maxdepth 1 -name 'ventas_db_*.sql.gz' -mmin "-$((BACK
 # Los respaldos nocturnos del programador viven en el volumen de la aplicación,
 # no en backups/. Antes el chequeo solo miraba aquí y, sin un cron aparte,
 # avisaba siempre «no hay respaldos» aunque se hicieran todas las noches.
-if [ -z "$ULTIMO" ] && APP_RESPALDOS="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app ventas_app)"; then
+if [ -z "$ULTIMO" ] && APP_RESPALDOS="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app)"; then
     EN_APP="$(docker exec "$APP_RESPALDOS" find storage/app/respaldos -maxdepth 1 -name 'ventas_db_*.sql.gz' -size +1k -mmin "-$((BACKUP_MAX_HORAS * 60))" 2>/dev/null | sort | tail -1)"
     if [ -n "$EN_APP" ]; then
         pasar "respaldo reciente del programador: $(basename "$EN_APP")"

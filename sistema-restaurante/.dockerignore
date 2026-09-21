@@ -24,8 +24,12 @@ storage/logs/*
 # Los respaldos y la contraseña del primer acceso de ESTA máquina no viajan a la
 # imagen: aparecerían en la lista de respaldos del cliente.
 storage/app/respaldos/
+# La conexión con la nube de los respaldos (token de rclone) de ESTA máquina.
+storage/app/rclone/
 storage/app/private/
 .git/
 .env
-.env.docker
+.env.*
+!.env.example
+!.env.docker.example
 .phpunit.result.cache

@@ -97,7 +97,7 @@ gunzip -c "$ARCHIVO" | docker exec -i "$CONTENEDOR" \
 echo "Restaurado «$BASE» desde $ARCHIVO."
 
 if [ -n "$FOTOS" ]; then
-    if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app ventas_app)"; then
+    if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app)"; then
         gunzip -c "$FOTOS" | docker exec -i "$APP" tar -xf - -C storage/app
         echo "Repuestas las fotos de producto desde $FOTOS."
     else

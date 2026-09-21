@@ -39,10 +39,10 @@ echo "== 1/6  compilando los assets =========================================="
 # En el contenedor, que es donde los node_modules están completos: el de Vite
 # del stack que esté corriendo.
 VITE=""
-for c in restaurante_vite ventas_vite; do
+for c in restaurante_vite; do
     if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then VITE="$c"; break; fi
 done
-[ -n "$VITE" ] || { echo "no encuentro corriendo el contenedor de Vite (restaurante_vite ni ventas_vite)"; exit 1; }
+[ -n "$VITE" ] || { echo "no encuentro corriendo el contenedor de Vite (restaurante_vite)"; exit 1; }
 docker exec "$VITE" npm run build >/dev/null 2>&1
 echo "   $(ls "$FUENTE/public/build/assets" | wc -l) archivos en public/build/assets"
 

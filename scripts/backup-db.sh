@@ -80,6 +80,9 @@ mkdir -p "$DESTINO"
 MARCA="$(date +%Y%m%d_%H%M%S)"
 ARCHIVO="$DESTINO/${BASE}_${MARCA}.sql.gz"
 TEMPORAL="${ARCHIVO}.tmp"
+# Si mysqldump falla, `set -e` corta aquí mismo: sin esto, el .tmp a medio
+# escribir quedaba en backups/ para siempre.
+trap 'rm -f "$TEMPORAL"' EXIT
 
 docker exec "$CONTENEDOR" \
     mysqldump --single-transaction --routines --triggers --events \
@@ -114,7 +117,7 @@ echo "Base guardada en $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1))"
 # funciona igual en los dos casos, sin tener que saber cuál es.
 FOTOS="$DESTINO/ventas_fotos_${MARCA}.tar.gz"
 
-if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app ventas_app)"; then
+if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app)"; then
     if docker exec "$APP" tar -czf - -C storage/app public > "${FOTOS}.tmp" 2>/dev/null; then
         mv "${FOTOS}.tmp" "$FOTOS"
         echo "Fotos guardadas en $FOTOS ($(du -h "$FOTOS" | cut -f1))"

@@ -180,6 +180,12 @@ class RevisionDelVeinteTest extends TestCase
      */
     public function test_el_reporte_por_forma_de_pago_corta_por_jornada(): void
     {
+        // Con LOGICA_EN_PHP la base no tiene vistas (hosting compartido): no
+        // hay nada que comparar, igual que en ReportesTest.
+        if (! DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE()')->n) {
+            $this->markTestSkipped('La base no tiene vistas: no hay contra qué comparar.');
+        }
+
         $venta = $this->venderEnMostrador(Producto::where('codigo', 'P-0004')->firstOrFail());
         DB::table('ventas')->where('id', $venta->id)->update(['fecha' => now()->startOfDay()->addHours(2)]);
 

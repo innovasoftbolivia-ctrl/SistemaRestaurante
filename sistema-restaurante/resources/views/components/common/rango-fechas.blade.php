@@ -9,13 +9,16 @@
 
 @php
     // Atajos habituales del mostrador. El «mes pasado» va completo, de día 1 a fin de mes.
-    $mesPasado = now()->subMonthNoOverflow();
+    // «Hoy» es la jornada en curso, no el día de calendario: a la 01:30 lo
+    // vendido esa noche sigue siendo de hoy (ver Config::jornadaActual).
+    $hoy = \Illuminate\Support\Carbon::parse(\App\Support\Config::jornadaActual());
+    $mesPasado = $hoy->copy()->subMonthNoOverflow();
 
     $atajos = [
-        'Hoy' => [now(), now()],
-        'Últimos 7 días' => [now()->subDays(6), now()],
-        'Últimos 30 días' => [now()->subDays(29), now()],
-        'Este mes' => [now()->startOfMonth(), now()],
+        'Hoy' => [$hoy, $hoy],
+        'Últimos 7 días' => [$hoy->copy()->subDays(6), $hoy],
+        'Últimos 30 días' => [$hoy->copy()->subDays(29), $hoy],
+        'Este mes' => [$hoy->copy()->startOfMonth(), $hoy],
         'Mes pasado' => [$mesPasado->copy()->startOfMonth(), $mesPasado->copy()->endOfMonth()],
     ];
 

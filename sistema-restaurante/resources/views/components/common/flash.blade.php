@@ -13,7 +13,7 @@
     [$variante, $titulo, $mensaje] = match (true) {
         (bool) $error => ['error', 'No se pudo completar', $error],
         (bool) $exito => ['success', 'Listo', $exito],
-        (bool) $aviso => ['info', 'Sin cambios', $aviso],
+        (bool) $aviso => ['info', 'Aviso', $aviso],
         default => [null, null, null],
     };
 @endphp

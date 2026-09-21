@@ -49,6 +49,12 @@ class PerfilController extends Controller
 
         Auditor::registrar('PASSWORD_CAMBIADA', 'usuarios', $usuario->id);
 
+        // La clave inicial de `admin` quedó escrita en disco al instalar (ver
+        // CredencialesSeeder). Ya no vale: no tiene por qué seguir ahí.
+        if ($usuario->usuario === 'admin') {
+            @unlink(storage_path('app/respaldos/PRIMER-ACCESO.txt'));
+        }
+
         return back()->with('exito', 'Tu contraseña fue actualizada.');
     }
 }

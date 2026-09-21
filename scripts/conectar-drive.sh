@@ -4,8 +4,7 @@
 # servidor (y de nuevo solo si Google retira el permiso: cambio de contraseña
 # de la cuenta, acceso revocado, o seis meses sin usarse).
 #
-#   ./scripts/conectar-drive.sh                  # pide el permiso y lo prueba
-#   CARPETA=<id o enlace> ./scripts/conectar-drive.sh
+#   CARPETA=<id o enlace> ./scripts/conectar-drive.sh   # pide el permiso y lo prueba
 #   RESTAURANTE_APP=otro_contenedor ./scripts/conectar-drive.sh
 #   (solo, busca restaurante_app_prod y restaurante_app, en ese orden, y prefiere
 #   el que esté corriendo)
@@ -40,9 +39,16 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# La carpeta de Drive de los respaldos del restaurante. Vale el id o el enlace
-# entero que da Drive al compartir («.../folders/<id>?usp=...»).
-CARPETA="${CARPETA:-188Ea6vghtlX7okMwwkg4B_FZTQ4uRz8E}"
+# La carpeta de Drive de los respaldos de ESTE cliente. Vale el id o el enlace
+# entero que da Drive al compartir («.../folders/<id>?usp=...»). Sin valor por
+# omisión: con uno fijo, correrlo en otra instalación mandaba sus volcados
+# (con los hashes de las contraseñas) a la carpeta de otro.
+CARPETA="${CARPETA:-}"
+if [ -z "$CARPETA" ]; then
+    echo "Falta CARPETA: el id o el enlace de la carpeta de Drive de este cliente." >&2
+    echo "  CARPETA=<id o enlace> ./scripts/conectar-drive.sh" >&2
+    exit 1
+fi
 CARPETA="${CARPETA##*/folders/}"
 CARPETA="${CARPETA%%\?*}"
 

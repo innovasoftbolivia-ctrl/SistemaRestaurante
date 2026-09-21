@@ -31,14 +31,14 @@
                                     {{ \App\Support\Config::cantidad($linea['cantidad']) }} × {{ $linea['nombre'] }}
                                 </p>
                                 <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-                                    {{ \App\Support\Config::importe($linea['precio_unitario']) }} por porción
+                                    {{ \App\Support\Config::importe($linea['precio_cliente']) }} por porción
                                     @if ($linea['tandas'] > 1)
                                         · {{ $linea['tandas'] }} tandas juntadas
                                     @endif
                                 </p>
                             </div>
                             <span class="whitespace-nowrap text-theme-sm font-semibold text-gray-800 dark:text-white/90">
-                                {{ \App\Support\Config::importe($linea['cantidad'] * $linea['precio_unitario']) }}
+                                {{ \App\Support\Config::importe($linea['importe_cliente']) }}
                             </span>
                         </li>
                     @endforeach
@@ -424,12 +424,15 @@
         <script>
             function cobroDePedido() {
                 return {
-                    /* El total lo calculó el servidor sobre el pedido; aquí solo se
-                       le resta el descuento para el reparto y el vuelto. La cifra
-                       que vale sigue siendo la de la venta: se manda como
+                    /* Los totales los calculó el servidor sobre el pedido; aquí se
+                       les aplica el descuento igual que en el mostrador, con el
+                       impuesto prorrateado como sp_recalcular_venta. La cifra que
+                       vale sigue siendo la de la venta: se manda como
                        `total_esperado` y el servidor rechaza el cobro si no cuadra. */
                     totalBase: {{ $totales['total'] }},
                     subtotal: {{ $totales['subtotal'] }},
+                    impuestoBase: {{ $totales['impuesto'] }},
+                    incluido: @js(\App\Support\Config::preciosIncluyenImpuesto()),
                     descuento: {{ (float) old('descuento', 0) }},
                     maxDescuento: {{ $descuentoMaximo }},
                     puedeDescontar: {{ $puedeDescontar ? 'true' : 'false' }},
@@ -459,14 +462,20 @@
                         return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
                     },
 
-                    /* El descuento nunca puede pasarse del total: la base lo
-                       rechazaría y el cajero se quedaría sin saber por qué. */
+                    /* El descuento nunca puede pasarse de lo consumido (la base lo
+                       rechazaría y el cajero se quedaría sin saber por qué) y va
+                       al centavo, que es como viaja al servidor. */
                     get descuentoValido() {
-                        return Math.min(Math.max(Number(this.descuento) || 0, 0), this.totalBase);
+                        const d = Math.min(Math.max(Number(this.descuento) || 0, 0), this.subtotal);
+                        return Math.round(d * 100) / 100;
                     },
 
                     get total() {
-                        return this.redondear(this.totalBase - this.descuentoValido);
+                        /* Con el impuesto encima, el descuento también lo rebaja. */
+                        return this.incluido
+                            ? this.redondear(this.subtotal - this.descuentoValido)
+                            : this.redondear(this.subtotal - this.descuentoValido
+                                + montos.impuestoConDescuento(this.impuestoBase, this.subtotal, this.descuentoValido));
                     },
 
                     get excedeDescuento() {
@@ -530,14 +539,20 @@
                         });
                     },
 
-                    quitarPago(i) {
+                    async quitarPago(i) {
                         const pago = this.pagos[i];
-                        if (pago.qr && !pago.qr.pagado) this.anularQr(pago);
                         if (pago.qr && pago.qr.pagado) {
                             pago.qrError = 'Ese QR ya está pagado: el dinero está en el banco. No quites esta forma.';
                             return;
                         }
-                        this.pagos.splice(i, 1);
+                        // Uno pendiente se cancela en el banco antes de quitarlo:
+                        // si no se pudo, sigue a la vista con su aviso.
+                        if (pago.qr && !(await this.anularQr(pago))) return;
+                        this.pagos.splice(this.pagos.indexOf(pago), 1);
+
+                        // Si queda una sola, vuelve a ser «el resto»: con su
+                        // importe fijo y el campo oculto, el cobro quedaba trabado.
+                        if (this.pagos.length === 1) this.pagos[0].monto = '';
                     },
 
                     faltaReferencia(pago) {

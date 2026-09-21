@@ -12,7 +12,7 @@ use RuntimeException;
  *
  * Réplica de los 6 procedimientos almacenados y los 7 triggers de
  * `docs/sql/01_schema_mysql.sql`, para poder correr el sistema en un hosting
- * que no permite crearlos (ver config/ventas.php).
+ * que no permite crearlos (ver config/restaurante.php).
  *
  * Reglas que se respetaron al portarlo, y que conviene no perder de vista si
  * alguien toca esto:

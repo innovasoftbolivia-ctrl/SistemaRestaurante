@@ -1,5 +1,5 @@
 # =============================================================================
-#  Sistema de Venta de Productos - Docker Compose de PRODUCCIÓN
+#  Sistema de Restaurante - Docker Compose de PRODUCCIÓN
 #
 #  Fichero aparte y completo, no un `override` de docker-compose.yml: la
 #  diferencia principal con desarrollo es un bind mount que aquí NO debe

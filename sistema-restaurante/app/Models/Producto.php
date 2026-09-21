@@ -87,7 +87,7 @@ class Producto extends Model
             return round($precio, 2);
         }
 
-        return round($precio * (1 + Config::tasaImpuesto()), 2);
+        return round($precio + Config::impuestoDe($precio), 2);
     }
 
     /** Precio de venta sin impuesto: la base imponible de la línea. */

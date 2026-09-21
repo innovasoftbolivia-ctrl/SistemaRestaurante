@@ -103,7 +103,6 @@
                             <x-form.check name="afecto_impuesto" :checked="$producto->afecto_impuesto ?? true"
                                 model="afecto"
                                 label="Afecto al impuesto ({{ number_format($tasa * 100, 0) }}%)" />
-                            <x-ui.en-construccion size="sm" titulo="Tasa provisional" />
                         </div>
                     @elseif ($tasa > 0)
                         <div class="flex flex-col justify-end gap-1.5 pb-1">

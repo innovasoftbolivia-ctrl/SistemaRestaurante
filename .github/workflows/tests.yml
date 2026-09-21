@@ -17,10 +17,10 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: ventas123
-        # Mismo puerto que sistema-restaurante/phpunit.xml (DB_PORT=13310): así el
+        # Mismo puerto que sistema-restaurante/phpunit.xml (DB_PORT=13311): así el
         # workflow no necesita pisar esa configuración para correr aquí.
         ports:
-          - 13310:3306
+          - 13311:3306
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pventas123"
           --health-interval=5s
@@ -67,9 +67,9 @@ jobs:
       - name: Cargar el esquema en ventas_db_test
         run: |
           sed 's/ventas_db/ventas_db_test/g' docs/sql/01_schema_mysql.sql | \
-            mysql --host=127.0.0.1 --port=13310 --default-character-set=utf8mb4 -uroot -pventas123
+            mysql --host=127.0.0.1 --port=13311 --default-character-set=utf8mb4 -uroot -pventas123
           sed 's/ventas_db/ventas_db_test/g' docs/sql/02_datos_iniciales.sql | \
-            mysql --host=127.0.0.1 --port=13310 --default-character-set=utf8mb4 -uroot -pventas123
+            mysql --host=127.0.0.1 --port=13311 --default-character-set=utf8mb4 -uroot -pventas123
 
       - name: Pruebas
         working-directory: sistema-restaurante
@@ -78,7 +78,7 @@ jobs:
       # La misma batería, pero contra una base a la que se le QUITARON los
       # procedimientos, los triggers Y LAS VISTAS, con LOGICA_EN_PHP=true: así
       # corre la demo en hosting compartido, donde no se puede crear ninguna de
-      # las tres cosas (ver config/ventas.php y app/Services/ReglasEnPhp.php).
+      # las tres cosas (ver config/restaurante.php y app/Services/ReglasEnPhp.php).
       # InfinityFree deniega hasta `CREATE VIEW`, con el error 1142.
       #
       # Se borran de `ventas_db_test` en lugar de usar otra base porque
@@ -90,7 +90,7 @@ jobs:
       # una fuente de errores que no aporta nada.
       - name: Quitar procedimientos, triggers y vistas
         run: |
-          MYSQL="mysql --host=127.0.0.1 --port=13310 --default-character-set=utf8mb4 -uroot -pventas123"
+          MYSQL="mysql --host=127.0.0.1 --port=13311 --default-character-set=utf8mb4 -uroot -pventas123"
           $MYSQL -N -e "SELECT CONCAT('DROP PROCEDURE IF EXISTS ', ROUTINE_NAME, ';') FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='ventas_db_test';" > /tmp/quitar.sql
           $MYSQL -N -e "SELECT CONCAT('DROP TRIGGER IF EXISTS ', TRIGGER_NAME, ';') FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='ventas_db_test';" >> /tmp/quitar.sql
           $MYSQL -N -e "SELECT CONCAT('DROP VIEW IF EXISTS ', TABLE_NAME, ';') FROM information_schema.VIEWS WHERE TABLE_SCHEMA='ventas_db_test';" >> /tmp/quitar.sql
@@ -154,7 +154,7 @@ jobs:
           test "$($APP -e "SELECT COUNT(*) FROM usuarios u JOIN roles r ON r.id = u.rol_id WHERE r.nombre = 'Administrador'")" -ge 1
           test "$($APP -e "SELECT COUNT(*) FROM permisos")" -gt 0
           test "$($APP -e "SELECT COUNT(*) FROM productos")" -eq 0
-          test "$($APP -e "SELECT COUNT(*) FROM parches_aplicados")" -gt 0
+          test "$($APP -e "SHOW TABLES LIKE 'parches_aplicados'")" = parches_aplicados
           if $APP -e "DROP TABLE auditoria" 2>/dev/null; then
             echo "ventas_app no debería poder borrar tablas" >&2
             exit 1

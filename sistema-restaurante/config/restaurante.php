@@ -7,7 +7,7 @@ return [
     | Dónde vive la lógica de negocio de la base
     |--------------------------------------------------------------------------
     |
-    | El esquema apoya reglas críticas en 6 procedimientos almacenados y 7
+    | El esquema apoya reglas críticas en 6 procedimientos almacenados y 14
     | triggers: copiar el régimen de impuesto de cada línea, recalcular los
     | totales, tomar el correlativo del comprobante con bloqueo de fila, y
     | calcular el arqueo al cerrar caja.
