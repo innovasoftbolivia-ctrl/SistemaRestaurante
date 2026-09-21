@@ -17,7 +17,7 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: ventas123
-        # Mismo puerto que sistema-ventas/phpunit.xml (DB_PORT=13310): así el
+        # Mismo puerto que sistema-restaurante/phpunit.xml (DB_PORT=13310): así el
         # workflow no necesita pisar esa configuración para correr aquí.
         ports:
           - 13310:3306
@@ -38,7 +38,7 @@ jobs:
           coverage: none
 
       - name: Dependencias de Composer
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Node
@@ -50,13 +50,13 @@ jobs:
       # prueba que renderice una vista real revienta con 500 (Vite manifest
       # not found), aunque la prueba en sí no tenga nada que ver con el front.
       - name: Compilar assets
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: |
           npm ci
           npm run build
 
       - name: Clave de aplicación
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         # phpunit.xml fuerza casi todo lo demás (ver DB_* con force="true"),
         # pero no trae APP_KEY: sin este paso, Laravel arranca sin clave de
         # cifrado y las pruebas HTTP (sesión, cookies firmadas) fallan.
@@ -72,7 +72,7 @@ jobs:
             mysql --host=127.0.0.1 --port=13310 --default-character-set=utf8mb4 -uroot -pventas123
 
       - name: Pruebas
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: php artisan test
 
       # La misma batería, pero contra una base a la que se le QUITARON los
@@ -98,7 +98,7 @@ jobs:
           echo "quedan $($MYSQL -N -e "SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='ventas_db_test';") procedimientos, $($MYSQL -N -e "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='ventas_db_test';") triggers y $($MYSQL -N -e "SELECT COUNT(*) FROM information_schema.VIEWS WHERE TABLE_SCHEMA='ventas_db_test';") vistas"
 
       - name: Pruebas con la lógica en PHP
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         env:
           LOGICA_EN_PHP: 'true'
         run: php artisan test
@@ -161,7 +161,7 @@ jobs:
           fi
 
       - name: Imagen de producción
-        run: docker build -f sistema-ventas/Dockerfile.prod -t ventas-prod sistema-ventas
+        run: docker build -f sistema-restaurante/Dockerfile.prod -t restaurante-prod sistema-restaurante
 
   estilo:
     runs-on: ubuntu-latest
@@ -175,11 +175,11 @@ jobs:
           coverage: none
 
       - name: Dependencias de Composer
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Pint (estilo de código PHP)
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: ./vendor/bin/pint --test
 
       - name: Node
@@ -188,13 +188,13 @@ jobs:
           node-version: 22
 
       - name: Dependencias de npm
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: npm ci
 
       - name: ESLint
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: npm run lint
 
       - name: Prettier
-        working-directory: sistema-ventas
+        working-directory: sistema-restaurante
         run: npm run format

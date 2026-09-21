@@ -7,7 +7,7 @@
 #   ./scripts/crear-usuario-app.sh
 #
 # Toma DB_PASSWORD (root) y DB_APP_PASSWORD del .env de la raíz. Después hay
-# que poner en sistema-ventas/.env.docker:
+# que poner en sistema-restaurante/.env.docker:
 #
 #   DB_USERNAME=ventas_app
 #   DB_PASSWORD=<DB_APP_PASSWORD>
@@ -26,14 +26,14 @@ if [ -z "$DB_APP_PASSWORD" ]; then
     exit 1
 fi
 
-CONTENEDOR="${VENTAS_MYSQL:-}"
+CONTENEDOR="${RESTAURANTE_MYSQL:-}"
 if [ -z "$CONTENEDOR" ]; then
-    for c in ventas_mysql_prod restaurante_mysql; do
+    for c in restaurante_mysql_prod restaurante_mysql; do
         if docker ps --format '{{.Names}}' | grep -qx "$c"; then CONTENEDOR="$c"; break; fi
     done
 fi
 if [ -z "$CONTENEDOR" ]; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
+    echo "No encuentro el contenedor de MySQL (restaurante_mysql_prod ni restaurante_mysql)." >&2
     exit 1
 fi
 
@@ -52,4 +52,4 @@ GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE, SHOW VIEW, TRIGGER, LOCK TABLES
 GRANT SHOW_ROUTINE ON *.* TO 'ventas_app'@'%';
 SQL
 
-echo "Listo: ventas_app en $CONTENEDOR. Cambia DB_USERNAME/DB_PASSWORD en sistema-ventas/.env.docker y recrea la aplicación."
+echo "Listo: ventas_app en $CONTENEDOR. Cambia DB_USERNAME/DB_PASSWORD en sistema-restaurante/.env.docker y recrea la aplicación."

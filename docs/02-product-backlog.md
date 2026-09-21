@@ -32,14 +32,9 @@
 | EP9 | Configuración y auditoría | Parámetros del negocio, bitácora y respaldos | Medio |
 | EP10 | Cocina | Pantalla de preparación, entrega del pedido y comanda impresa | Crítico |
 
-> **Cambio respecto de la versión 1.** El sistema nació como punto de venta de un minimarket.
-> Al pasar a restaurante se retiraron la épica de **Inventario** (stock, kardex, ingresos,
-> ajustes y alertas de reposición) y las **devoluciones** de cliente: lo que se sirvió no
-> vuelve a la carta, así que la única corrección de una venta cobrada es anularla entera.
-> EP4 pasa a ser **Pedidos**, EP7 queda solo con **Anulaciones** y se agrega
-> **EP10 Cocina**. Las historias retiradas (HU-17 a HU-22, HU-30, HU-37 y HU-41) no se
-> reutilizan: sus números quedan libres para que la trazabilidad con la versión anterior no
-> se confunda.
+> **Fuera de alcance.** El restaurante no lleva **inventario** (stock, kardex, ingresos,
+> ajustes y alertas de reposición) ni **devoluciones** de cliente: lo que se sirvió no
+> vuelve a la carta, y una venta equivocada se anula entera.
 
 > **Cambio respecto de la versión 2** (18/09/2026). El cliente **pide y paga en la caja**
 > —primero se paga—, recibe un ticket con el número del pedido, se sienta donde quiera y
@@ -478,7 +473,7 @@ aceptación se expresan en formato **Gherkin** (Dado / Cuando / Entonces).
    - **Entonces** lleva `PEDIDO` `#8` `PARA LLEVAR` y, debajo, "Ana".
 
 3. **Escenario: una venta que no salió de un pedido**
-   - **Dado** una venta del sistema anterior, anterior a los pedidos
+   - **Dado** una venta registrada sin pedido (no tiene `pedido_id`)
    - **Entonces** el comprobante no imprime ninguna línea de pedido.
 
 **Definición de Terminado**

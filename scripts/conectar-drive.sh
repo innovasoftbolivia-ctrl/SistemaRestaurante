@@ -6,8 +6,8 @@
 #
 #   ./scripts/conectar-drive.sh                  # pide el permiso y lo prueba
 #   CARPETA=<id o enlace> ./scripts/conectar-drive.sh
-#   VENTAS_APP=otro_contenedor ./scripts/conectar-drive.sh
-#   (solo, busca ventas_app_prod y restaurante_app, en ese orden, y prefiere
+#   RESTAURANTE_APP=otro_contenedor ./scripts/conectar-drive.sh
+#   (solo, busca restaurante_app_prod y restaurante_app, en ese orden, y prefiere
 #   el que esté corriendo)
 #
 # Cómo funciona. Los respaldos de cada noche (`respaldo:crear`) se suben con
@@ -30,7 +30,7 @@
 # correo. Este script lo guarda solo dentro del volumen de la aplicación
 # (storage/app/rclone, que no va a git ni a los respaldos).
 #
-# Al terminar, en sistema-ventas/.env.docker:
+# Al terminar, en sistema-restaurante/.env.docker:
 #
 #   RESPALDOS_NUBE=drive:
 #
@@ -58,9 +58,9 @@ detectar() {
     return 1
 }
 
-if ! APP="$(detectar "${VENTAS_APP:-}" ventas_app_prod restaurante_app)"; then
-    echo "No encuentro el contenedor de la aplicación corriendo (ventas_app_prod ni restaurante_app)." >&2
-    echo "Levanta el stack primero. Si usa otro nombre: VENTAS_APP=... $0" >&2
+if ! APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app)"; then
+    echo "No encuentro el contenedor de la aplicación corriendo (restaurante_app_prod ni restaurante_app)." >&2
+    echo "Levanta el stack primero. Si usa otro nombre: RESTAURANTE_APP=... $0" >&2
     exit 1
 fi
 
@@ -119,7 +119,7 @@ rclone_app deletefile "$REMOTO:$PRUEBA"
 docker exec -u www-data "$APP" rm -f "/tmp/$PRUEBA"
 
 echo
-echo "Listo: Drive conectado. Falta, si todavía no está, en sistema-ventas/.env.docker:"
+echo "Listo: Drive conectado. Falta, si todavía no está, en sistema-restaurante/.env.docker:"
 echo
 echo "    RESPALDOS_NUBE=${REMOTO}:"
 echo

@@ -14,8 +14,8 @@
 # Variables que acepta:
 #   CONFIRMAR=si    no preguntar
 #   SIN_FOTOS=si    restaurar solo la base
-#   VENTAS_MYSQL    nombre del contenedor de MySQL (se autodetecta)
-#   VENTAS_APP      nombre del contenedor de la aplicación (se autodetecta)
+#   RESTAURANTE_MYSQL    nombre del contenedor de MySQL (se autodetecta)
+#   RESTAURANTE_APP      nombre del contenedor de la aplicación (se autodetecta)
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -48,9 +48,9 @@ detectar() {
     return 1
 }
 
-if ! CONTENEDOR="$(detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod restaurante_mysql)"; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
-    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: VENTAS_MYSQL=... $0" >&2
+if ! CONTENEDOR="$(detectar "${RESTAURANTE_MYSQL:-}" restaurante_mysql_prod restaurante_mysql)"; then
+    echo "No encuentro el contenedor de MySQL (restaurante_mysql_prod ni restaurante_mysql)." >&2
+    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: RESTAURANTE_MYSQL=... $0" >&2
     exit 1
 fi
 
@@ -97,7 +97,7 @@ gunzip -c "$ARCHIVO" | docker exec -i "$CONTENEDOR" \
 echo "Restaurado «$BASE» desde $ARCHIVO."
 
 if [ -n "$FOTOS" ]; then
-    if APP="$(detectar "${VENTAS_APP:-}" ventas_app_prod restaurante_app ventas_app)"; then
+    if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app ventas_app)"; then
         gunzip -c "$FOTOS" | docker exec -i "$APP" tar -xf - -C storage/app
         echo "Repuestas las fotos de producto desde $FOTOS."
     else

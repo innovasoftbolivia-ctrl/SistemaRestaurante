@@ -8,32 +8,18 @@
 #   ./scripts/aplicar-parches.sh --aplicar     # aplica lo pendiente, en orden
 #   ./scripts/aplicar-parches.sh --aplicar --forzar   # incluso los que van fuera de orden
 #   BASE=ventas_db_cliente2 ./scripts/aplicar-parches.sh --aplicar
-#   VENTAS_MYSQL=otro_contenedor ./scripts/aplicar-parches.sh
-#   (solo, busca ventas_mysql_prod y restaurante_mysql, en ese orden, y
+#   RESTAURANTE_MYSQL=otro_contenedor ./scripts/aplicar-parches.sh
+#   (solo, busca restaurante_mysql_prod y restaurante_mysql, en ese orden, y
 #   prefiere el que esté corriendo)
 #
-# Importante — no todos los parches son para todas las instalaciones:
-#
-#   * Los que CORRIGEN una regla de negocio o el esquema (p. ej. cómo se
-#     calcula el efectivo esperado) ya quedan incorporados en
-#     docs/sql/01_schema_mysql.sql: una base creada HOY con ese archivo no
-#     necesita volver a aplicarlos, y este script los deja marcados como
-#     aplicados solos la primera vez que corre contra una base así (no
-#     encuentra nada que corregir y el parche está escrito para no fallar
-#     en ese caso — son idempotentes).
-#
-#   * Los que cargaban el CATÁLOGO del minimarket (abarrotes_catalogo_real,
-#     bebidas_catalogo_real, categoria_cigarrillos, sin_impuesto) eran datos
-#     del sistema de ventas anterior. Usan columnas que el restaurante ya no
-#     tiene, y los que no fallaran meterían abarrotes en el menú. El script
-#     los deja fuera SIEMPRE y ya no acepta --catalogo. Los archivos se quedan
-#     en docs/sql/parches porque son historia: las bases instaladas antes de
-#     la conversión los tienen anotados en `parches_aplicados`.
+# Cada corrección del esquema se escribe dos veces: como parche aquí, para las
+# bases que ya están instaladas, y dentro de docs/sql/01_schema_mysql.sql, para
+# las que se creen desde cero. Por eso una base creada hoy no necesita ninguno:
+# nace con ellos anotados, y el script no encuentra nada pendiente.
 #
 # El registro de qué se aplicó vive en la propia base, en la tabla
 # `parches_aplicados`. Una base creada con 01_schema_mysql.sql ya la trae con
-# los parches de esquema anotados (los del minimarket no, a propósito); en una
-# base más vieja se crea sola la primera vez.
+# los parches anotados; en una base más vieja se crea sola la primera vez.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -43,40 +29,18 @@ DIRECTORIO="docs/sql/parches"
 APLICAR=0
 FORZAR=0
 
-# El catálogo del minimarket: no entra nunca, ni pidiéndolo.
-PARCHES_DEL_MINIMARKET=(
-    2026_08_23_abarrotes_catalogo_real.sql
-    2026_08_23_bebidas_catalogo_real.sql
-    2026_08_23_categoria_cigarrillos.sql
-    2026_08_23_sin_impuesto.sql
-)
-
 for arg in "$@"; do
     case "$arg" in
         --aplicar) APLICAR=1 ;;
         --forzar) FORZAR=1 ;;
-        --catalogo)
-            echo "--catalogo ya no existe: cargaba el catálogo del sistema de ventas anterior (abarrotes," >&2
-            echo "bebidas, cigarrillos) sobre columnas que el restaurante ya no tiene. El menú se arma" >&2
-            echo "desde la pantalla Menú. Nada se tocó." >&2
-            exit 1
-            ;;
     esac
 done
 
-es_del_minimarket() {
-    local archivo="$1" c
-    for c in "${PARCHES_DEL_MINIMARKET[@]}"; do
-        [ "$c" = "$archivo" ] && return 0
-    done
-    return 1
-}
-
 # Mismo criterio que backup-db.sh: el contenedor de producción primero, después
-# el del stack de desarrollo del restaurante. NUNCA `ventas_mysql`: es el
-# MySQL del sistema de ventas, que sigue vivo en esta misma máquina, y un
-# parche del restaurante aplicado ahí le borró el inventario (19/09/2026). Antes el nombre era fijo (el de desarrollo) y en el servidor
-# del cliente el script respondía «no encuentro el contenedor».
+# el del stack de desarrollo. Si ninguno corre, el primero que exista, para que
+# el error siguiente diga de cuál se trata. Antes el nombre era fijo (el de
+# desarrollo) y en el servidor del cliente el script respondía «no encuentro el
+# contenedor».
 detectar() {
     local explicito="$1"; shift
     if [ -n "$explicito" ]; then echo "$explicito"; return 0; fi
@@ -99,9 +63,9 @@ if [ -f .env ]; then
 fi
 DB_PASSWORD="${DB_PASSWORD:-ventas123}"
 
-if ! CONTENEDOR="$(detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod restaurante_mysql)"; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
-    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: VENTAS_MYSQL=... $0" >&2
+if ! CONTENEDOR="$(detectar "${RESTAURANTE_MYSQL:-}" restaurante_mysql_prod restaurante_mysql)"; then
+    echo "No encuentro el contenedor de MySQL (restaurante_mysql_prod ni restaurante_mysql)." >&2
+    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: RESTAURANTE_MYSQL=... $0" >&2
     exit 1
 fi
 
@@ -119,9 +83,7 @@ SQL
 PENDIENTES=()
 for ruta in "$DIRECTORIO"/*.sql; do
     archivo="$(basename "$ruta")"
-    if es_del_minimarket "$archivo"; then
-        continue
-    fi
+    [ -e "$ruta" ] || continue
     ya="$(mysql -N "$BASE" -e "SELECT 1 FROM parches_aplicados WHERE archivo = '${archivo//\'/\'\'}'" 2>/dev/null || true)"
     [ -z "$ya" ] && PENDIENTES+=("$archivo")
 done

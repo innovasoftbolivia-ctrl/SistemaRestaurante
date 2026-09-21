@@ -29,8 +29,8 @@
 #
 # Variables que acepta:
 #   RETENTION_DAYS    días que se conservan las copias (14)
-#   VENTAS_MYSQL      nombre del contenedor de MySQL (se autodetecta)
-#   VENTAS_APP        nombre del contenedor de la aplicación (se autodetecta)
+#   RESTAURANTE_MYSQL      nombre del contenedor de MySQL (se autodetecta)
+#   RESTAURANTE_APP        nombre del contenedor de la aplicación (se autodetecta)
 #   DESTINO_EXTERNO   carpeta fuera de este servidor (disco USB, montaje de
 #                     red...) donde copiar también cada respaldo. Ver la nota
 #                     al final del script: sin esto, la copia muere con el
@@ -63,9 +63,9 @@ detectar() {
     return 1
 }
 
-if ! CONTENEDOR="$(detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod restaurante_mysql)"; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
-    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: VENTAS_MYSQL=... $0" >&2
+if ! CONTENEDOR="$(detectar "${RESTAURANTE_MYSQL:-}" restaurante_mysql_prod restaurante_mysql)"; then
+    echo "No encuentro el contenedor de MySQL (restaurante_mysql_prod ni restaurante_mysql)." >&2
+    echo "¿Está levantado \`docker compose\`? Si usa otro nombre: RESTAURANTE_MYSQL=... $0" >&2
     exit 1
 fi
 
@@ -114,7 +114,7 @@ echo "Base guardada en $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1))"
 # funciona igual en los dos casos, sin tener que saber cuál es.
 FOTOS="$DESTINO/ventas_fotos_${MARCA}.tar.gz"
 
-if APP="$(detectar "${VENTAS_APP:-}" ventas_app_prod restaurante_app ventas_app)"; then
+if APP="$(detectar "${RESTAURANTE_APP:-}" restaurante_app_prod restaurante_app ventas_app)"; then
     if docker exec "$APP" tar -czf - -C storage/app public > "${FOTOS}.tmp" 2>/dev/null; then
         mv "${FOTOS}.tmp" "$FOTOS"
         echo "Fotos guardadas en $FOTOS ($(du -h "$FOTOS" | cut -f1))"

@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.7
+#
+# Imagen de PRODUCCIÓN del Sistema de Restaurante.
+#
+# A diferencia de Dockerfile (desarrollo — código por bind mount, corre como
+# root, PHP en modo "avísame de todo"), esta imagen:
+#   - hornea el código y las dependencias DENTRO de la imagen: nada de bind
+#     mount, así que lo que corre en el servidor es exactamente lo que se
+#     construyó y probó, no lo que haya quedado sobre el disco del host;
+#   - corre como un usuario sin privilegios, no como root;
+#   - trae el autoloader de Composer optimizado y sin las dependencias de
+#     desarrollo (PHPUnit, Faker, ...).
+#
+# Los assets del frontend (Vite) NO se compilan aquí: se generan una vez en
+# el host (o en CI) con `npm ci && npm run build` antes de construir esta
+# imagen, y `COPY . .` los recoge de `public/build/` igual que al resto del
+# código. Así nginx —que sirve esos ficheros directo desde el disco del
+# host, sin pasar por PHP— y esta imagen ven siempre los mismos assets, sin
+# tener que sacarlos de una capa de Docker para volver a ponerlos en el host.
+#
+#   npm ci && npm run build                                  (una vez, antes)
+#   docker compose -f docker-compose.prod.yml up -d --build   (levanta todo)
+
+FROM php:8.4-fpm-alpine
+
+# install-php-extensions resuelve por su cuenta las librerías del sistema que
+# necesita cada extensión, y evita una lista larga y frágil de `apk add`.
+COPY --from=mlocati/php-extension-installer:latest \
+     /usr/bin/install-php-extensions /usr/local/bin/
+
+# pdo_mysql -> la base ventas_db
+# mbstring  -> nombres con acentos en productos, clientes y comprobantes
+# bcmath    -> importes y totales sin errores de coma flotante
+# intl      -> formato de fechas y números en es-BO
+# gd        -> fotos de producto
+# zip       -> lo usa Composer para instalar desde caché
+# opcache   -> el código está horneado en la imagen: aquí es donde de verdad
+#              rinde (ver php.prod.ini, `validate_timestamps = 0`)
+RUN install-php-extensions \
+        pdo_mysql \
+        mbstring \
+        bcmath \
+        intl \
+        gd \
+        zip \
+        opcache
+
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+
+# El cliente de MySQL permite recargar el esquema o inspeccionar datos desde
+# dentro del contenedor sin depender de tenerlo en el host. su-exec deja
+# correr los comandos de artisan del arranque como `www-data` en vez de como
+# root (ver entrypoint.prod.sh) — es la alternativa ligera a gosu en Alpine.
+# rclone sube cada respaldo de la noche a Google Drive (ver
+# App\Services\Respaldos y scripts/conectar-drive.sh).
+RUN apk add --no-cache mariadb-client mariadb-connector-c su-exec rclone
+
+WORKDIR /var/www/html
+
+COPY docker/php/php.prod.ini /usr/local/etc/php/conf.d/zz-ventas.ini
+COPY docker/php/entrypoint.prod.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint
+
+# El código, ya sin lo que excluye .dockerignore (vendor/ del host,
+# node_modules/, .env*, logs, cachés compiladas): se instala vendor/ aparte,
+# abajo, con el Composer de la imagen — el vendor/ de un Windows de
+# desarrollo trae binarios que no valen en este Linux.
+#
+# `www-data` es el usuario con el que la imagen oficial de php-fpm ya corre
+# los workers del pool (ver /usr/local/etc/php-fpm.d/www.conf): es quien
+# ejecuta todo el PHP de la aplicación, así que es quien tiene que ser dueño
+# del código.
+COPY --chown=www-data:www-data . .
+
+# --no-dev: nada de PHPUnit, Faker ni Laravel Pint en la imagen que corre en
+# el servidor del cliente. --optimize-autoloader + --classmap-authoritative:
+# el autoloader más rápido que Composer sabe generar, porque la imagen es
+# inmutable —no hace falta seguir descubriendo clases nuevas en cada
+# petición como si el código pudiera cambiar bajo los pies.
+RUN composer install \
+        --no-dev \
+        --no-interaction \
+        --prefer-dist \
+        --optimize-autoloader \
+        --classmap-authoritative \
+    && composer clear-cache
+
+# Directorios que la aplicación necesita poder escribir. El contenido real
+# de `storage/app/public` y `storage/logs` vive en volúmenes aparte (ver
+# docker-compose.prod.yml): esto solo asegura que existan con el dueño
+# correcto antes de montarlos encima.
+RUN mkdir -p storage/framework/cache/data \
+             storage/framework/sessions \
+             storage/framework/views \
+             storage/framework/testing \
+             storage/logs \
+             storage/app/public \
+             storage/app/respaldos \
+             bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache
+
+EXPOSE 9000
+
+# El master de php-fpm arranca como root y NO ejecuta código de la
+# aplicación: solo administra el pool. Los workers —que son los que corren
+# todo el PHP, atienden las peticiones y escriben ficheros— bajan a
+# `www-data` según /usr/local/etc/php-fpm.d/www.conf. Así funciona php-fpm
+# por diseño, y hace falta que el master conserve root para poder cambiar de
+# usuario al levantar cada worker: bajarlo a él también (con su-exec, por
+# ejemplo) rompe el arranque, empezando porque ya no puede abrir su log.
+ENTRYPOINT ["entrypoint"]
+CMD ["php-fpm"]

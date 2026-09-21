@@ -737,8 +737,8 @@ CREATE TABLE comprobantes (
 --  aparte: se traduce el pedido a una venta normal (`Pedidos::cobrar`), con
 --  sus pagos, su comprobante y su efecto en el arqueo.
 --
---  Hasta el 2026-09-18 había mesas y cuentas que quedaban abiertas para
---  cobrarse después; se retiraron (parche 2026_09_18_sin_mesas.sql).
+--  El local no tiene mesas ni cuentas abiertas: se cobra al pedir, y el pedido
+--  solo queda abierto cuando su cobro se anuló y hay que rehacerlo.
 
 -- Un pedido, para comer aquí (LOCAL) o para llevar.
 --
@@ -1065,7 +1065,7 @@ BEGIN
 END$$
 
 -- 9.8 Lo documentado no se borra, lo cerrado no crece, y en un turno cerrado
---      no entra nada más (parche 2026_09_20_1). Impiden lo que la aplicación
+--      no entra nada más. Impiden lo que la aplicación
 --      nunca hace: no tienen réplica en `ReglasEnPhp`, igual que
 --      `trg_ventas_before_delete`.
 CREATE TRIGGER trg_comprobantes_before_delete
@@ -1577,14 +1577,15 @@ SELECT j.dia                   AS dia,
 -- =============================================================================
 --  12. REGISTRO DE PARCHES
 --
---  `scripts/aplicar-parches.sh` anota acá cada parche que aplica. Una base
---  creada con este archivo ya trae todo lo que corrigen los parches de esquema,
---  así que nacen registrados: sin esto, el script los veía a los treinta y
---  tantos como pendientes y aplicarlos a ciegas volvía a correr también los de
---  catálogo. Los de catálogo (datos de un negocio concreto) NO se registran: se
---  aplican solo si esta instalación los quiere.
+--  `scripts/aplicar-parches.sh` anota aquí cada parche que aplica, y lee de
+--  aquí lo que ya está hecho. Una base creada con este archivo nace con el
+--  esquema completo, así que los parches que ese esquema ya incorpora tienen
+--  que nacer registrados: sin eso, el script los vería pendientes y los
+--  aplicaría a ciegas.
 --
---  Cada parche nuevo se agrega a esta lista (lo exige InstalacionLimpiaTest).
+--  Hoy la lista está vacía: este esquema es el punto de partida. Cada parche
+--  nuevo de docs/sql/parches se agrega también aquí (lo exige
+--  MenoresDeCierreTest).
 -- =============================================================================
 
 CREATE TABLE parches_aplicados (
@@ -1592,58 +1593,4 @@ CREATE TABLE parches_aplicados (
     aplicado_en DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
-INSERT INTO parches_aplicados (archivo) VALUES
-    ('2026_08_21_devolucion_con_impuesto.sql'),
-    ('2026_08_21_mas_vendidos_neto.sql'),
-    ('2026_08_26_devolucion_solo_efectivo.sql'),
-    ('2026_09_04_cajero_no_cierra_caja.sql'),
-    ('2026_09_04_compras_normalizadas.sql'),
-    ('2026_09_05_sesion_unica_por_cajero.sql'),
-    ('2026_09_09_cobros_qr.sql'),
-    ('2026_09_10_configuracion_muerta.sql'),
-    ('2026_09_10_documentos_bolivia.sql'),
-    ('2026_09_10_empaque_con_decimales.sql'),
-    ('2026_09_10_empaque_del_producto.sql'),
-    ('2026_09_10_unidad_en_el_ticket.sql'),
-    ('2026_09_11_devolucion_al_proveedor.sql'),
-    ('2026_09_11_lotes_y_vencimiento.sql'),
-    ('2026_09_11_reposicion_pendiente.sql'),
-    ('2026_09_13_iva_boliviano.sql'),
-    ('2026_09_13_moneda_por_omision.sql'),
-    ('2026_09_13_permiso_bitacora.sql'),
-    ('2026_09_13_permiso_respaldos.sql'),
-    ('2026_09_13_toma_de_inventario.sql'),
-    ('2026_09_14_devolucion_medio_de_reembolso.sql'),
-    ('2026_09_14_egreso_max_cajero.sql'),
-    ('2026_09_14_qr_imagen_del_banco.sql'),
-    ('2026_09_15_anular_con_producto_repetido.sql'),
-    ('2026_09_15_caja_fondo_y_nota_de_cierre.sql'),
-    ('2026_09_15_cambio_de_password_obligatorio.sql'),
-    ('2026_09_15_costo_historico_y_ranking.sql'),
-    ('2026_09_15_devolucion_con_impuesto_incluido.sql'),
-    ('2026_09_15_factura_a_persona_natural_con_nit.sql'),
-    ('2026_09_15_impuesto_con_descuento_exacto.sql'),
-    ('2026_09_15_lote_salidas.sql'),
-    ('2026_09_15_plazo_devolucion_y_referencia_de_pago.sql'),
-    ('2026_09_15_precios_con_impuesto_incluido.sql'),
-    ('2026_09_16_permisos_por_rol.sql'),
-    ('2026_09_16_reglas_en_la_base.sql'),
-    ('2026_09_17_eliminar_inventario_y_devoluciones.sql'),
-    ('2026_09_17_mesas_y_pedidos.sql'),
-    ('2026_09_17_numero_diario_de_pedido.sql'),
-    ('2026_09_17_sin_codigo_de_barras.sql'),
-    ('2026_09_17_sin_costo_de_compra.sql'),
-    ('2026_09_17_sin_unidades_de_medida.sql'),
-    ('2026_09_18_comanda.sql'),
-    ('2026_09_18_jornada_del_pedido.sql'),
-    ('2026_09_18_pasa_por_cocina.sql'),
-    ('2026_09_18_permiso_del_menu.sql'),
-    ('2026_09_18_sin_mesas.sql'),
-    ('2026_09_18_sin_mozos.sql'),
-    ('2026_09_19_1_logica_igual_en_las_dos_vias.sql'),
-    ('2026_09_19_2_la_venta_guarda_su_pedido.sql'),
-    ('2026_09_19_3_configuracion_y_limpieza.sql'),
-    ('2026_09_19_4_emisor_documentos_y_detalle.sql'),
-    ('2026_09_19_5_identificadores_sin_tope.sql'),
-    ('2026_09_19_6_sin_pantalla_de_respaldos.sql'),
-    ('2026_09_20_1_lo_cerrado_no_se_toca.sql');
+

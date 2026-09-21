@@ -21,7 +21,7 @@
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FUENTE="$RAIZ/sistema-ventas"
+FUENTE="$RAIZ/sistema-restaurante"
 
 # Vive fuera del repositorio: lleva el .env de la demo y las fotos de los
 # productos, que no se versionan.
@@ -37,7 +37,7 @@ BUILD="$SALIDA/build/htdocs"
 
 echo "== 1/6  compilando los assets =========================================="
 # En el contenedor, que es donde los node_modules están completos: el de Vite
-# del stack del restaurante, o el del sistema de ventas si es el que corre.
+# del stack que esté corriendo.
 VITE=""
 for c in restaurante_vite ventas_vite; do
     if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then VITE="$c"; break; fi

@@ -8,8 +8,9 @@
 > La fuente de verdad es `01_schema_mysql.sql`. Este documento lo explica; si alguna vez se
 > contradicen, manda el script.
 >
-> La base se sigue llamando **`ventas_db`**, igual que en el sistema anterior: es el nombre
-> que usan los scripts, los parches y las pruebas, y cambiarlo no ganaba nada.
+> La base se llama **`ventas_db`**: son las ventas del restaurante, y es el nombre que usan
+> los scripts, los parches y las pruebas. Renombrarla obligaría a migrar los datos sin ganar
+> nada, porque vive en su propio contenedor.
 
 ---
 
@@ -123,35 +124,6 @@ foráneas, 44 restricciones `CHECK` y 17 columnas generadas.
 > **"Menú" es el nombre de la pantalla, no de la tabla.** La interfaz dice *Menú* y la URL es
 > `/menu`, pero por dentro siguen siendo la tabla `productos`, el modelo `Producto`, las rutas
 > `productos.*` y el permiso `productos.gestionar`. Se cambió la etiqueta, no el esquema.
-
-### Qué se retiró respecto del sistema anterior
-
-El sistema nació como punto de venta de un minimarket. Al pasar a restaurante, los parches
-del 17/09/2026 (§3.11) retiraron del esquema lo del minimarket:
-
-| Retirado | Tablas y columnas | Por qué |
-|----------|-------------------|---------|
-| Inventario | `movimientos_inventario`, `compras`, `compra_detalle`, `lotes`, `lote_salidas`, `devoluciones_compra`, `devolucion_compra_detalle`, `tomas_inventario`, `toma_inventario_detalle`, `proveedores`; `productos.stock_actual`, `stock_minimo`, `proveedor_id`, `contenido_empaque`, `nombre_empaque`, `controla_vencimiento` | Un restaurante de este tamaño no lleva kardex de insumos. Queda **fuera de alcance**. |
-| Devoluciones de cliente | `devoluciones`, `devolucion_detalle`; `ventas.total_devuelto`, `venta_detalle.cantidad_devuelta`, estados `DEVUELTA` / `DEVUELTA_PARCIAL` | Lo que se sirvió no vuelve a la carta: una venta equivocada se **anula** entera. |
-| Unidades de medida | `unidades_medida`; `productos.unidad_medida_id`, `venta_detalle.unidad` | Todo se despacha por porción. |
-| Precio de compra | `productos.precio_compra`, `venta_detalle.costo_unitario` | El plato se hace en la casa: no hay costo que registrar ni margen que calcular. |
-| Código de barras | `productos.codigo_barras` y `uq_productos_barras` | Nadie escanea un plato. El código interno (`productos.codigo`) se queda. |
-
-Con ellos se fueron los triggers `trg_venta_detalle_after_insert` (descontaba stock),
-`trg_movimientos_inventario_before_insert` y `trg_devolucion_detalle_after_insert`, las
-vistas `v_alertas_stock` y `v_kardex`, y los permisos `inventario.ingresar` /
-`inventario.ajustar`. El rol Almacenero dejó de existir: el parche pasa sus cuentas a
-Cajero en lugar de desactivarlas, y un administrador les ajusta el rol después.
-
-Los parches del 19/09 retiraron además lo que nadie usaba o repetía otro dato:
-`pedidos.venta_id` y `pedidos.cliente_id` (ahora la venta apunta a su pedido y el cliente es
-de la venta), `pedidos.telefono_cliente`, `comprobantes.archivo_pdf`,
-`venta_detalle.descuento` (valía siempre 0), las claves de configuración de las series y del
-símbolo de la moneda, cuatro vistas que ninguna pantalla leía y un índice redundante
-(§3.11).
-
-En el restaurante se cobra al pedir. Un pedido solo queda `ABIERTO` a la vista cuando se
-anula su venta, para **volver a cobrarlo** con el mismo número (§3.6).
 
 ## 3.4 Auditoría de normalización (1FN → 3FN)
 
@@ -270,11 +242,10 @@ que se calcularía hoy, y eso es justamente lo que se quiere.
 - **`pedido_detalle` sin índice único por producto**, a diferencia de `venta_detalle`. El
   mostrador hoy manda una línea por plato, pero cada línea lleva su nota, su hora y su estado
   en la cocina: un índice único ataría la cocina a una sola nota por plato. El cobro agrupa por producto antes de pasar las líneas a la venta.
-- **`cantidad` sigue siendo `DECIMAL(12,3)`** aunque en el restaurante todo va por porción
-  entera. En la base están las ventas del minimarket, pesadas al gramo, y reescribirlas a
-  entero les cambiaría el importe. La cantidad entera la valida la aplicación
-  (`App\Services\Ventas` y `App\Services\Pedidos`); en `pedido_detalle`, que nació con el
-  restaurante y no arrastra historial pesado al gramo, la exige además `ck_pedidodet_entera`.
+- **`cantidad` es `DECIMAL(12,3)`** aunque todo se despacha por porción entera: deja abierta
+  la puerta a vender algo al peso sin migrar la tabla. Que hoy sea entera lo valida la
+  aplicación (`App\Services\Ventas` y `App\Services\Pedidos`), y en `pedido_detalle` lo exige
+  además `ck_pedidodet_entera`.
 - **`auditoria.(entidad, entidad_id)` es una referencia sin clave foránea**, y es la única
   del esquema. Es deliberado: la bitácora anota operaciones sobre tablas distintas (ventas,
   pedidos, líneas de pedido, comprobantes), incluidas filas que ya no existen, como las de
@@ -535,7 +506,8 @@ CONSTRAINT ck_ventas_precio_final CHECK (impuesto_incluido = 1 OR descuento_prec
 > El número de documento **no vive en `ventas`**: la venta es la operación comercial y el
 > documento entregado al cliente está en `comprobantes`. El pedido, en cambio, sí: la venta
 > que salió de un pedido lo dice en `pedido_id`, y lo sigue diciendo después de anulada.
-> Desde el 18/09 todas las del mostrador salen de uno; las del minimarket, no.
+> Toda venta del mostrador sale de un pedido; `pedido_id` admite nulo para las que se
+> registren por otra vía.
 
 ### `clientes` (persona natural / jurídica)
 
@@ -1120,7 +1092,7 @@ La forma recomendada es Docker: levanta MySQL 8 con el esquema y los datos ya ca
 instalar nada en la máquina. Ver [04-entorno-docker.md](04-entorno-docker.md).
 
 ```bash
-docker compose -f docker-compose.restaurante.yml up -d --build
+docker compose up -d --build
 ```
 
 Sobre un MySQL ya instalado, los scripts se ejecutan directamente y en este orden:
@@ -1142,7 +1114,7 @@ mysql --default-character-set=utf8mb4 -u root -p < docs/sql/02_datos_iniciales.s
 > datos de ejemplo ni contraseñas.
 
 **Estado de verificación:** el esquema no se verifica a mano sino con la batería de pruebas
-(`sistema-ventas/tests`), que corre contra una copia real en MySQL (`ventas_db_test`) y no
+(`sistema-restaurante/tests`), que corre contra una copia real en MySQL (`ventas_db_test`) y no
 contra SQLite, porque el modelo depende de columnas generadas, `ENUM`, triggers y
 procedimientos. Entre otras cosas comprueba que el esquema registre en `parches_aplicados`
 todos los parches de esquema que ya incorpora, que la base de producción
@@ -1173,49 +1145,17 @@ factura, sin cliente, de sustitución de comprobante y de lo que el modelo recha
   (5 por omisión). Cambiarla en plena noche no renumera nada: los pedidos ya abiertos
   conservan su jornada, y los siguientes toman la nueva.
 
-## 3.11 Migrar una base del sistema anterior
+## 3.11 Parches de la base
 
-Una base creada con el `01_schema_mysql.sql` actual **ya es** el modelo de restaurante de
-mostrador: no necesita parches. Una instalación existente se pone al día con los parches de
-`docs/sql/parches/`, que se aplican en orden alfabético —que es el de fecha—:
+Una base creada con `01_schema_mysql.sql` nace completa: no necesita ningún parche. Los
+parches son para las bases **ya instaladas**, y hoy no hay ninguno pendiente.
 
-- una base del **punto de venta anterior** (el minimarket) necesita los seis del
-  **17/09/2026**, después los seis del **18/09/2026**, los seis del **19/09/2026** y el del
-  **20/09/2026**;
-- una base creada con el esquema del restaurante del 17/09 necesita los seis del 18/09, los
-  seis del 19/09 y el del 20/09;
-- una creada con el esquema del 18/09, los seis del 19/09 y el del 20/09;
-- una creada con el del 19/09, solo el del 20/09.
+Cuando haya que corregir el esquema de una instalación en marcha, el cambio se escribe dos
+veces —un archivo en `docs/sql/parches/` y el mismo cambio dentro de `01_schema_mysql.sql`—,
+y el nombre del archivo se registra en la tabla `parches_aplicados` del esquema, para que una
+base nueva nazca sabiendo que ya lo trae. Cada parche es idempotente, y si toca datos del
+negocio comprueba antes y aborta sin cambiar nada cuando algo no cumple.
 
-| # | Parche | Qué hace | ¿Borra datos? |
-|:-:|--------|----------|:-------------:|
-| 1 | `2026_09_17_eliminar_inventario_y_devoluciones.sql` | Retira inventario, lotes, compras, devoluciones a proveedor, tomas de inventario, proveedores y devoluciones de cliente, con sus triggers, vistas y permisos; reescribe `sp_anular_venta` y `sp_cerrar_caja` sin stock ni devoluciones; elimina el rol Almacenero y pasa sus cuentas a Cajero | **Sí** |
-| 2 | `2026_09_17_mesas_y_pedidos.sql` | Crea `pedidos` y `pedido_detalle`, sus dos triggers, los permisos `pedidos.registrar` y `cocina.ver`, el rol Cocina y el cargo Cocinero. Crea además una estructura intermedia que deshacen los parches 11 y 12: sin efecto en una base del sistema de ventas | No |
-| 3 | `2026_09_17_numero_diario_de_pedido.sql` | Agrega `numero_dia`, la columna generada `fecha_dia` y `uq_pedido_numero_dia`; numera por día, en orden de apertura, los pedidos que ya existieran | No |
-| 4 | `2026_09_17_sin_codigo_de_barras.sql` | Quita `productos.codigo_barras` y `uq_productos_barras` | **Sí** |
-| 5 | `2026_09_17_sin_costo_de_compra.sql` | Rehace `v_productos_mas_vendidos` sin margen y quita `productos.precio_compra` y `venta_detalle.costo_unitario` | **Sí** |
-| 6 | `2026_09_17_sin_unidades_de_medida.sql` | Quita `productos.unidad_medida_id`, `venta_detalle.unidad` y la tabla `unidades_medida` | **Sí** |
-| 7 | `2026_09_18_comanda.sql` | Agrega `pedido_detalle.comandado_en` y `cancelacion_comandada_en`, en `NULL` para lo que ya existe: nunca salió en papel | No |
-| 8 | `2026_09_18_jornada_del_pedido.sql` | Agrega `configuracion.hora_corte_jornada` (5) y convierte `pedidos.fecha_dia` en la columna normal `jornada`, con el mismo valor que ya tenía cada fila; `uq_pedido_numero_dia` pasa a `(jornada, numero_dia)`. No renumera el historial | No |
-| 9 | `2026_09_18_pasa_por_cocina.sql` | Agrega `categorias.pasa_por_cocina` (en 0 para "Bebidas", solo la primera vez) y `pedido_detalle.pasa_por_cocina`, y alinea una sola vez lo ya pedido con su categoría | No |
-| 10 | `2026_09_18_permiso_del_menu.sql` | Solo el texto: el permiso `productos.gestionar` pasa al módulo "Menú" | No |
-| 11 | `2026_09_18_sin_mesas.sql` | Deja `pedidos.tipo` en `ENUM('LOCAL','LLEVAR')`, borra la estructura intermedia del parche 2 (una tabla, columnas, índices y un `CHECK` de `pedidos`), que en una base del sistema de ventas está vacía, y actualiza la descripción de `pedidos.registrar` | No |
-| 12 | `2026_09_18_sin_mozos.sql` | Deshace el rol y el cargo intermedios del parche 2: sin efecto en una base del sistema de ventas | No |
-| 13 | `2026_09_19_1_logica_igual_en_las_dos_vias.sql` | Iguala la base con PHP: las rutinas leen la configuración con `NULLIF(valor, '')` (un valor vacío cuenta como ausente) y `sp_anular_venta` rechaza anular una venta de un turno de caja cerrado. Solo reemplaza triggers y procedimientos | No |
-| 14 | `2026_09_19_2_la_venta_guarda_su_pedido.sql` | Agrega `ventas.pedido_id`, `pedido_cobrado_uk` y `uq_venta_pedido_cobrado`, y los llena desde `pedidos.venta_id` y, para las ventas anuladas que ya lo habían perdido, desde la bitácora (`PEDIDO_REABIERTO`); quita `pedidos.venta_id` (con `uq_pedido_venta`, `fk_pedidos_venta` y `ck_pedidos_venta`) y `pedidos.cliente_id`. Agrega los `CHECK` de coherencia de ventas, turnos, comprobantes, cobros QR y porciones enteras | No |
-| 15 | `2026_09_19_3_configuracion_y_limpieza.sql` | Crea `tipos_comprobante.serie_por_omision_id` con su FK compuesta, la llena con `serie_factura` y `serie_recibo` (la nota de venta, con su primera serie activa) y borra esas claves y `moneda_simbolo`; agrega los `CHECK` por clave de `configuracion`; quita `pedidos.telefono_cliente` y `comprobantes.archivo_pdf` (la aplicación nunca los llenó), cuatro vistas sin uso e `ix_detalle_venta`; el trigger del detalle copia siempre la tasa; `v_ventas_por_dia` agrupa por jornada; las FK del detalle a su cabecera pasan a `RESTRICT` | Dos columnas que la aplicación nunca llenó: solo se pierde algo si alguien las escribió a mano |
-| 16 | `2026_09_19_4_emisor_documentos_y_detalle.sql` | Agrega `comprobantes.emisor_*` y llena los ya emitidos con los datos del negocio **del día del parche**; quita `venta_detalle.descuento` y rehace `importe`, `impuesto_linea`, `total_linea` y `ck_detalle_precio`; crea `tipos_documento` y pasa `clientes.tipo_documento` y `empleados.tipo_documento` de `ENUM` a FK compuestas (los códigos no cambian); `comprobantes.cliente_tipo_documento` queda como texto sin FK | No |
-| 17 | `2026_09_19_5_identificadores_sin_tope.sql` | Pasa `cajas.id`, `roles.id` y `cargos.id` —y todo lo que los referencia— de `TINYINT` a `INT UNSIGNED`. Los datos no cambian | No |
-| 18 | `2026_09_19_6_sin_pantalla_de_respaldos.sql` | Quita el permiso `respaldos.gestionar` y su asignación a los roles: la pantalla de Respaldos ya no existe y el respaldo de cada noche corre por debajo | No |
-| 19 | `2026_09_20_1_lo_cerrado_no_se_toca.sql` | Lo que encontró la auditoría del 20/09: `comprobantes`, `venta_detalle`, `venta_pagos` y `pedido_detalle` no se borran; una venta anulada o con comprobante no admite más líneas ni pagos; un turno cerrado no admite movimientos ni cobros QR (triggers). `CHECK` nuevos: `ck_pedidos_cerrador`, `ck_sesion_declarado`, `ck_clientes_sin_doc`, `ck_series_longitud/serie/tope` (el número impreso ya no se corta), `ck_comprobante_persona` y `ck_config_largo`. `comprobantes.emitido_por` NOT NULL; `uq_comprobante_sustituye` (una sola sustitución); `ix_ventas_usuario (usuario_id, fecha)`; `metodos_pago.id` a `INT`; `v_ventas_por_metodo_pago` por jornada. Aborta sin tocar nada si algún dato no cumple | No |
-
-Los diecinueve son **idempotentes** —cada paso comprueba si queda algo por hacer— y se
-registran en `parches_aplicados`. Cuatro borran datos que no se recuperan (historial de
-compras, lotes, kardex y devoluciones; códigos de barras; costos; unidades): **hay que
-respaldar antes**. Los del 19/09 y el del 20/09 no borran datos del negocio, y cuatro de ellos (14, 15, 16 y 19)
-**comprueban antes de tocar nada** que ningún dato viole lo que agregan —los `CHECK` nuevos,
-las series de la configuración, un descuento por línea distinto de cero, un documento que no
-valga para ese cliente o empleado—: si algo falla, muestran qué y abortan sin cambiar nada, y
-hay que corregirlo a mano antes de volver a aplicarlos. Tras migrar, las cuentas que tenían el rol Almacenero quedan como Cajero: el Cajero
-además cobra y abre caja, así que conviene revisarlas. El procedimiento completo, con el script que los aplica, está en
-[04-entorno-docker.md](04-entorno-docker.md) §4.6.
+Cómo se escribe uno y cómo se comprueba que las dos vías dan el mismo esquema está en
+[`docs/sql/parches/LEEME.md`](sql/parches/LEEME.md); el script que los aplica, en
+[04-entorno-docker.md](04-entorno-docker.md) §4.5.
