@@ -425,7 +425,11 @@ class ReportesTest extends TestCase
         $libro = $this->libroDescargado(route('reportes.ventas.excel', $this->hoy()));
 
         $this->assertSame(
-            ['Resumen', 'Ventas por jornada', 'Por método de pago', 'Por cajero'],
+            [
+                'Resumen', 'Ventas por jornada', 'Por método de pago', 'Por cajero',
+                'Por hora del día', 'Por día de la semana', 'Comer aquí o para llevar',
+                'Descuentos por cajero', 'Ventas anuladas', 'Cuadre de caja',
+            ],
             collect($libro->getAllSheets())->map(fn ($h) => $h->getTitle())->all()
         );
 
@@ -438,7 +442,7 @@ class ReportesTest extends TestCase
         $libro = $this->libroDescargado(route('reportes.productos.excel'));
 
         $this->assertSame(
-            ['Resumen', 'Más vendidos'],
+            ['Resumen', 'Ranking', 'Por categoría', 'Sin ninguna venta'],
             collect($libro->getAllSheets())->map(fn ($h) => $h->getTitle())->all()
         );
     }

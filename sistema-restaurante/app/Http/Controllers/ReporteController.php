@@ -42,8 +42,13 @@ class ReporteController extends Controller
             'resumen' => $this->resumenVentas($desde, $hasta),
             'variacion' => $this->variacionVendido($desde, $hasta),
             'porDia' => $this->porDia($desde, $hasta),
+            'porHora' => $this->porHora($desde, $hasta),
+            'porDiaSemana' => $this->porDiaSemana($desde, $hasta),
+            'porTipo' => $this->porTipo($desde, $hasta),
             'porMetodo' => $this->porMetodoPago($desde, $hasta),
             'porCajero' => $this->porCajero($desde, $hasta),
+            'anuladas' => $this->anuladas($desde, $hasta),
+            'cuadres' => $this->cuadresDeCaja($desde, $hasta),
         ]);
     }
 
@@ -56,6 +61,9 @@ class ReporteController extends Controller
             'desde' => $desde,
             'hasta' => $hasta,
             'masVendidos' => $this->masVendidos($desde, $hasta),
+            'porCategoria' => $this->porCategoria($desde, $hasta),
+            'sinVentas' => $this->sinVentas($desde, $hasta),
+            'totalVendido' => $this->totalVendidoNeto($desde, $hasta),
         ]);
     }
 
@@ -132,6 +140,11 @@ class ReporteController extends Controller
         $dias = collect($this->porDia($desde, $hasta))->filter(fn ($d) => $d['ventas'] > 0)->values();
         $metodos = $this->porMetodoPago($desde, $hasta);
         $cajeros = $this->porCajero($desde, $hasta);
+        $horas = collect($this->porHora($desde, $hasta));
+        $semana = collect($this->porDiaSemana($desde, $hasta));
+        $tipos = $this->porTipo($desde, $hasta);
+        $anuladas = $this->anuladas($desde, $hasta);
+        $cuadres = $this->cuadresDeCaja($desde, $hasta);
 
         $totalMetodos = (float) $metodos->sum('monto');
         $totalCajeros = (float) $cajeros->sum('monto');
@@ -141,7 +154,8 @@ class ReporteController extends Controller
             ['etiqueta' => self::rotuloVendidoConImpuesto(), 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'.($tasa > 0 ? ', con el impuesto' : '')],
             ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas cobradas en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
-            ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'no cuentan en lo vendido'],
+            ['etiqueta' => 'Descuentos otorgados', 'valor' => $resumen['descuentos'], 'formato' => 'moneda', 'nota' => 'en '.$resumen['con_descuento'].' venta(s): lo que se dejó de cobrar'],
+            ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'por '.Config::importe($resumen['monto_anulado']).'; no cuentan en lo vendido'],
         ];
 
         if ($tasa > 0 && Config::facturacionVisible()) {
@@ -190,6 +204,66 @@ class ReporteController extends Controller
                 'totales' => ['Total', null, (int) $cajeros->sum('ventas'), null, $totalCajeros, $totalCajeros > 0 ? 1.0 : 0],
                 'vacia' => 'Nadie registró ventas en el período.',
             ],
+            [
+                'nombre' => 'Por hora del día',
+                'nota' => 'Cuándo se vende: sirve para decidir cuánta gente hace falta en cada momento.',
+                'cabeceras' => ['Hora', 'Ventas', self::rotuloVendidoConImpuesto()],
+                'formatos' => [null, 'entero', 'moneda'],
+                'alineacion' => ['izq', 'der', 'der'],
+                'filas' => $horas->map(fn ($h) => [$h['tramo'], $h['ventas'], $h['monto']])->all(),
+                'vacia' => 'No hubo ventas en el período.',
+            ],
+            [
+                'nombre' => 'Por día de la semana',
+                'nota' => 'El promedio es por jornada: en un mes no hay la misma cantidad de cada día.',
+                'cabeceras' => ['Día', 'Jornadas', 'Ventas', self::rotuloVendidoConImpuesto(), 'Promedio por jornada'],
+                'formatos' => [null, 'entero', 'entero', 'moneda', 'moneda'],
+                'alineacion' => ['izq', 'der', 'der', 'der', 'der'],
+                'filas' => $semana->map(fn ($d) => [$d['dia'], $d['jornadas'], $d['ventas'], $d['monto'], $d['promedio']])->all(),
+                'vacia' => 'No hubo ventas en el período.',
+            ],
+            [
+                'nombre' => 'Comer aquí o para llevar',
+                'cabeceras' => ['Pedido', 'Ventas', 'Ticket', self::rotuloVendidoConImpuesto()],
+                'formatos' => [null, 'entero', 'moneda', 'moneda'],
+                'alineacion' => ['izq', 'der', 'der', 'der'],
+                'filas' => $tipos->map(fn ($t) => [$t->tipo, $t->ventas, $t->ticket, $t->monto])->all(),
+                'vacia' => 'No hubo ventas en el período.',
+            ],
+            [
+                'nombre' => 'Descuentos por cajero',
+                'nota' => 'Lo que cada uno dejó de cobrar. Un descuento alto que se repite es lo primero que conviene revisar.',
+                'cabeceras' => ['Cajero', 'Usuario', 'Ventas con descuento', 'Descontado'],
+                'formatos' => [null, null, 'entero', 'moneda'],
+                'alineacion' => ['izq', 'izq', 'der', 'der'],
+                'filas' => $cajeros->filter(fn ($f) => (float) $f->descontado > 0)->sortByDesc('descontado')
+                    ->map(fn ($f) => [$f->empleado, $f->usuario, (int) $f->con_descuento, (float) $f->descontado])->values()->all(),
+                'vacia' => 'No se hicieron descuentos en el período.',
+            ],
+            [
+                'nombre' => 'Ventas anuladas',
+                'nota' => 'Quién cobró, quién anuló y por qué.',
+                'cabeceras' => ['Fecha', 'Documento', 'Cobró', 'Anuló', 'Motivo', 'Total'],
+                'formatos' => [null, null, null, null, null, 'moneda'],
+                'alineacion' => ['izq', 'izq', 'izq', 'izq', 'izq', 'der'],
+                'filas' => $anuladas->map(fn ($a) => [
+                    Carbon::parse($a->fecha)->format('d/m/Y H:i'), $a->numero_completo ?? '#'.$a->id, $a->cobro, $a->anulo, $a->motivo_anulacion, (float) $a->total,
+                ])->all(),
+                'totales' => ['Total', null, null, null, null, (float) $anuladas->sum('total')],
+                'vacia' => 'No se anuló ninguna venta en el período.',
+            ],
+            [
+                'nombre' => 'Cuadre de caja',
+                'nota' => 'Turnos cerrados en el período. Diferencia = contado − esperado: negativa es faltante, positiva sobrante.',
+                'cabeceras' => ['Cierre', 'Caja', 'Cajero', 'Esperado', 'Contado', 'Diferencia', 'Explicación'],
+                'formatos' => [null, null, null, 'moneda', 'moneda', 'moneda', null],
+                'alineacion' => ['izq', 'izq', 'izq', 'der', 'der', 'der', 'izq'],
+                'filas' => $cuadres->map(fn ($c) => [
+                    Carbon::parse($c->fecha_cierre)->format('d/m/Y H:i'), $c->caja, $c->usuario, (float) $c->monto_esperado, (float) $c->monto_declarado, (float) $c->diferencia, $c->observacion_cierre,
+                ])->all(),
+                'totales' => ['Total', null, null, (float) $cuadres->sum('monto_esperado'), (float) $cuadres->sum('monto_declarado'), (float) $cuadres->sum('diferencia'), null],
+                'vacia' => 'No se cerró ningún turno en el período.',
+            ],
         ]);
     }
 
@@ -201,22 +275,21 @@ class ReporteController extends Controller
     private function documentoProductos(Carbon $desde, Carbon $hasta): array
     {
         $ranking = $this->masVendidos($desde, $hasta)->values();
-
-        // El porcentaje, contra todo lo vendido en el período y no contra los
-        // veinte de la tabla: con cientos de ítems, esos veinte sumaban
-        // siempre 100 %.
+        $categorias = $this->porCategoria($desde, $hasta);
+        $sinVentas = $this->sinVentas($desde, $hasta);
         $totalVendido = $this->totalVendidoNeto($desde, $hasta);
 
         $indicadores = [
             ['etiqueta' => 'Ítems en el menú', 'valor' => Producto::where('activo', 1)->count(), 'formato' => 'entero', 'nota' => 'disponibles hoy'],
-            ['etiqueta' => 'Ítems vendidos', 'valor' => $ranking->count(), 'formato' => 'entero', 'nota' => 'distintos, entre los veinte primeros del período'],
+            ['etiqueta' => 'Ítems vendidos', 'valor' => $ranking->count(), 'formato' => 'entero', 'nota' => 'distintos, al menos una vez en el período'],
+            ['etiqueta' => 'Sin ninguna venta', 'valor' => $sinVentas->count(), 'formato' => 'entero', 'nota' => 'en la carta, pero nadie los pidió'],
             ['etiqueta' => self::rotuloVendidoSinImpuesto(), 'valor' => $totalVendido, 'formato' => 'moneda', 'nota' => 'neto de descuentos'.(Config::tasaImpuesto() > 0 ? ', antes del impuesto: no es el «Vendido (con impuesto)» del reporte de ventas' : ''), 'destacar' => true],
         ];
 
         $doc = $this->documento('Reporte del menú', $desde, $hasta, $indicadores, [
             [
-                'nombre' => 'Más vendidos',
-                'nota' => 'Los veinte primeros por importe, sin contar las ventas anuladas.',
+                'nombre' => 'Ranking',
+                'nota' => 'Todo lo vendido, por importe, sin contar las ventas anuladas.',
                 'cabeceras' => ['#', 'Código', 'Ítem del menú', 'Categoría', 'Unidades', self::rotuloVendidoSinImpuesto(), '% del total'],
                 'formatos' => ['entero', null, null, null, 'decimal', 'moneda', 'porcentaje'],
                 'alineacion' => ['der', 'izq', 'izq', 'izq', 'der', 'der', 'der'],
@@ -229,8 +302,27 @@ class ReporteController extends Controller
                     (float) $p->monto_vendido,
                     $totalVendido > 0 ? (float) $p->monto_vendido / $totalVendido : 0,
                 ])->all(),
-                'totales' => [null, null, 'Total de los listados', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0],
+                'totales' => [null, null, 'Total', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0],
                 'vacia' => 'No se vendió nada del menú en el período.',
+            ],
+            [
+                'nombre' => 'Por categoría',
+                'cabeceras' => ['Categoría', 'Unidades', self::rotuloVendidoSinImpuesto(), '% del total'],
+                'formatos' => [null, 'decimal', 'moneda', 'porcentaje'],
+                'alineacion' => ['izq', 'der', 'der', 'der'],
+                'filas' => $categorias->map(fn ($c) => [
+                    $c->categoria, (float) $c->unidades, (float) $c->monto, $totalVendido > 0 ? (float) $c->monto / $totalVendido : 0,
+                ])->all(),
+                'vacia' => 'No se vendió nada del menú en el período.',
+            ],
+            [
+                'nombre' => 'Sin ninguna venta',
+                'nota' => 'Activos en la carta y sin una sola venta en el período: candidatos a revisar o a sacar.',
+                'cabeceras' => ['Código', 'Ítem del menú', 'Categoría'],
+                'formatos' => [null, null, null],
+                'alineacion' => ['izq', 'izq', 'izq'],
+                'filas' => $sinVentas->map(fn ($p) => [$p->codigo, $p->nombre, $p->categoria])->all(),
+                'vacia' => 'Todo el menú tuvo al menos una venta.',
             ],
         ]);
 
@@ -354,12 +446,15 @@ class ReporteController extends Controller
     /** @return array<string, float|int> */
     private function resumenVentas(Carbon $desde, Carbon $hasta): array
     {
-        $ventas = DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
-            ->selectRaw("SUM(estado <> 'ANULADA') AS operaciones")
-            ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', total, 0)), 0) AS vendido")
-            ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', impuesto, 0)), 0) AS impuesto")
-            ->selectRaw("SUM(estado = 'ANULADA') AS anuladas")
+        $ventas = DB::table('ventas as v')
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->selectRaw("SUM(v.estado <> 'ANULADA') AS operaciones")
+            ->selectRaw("COALESCE(SUM(IF(v.estado <> 'ANULADA', v.total, 0)), 0) AS vendido")
+            ->selectRaw("COALESCE(SUM(IF(v.estado <> 'ANULADA', v.impuesto, 0)), 0) AS impuesto")
+            ->selectRaw("SUM(v.estado = 'ANULADA') AS anuladas")
+            ->selectRaw("COALESCE(SUM(IF(v.estado = 'ANULADA', v.total, 0)), 0) AS monto_anulado")
+            ->selectRaw("COALESCE(SUM(IF(v.estado <> 'ANULADA', ".self::DESCUENTO_VISIBLE.', 0)), 0) AS descuentos')
+            ->selectRaw("SUM(v.estado <> 'ANULADA' AND ".self::DESCUENTO_VISIBLE.' > 0) AS con_descuento')
             ->first();
 
         $operaciones = (int) $ventas->operaciones;
@@ -371,6 +466,9 @@ class ReporteController extends Controller
             'vendido' => $vendido,
             'impuesto' => (float) $ventas->impuesto,
             'anuladas' => (int) $ventas->anuladas,
+            'monto_anulado' => (float) $ventas->monto_anulado,
+            'descuentos' => (float) $ventas->descuentos,
+            'con_descuento' => (int) $ventas->con_descuento,
             'efectivo' => $efectivo,
             'ticket' => $operaciones > 0 ? round($vendido / $operaciones, 2) : 0.0,
         ];
@@ -513,7 +611,156 @@ class ReporteController extends Controller
             ->groupBy('u.id', 'u.usuario', 'e.nombre_completo')
             ->selectRaw('u.usuario, e.nombre_completo AS empleado')
             ->selectRaw('COUNT(*) AS ventas, SUM(v.total) AS monto, ROUND(AVG(v.total), 2) AS ticket')
+            ->selectRaw('SUM('.self::DESCUENTO_VISIBLE.' > 0) AS con_descuento')
+            ->selectRaw('COALESCE(SUM('.self::DESCUENTO_VISIBLE.'), 0) AS descontado')
             ->orderByDesc('monto')
+            ->get();
+    }
+
+    /**
+     * El descuento como lo tecleó el cajero y lo vio el cliente: con el
+     * impuesto incluido, sobre el precio final; si no, sobre la base. La
+     * misma cuenta que `Venta::descuento_visible`.
+     */
+    private const DESCUENTO_VISIBLE = 'IF(v.impuesto_incluido = 1, COALESCE(v.descuento_precio_final, v.descuento), v.descuento)';
+
+    // ------------------------------------------------- cuándo y cómo se vende
+
+    /**
+     * Lo vendido por hora del día, en el orden de la jornada (de la hora de
+     * corte en adelante): dice cuándo hace falta más gente en el mostrador y
+     * en la cocina. Solo las horas desde la primera hasta la última con
+     * ventas: veinticuatro barras con la madrugada en cero no dicen nada.
+     *
+     * @return array<int, array{hora: int, etiqueta: string, tramo: string, ventas: int, monto: float}>
+     */
+    private function porHora(Carbon $desde, Carbon $hasta): array
+    {
+        $filas = DB::table('ventas')
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->where('estado', '<>', 'ANULADA')
+            ->groupBy(DB::raw('HOUR(fecha)'))
+            ->selectRaw('HOUR(fecha) AS hora, COUNT(*) AS ventas, SUM(total) AS monto')
+            ->get()
+            ->keyBy(fn ($f) => (int) $f->hora);
+
+        if ($filas->isEmpty()) {
+            return [];
+        }
+
+        $corte = Config::horaCorteJornada();
+        $orden = array_map(fn ($i) => ($corte + $i) % 24, range(0, 23));
+        $conVentas = array_values(array_filter($orden, fn ($h) => $filas->has($h)));
+        $tramo = array_slice($orden, array_search($conVentas[0], $orden, true), array_search(end($conVentas), $orden, true) - array_search($conVentas[0], $orden, true) + 1);
+
+        return array_map(fn (int $h) => [
+            'hora' => $h,
+            // Corta, para que las barras no se pisen: «13h» y no «13:00».
+            'etiqueta' => $h.'h',
+            'tramo' => sprintf('%02d:00 a %02d:59', $h, $h),
+            'ventas' => (int) ($filas[$h]->ventas ?? 0),
+            'monto' => (float) ($filas[$h]->monto ?? 0),
+        ], $tramo);
+    }
+
+    /**
+     * Lo vendido por día de la semana, en PROMEDIO por jornada: en un mes hay
+     * cinco sábados y cuatro martes, y sumarlos sin más haría ganar al que
+     * más veces cae. Dice qué días conviene reforzar y cuáles no rinden.
+     *
+     * @return array<int, array{dia: string, jornadas: int, ventas: int, monto: float, promedio: float}>
+     */
+    private function porDiaSemana(Carbon $desde, Carbon $hasta): array
+    {
+        $jornada = Config::jornadaSql('fecha');
+
+        // WEEKDAY: 0 = lunes … 6 = domingo, sobre la fecha de la JORNADA.
+        $filas = DB::table('ventas')
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->where('estado', '<>', 'ANULADA')
+            ->groupBy(DB::raw("WEEKDAY({$jornada})"))
+            ->selectRaw("WEEKDAY({$jornada}) AS dia, COUNT(*) AS ventas, SUM(total) AS monto")
+            ->get()
+            ->keyBy(fn ($f) => (int) $f->dia);
+
+        $jornadas = array_fill(0, 7, 0);
+
+        for ($d = $desde->copy()->startOfDay(); $d->lte($hasta); $d->addDay()) {
+            $jornadas[$d->dayOfWeekIso - 1]++;
+        }
+
+        $nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+        return array_map(fn (int $i) => [
+            'dia' => $nombres[$i],
+            'jornadas' => $jornadas[$i],
+            'ventas' => (int) ($filas[$i]->ventas ?? 0),
+            'monto' => (float) ($filas[$i]->monto ?? 0),
+            'promedio' => $jornadas[$i] > 0 ? round((float) ($filas[$i]->monto ?? 0) / $jornadas[$i], 2) : 0.0,
+        ], range(0, 6));
+    }
+
+    /** Comer aquí o para llevar: cuánto pesa cada uno. */
+    private function porTipo(Carbon $desde, Carbon $hasta): Collection
+    {
+        return DB::table('ventas as v')
+            ->leftJoin('pedidos as p', 'p.id', '=', 'v.pedido_id')
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->where('v.estado', '<>', 'ANULADA')
+            ->groupBy('p.tipo')
+            ->selectRaw('p.tipo, COUNT(*) AS ventas, SUM(v.total) AS monto, ROUND(AVG(v.total), 2) AS ticket')
+            ->orderByDesc('monto')
+            ->get()
+            ->map(fn ($f) => (object) [
+                'tipo' => match ($f->tipo) {
+                    'LOCAL' => 'Comer aquí',
+                    'LLEVAR' => 'Para llevar',
+                    default => 'Sin pedido',
+                },
+                'ventas' => (int) $f->ventas,
+                'monto' => (float) $f->monto,
+                'ticket' => (float) $f->ticket,
+            ]);
+    }
+
+    // ------------------------------------------------------------- control
+
+    /**
+     * Las ventas anuladas del período, con quién las cobró, quién las anuló y
+     * por qué. El conteo solo no alcanza: una anulación es plata que entró y
+     * salió, y es lo primero que se revisa cuando la caja no cuadra.
+     */
+    private function anuladas(Carbon $desde, Carbon $hasta): Collection
+    {
+        return DB::table('ventas as v')
+            ->join('usuarios as cobro', 'cobro.id', '=', 'v.usuario_id')
+            ->leftJoin('usuarios as anulo', 'anulo.id', '=', 'v.anulada_por')
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->where('v.estado', 'ANULADA')
+            ->orderByDesc('v.fecha')
+            ->select('v.id', 'v.fecha', 'v.total', 'v.motivo_anulacion')
+            // El último documento de la venta: si se sustituyó, el vigente al anular.
+            ->selectSub(fn ($q) => $q->from('comprobantes')->whereColumn('venta_id', 'v.id')
+                ->orderByDesc('id')->limit(1)->select('numero_completo'), 'numero_completo')
+            ->selectRaw('cobro.usuario AS cobro, anulo.usuario AS anulo')
+            ->get();
+    }
+
+    /**
+     * Los turnos cerrados en el período con lo que se esperaba en el cajón,
+     * lo que se contó y la diferencia: un faltante que se repite con el mismo
+     * cajero se ve aquí, no en un arqueo suelto.
+     */
+    private function cuadresDeCaja(Carbon $desde, Carbon $hasta): Collection
+    {
+        return DB::table('sesiones_caja as s')
+            ->join('cajas as c', 'c.id', '=', 's.caja_id')
+            ->join('usuarios as u', 'u.id', '=', 's.usuario_apertura_id')
+            ->where('s.estado', 'CERRADA')
+            ->whereBetween('s.fecha_cierre', Config::momentosDeJornadas($desde, $hasta))
+            ->orderByDesc('s.fecha_cierre')
+            ->select('s.id', 's.fecha_apertura', 's.fecha_cierre', 's.monto_esperado', 's.monto_declarado', 's.diferencia', 's.observacion_cierre')
+            ->selectRaw('c.nombre AS caja, u.usuario')
             ->get();
     }
 
@@ -557,7 +804,47 @@ class ReporteController extends Controller
             ->selectRaw("SUM({$unidades}) AS unidades_vendidas")
             ->selectRaw("SUM({$neto}) AS monto_vendido")
             ->orderByDesc('monto_vendido')
-            ->limit(20)
+            ->get();
+    }
+
+    /** Cuánto aporta cada sección de la carta: bebidas, entradas, platos… */
+    private function porCategoria(Carbon $desde, Carbon $hasta): Collection
+    {
+        $neto = 'ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2)';
+
+        return DB::table('venta_detalle as d')
+            ->join('ventas as v', function ($join) {
+                $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
+            })
+            ->join('productos as p', 'p.id', '=', 'd.producto_id')
+            ->join('categorias as c', 'c.id', '=', 'p.categoria_id')
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->groupBy('c.id', 'c.nombre')
+            ->selectRaw('c.nombre AS categoria')
+            ->selectRaw('SUM(d.cantidad) AS unidades')
+            ->selectRaw("SUM({$neto}) AS monto")
+            ->orderByDesc('monto')
+            ->get();
+    }
+
+    /**
+     * Lo que está en la carta y no se vendió ni una vez en el período: el
+     * primer candidato a revisar (precio, foto, nombre) o a sacar del menú.
+     */
+    private function sinVentas(Carbon $desde, Carbon $hasta): Collection
+    {
+        return DB::table('productos as p')
+            ->join('categorias as c', 'c.id', '=', 'p.categoria_id')
+            ->where('p.activo', 1)
+            ->whereNotExists(fn ($q) => $q->from('venta_detalle as d')
+                ->join('ventas as v', 'v.id', '=', 'd.venta_id')
+                ->whereColumn('d.producto_id', 'p.id')
+                ->where('v.estado', '<>', 'ANULADA')
+                ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta)))
+            ->orderBy('c.nombre')
+            ->orderBy('p.nombre')
+            ->select('p.id', 'p.codigo', 'p.nombre')
+            ->selectRaw('c.nombre AS categoria')
             ->get();
     }
 }

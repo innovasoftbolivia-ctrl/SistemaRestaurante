@@ -24,6 +24,9 @@ function formateador(moneda) {
 
 function opciones(config) {
     const { tipo = 'area', categorias = [], series = [], moneda = 'S/', dinero = true } = config;
+    // Barras acostadas: el nombre de cada una va en su propio renglón y no se
+    // pisa con el de al lado. Los importes pasan al eje de abajo.
+    const acostado = tipo === 'bar' && config.horizontal === true;
     const importe = formateador(moneda);
     const oscuro = esOscuro();
     const tenue = oscuro ? '#98a2b3' : '#667085';
@@ -50,20 +53,34 @@ function opciones(config) {
             ? undefined
             : {
                   categories: categorias,
+                  // Con treinta jornadas las fechas se pisaban ("27/0828/08"):
+                  // en la línea de tiempo se muestra una de cada tanto. Las
+                  // barras no, porque cada una es una categoría con nombre.
+                  ...(tipo === 'area' && categorias.length > 12
+                      ? { tickAmount: 10, tickPlacement: 'on' }
+                      : {}),
                   axisBorder: { show: false },
                   axisTicks: { show: false },
-                  labels: { style: { colors: tenue, fontSize: '12px' } },
+                  labels: {
+                      style: { colors: tenue, fontSize: '12px' },
+                      ...(acostado ? { formatter: dinero ? importe : (v) => Math.round(v) } : {}),
+                  },
               },
         yaxis: config.etiquetas
             ? undefined
             : {
                   labels: {
                       style: { colors: tenue, fontSize: '12px' },
-                      formatter: dinero ? importe : (v) => Math.round(v),
+                      ...(acostado
+                          ? { minWidth: 150, maxWidth: 200, offsetX: 8 }
+                          : { formatter: dinero ? importe : (v) => Math.round(v) }),
                   },
               },
         dataLabels: { enabled: false },
-        stroke: { curve: 'smooth', width: tipo === 'bar' ? 0 : 2 },
+        // `monotoneCubic` y no `smooth`: la curva suave pasaba por debajo de
+        // cero entre una jornada con ventas y otra sin ninguna, y parecía que
+        // se había vendido en negativo.
+        stroke: { curve: 'monotoneCubic', width: tipo === 'bar' ? 0 : 2 },
         fill:
             tipo === 'area'
                 ? { type: 'gradient', gradient: { opacityFrom: 0.35, opacityTo: 0.02 } }
@@ -74,7 +91,7 @@ function opciones(config) {
             xaxis: { lines: { show: false } },
         },
         plotOptions: {
-            bar: { borderRadius: 6, columnWidth: '45%' },
+            bar: { borderRadius: 6, columnWidth: '45%', horizontal: acostado, barHeight: '60%' },
             pie: { donut: { size: '62%' } },
         },
         legend: { show: config.leyenda ?? false, labels: { colors: tenue } },
