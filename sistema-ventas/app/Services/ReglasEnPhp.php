@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SesionCaja;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -9,7 +10,7 @@ use RuntimeException;
 /**
  * Las reglas que normalmente ejecuta la BASE, hechas en PHP.
  *
- * Réplica de los 6 procedimientos almacenados y los 9 triggers de
+ * Réplica de los 6 procedimientos almacenados y los 7 triggers de
  * `docs/sql/01_schema_mysql.sql`, para poder correr el sistema en un hosting
  * que no permite crearlos (ver config/ventas.php).
  *
@@ -42,8 +43,8 @@ class ReglasEnPhp
     /**
      * trg_venta_detalle_before_insert
      *
-     * Copia del producto el régimen de impuesto y la tasa vigente. Si la
-     * aplicación mandó una tasa explícita (> 0), esa manda.
+     * Copia del producto el régimen de impuesto y la tasa vigente. Siempre:
+     * una tasa que venga en la línea no manda (igual que el trigger).
      *
      * @param  array<string, mixed>  $linea
      * @return array<string, mixed>
@@ -53,10 +54,6 @@ class ReglasEnPhp
         // La línea sigue el modo de precio de su venta: todas iguales.
         $linea['impuesto_incluido'] = (int) DB::table('ventas')->where('id', $linea['venta_id'])->value('impuesto_incluido');
 
-        if ((float) ($linea['tasa_impuesto'] ?? 0) != 0) {
-            return $linea;
-        }
-
         $afecto = (bool) DB::table('productos')
             ->where('id', $linea['producto_id'])
             ->value('afecto_impuesto');
@@ -65,133 +62,6 @@ class ReglasEnPhp
         $linea['tasa_impuesto'] = $afecto ? self::tasaImpuesto() : 0;
 
         return $linea;
-    }
-
-    /**
-     * trg_venta_detalle_after_insert
-     *
-     * Valida el stock, lo descuenta y deja el movimiento en el kardex.
-     */
-    public static function despuesDeInsertarLineaVenta(int $ventaId, int $productoId, float $cantidad): void
-    {
-        $producto = DB::table('productos')->where('id', $productoId)->lockForUpdate()->first();
-
-        if (! $producto || (float) $producto->stock_actual < $cantidad) {
-            throw new RuntimeException('Stock insuficiente para el producto de la venta');
-        }
-
-        $anterior = (float) $producto->stock_actual;
-
-        DB::table('productos')->where('id', $productoId)
-            ->update(['stock_actual' => DB::raw('stock_actual - '.self::num($cantidad))]);
-
-        DB::table('movimientos_inventario')->insert([
-            'producto_id' => $productoId,
-            'usuario_id' => DB::table('ventas')->where('id', $ventaId)->value('usuario_id'),
-            'tipo' => 'SALIDA',
-            'origen' => 'VENTA',
-            'venta_id' => $ventaId,
-            'cantidad' => $cantidad,
-            'stock_anterior' => $anterior,
-            'stock_resultante' => $anterior - $cantidad,
-            'motivo' => 'Venta de productos',
-            'fecha' => now(),
-        ]);
-    }
-
-    /**
-     * trg_devolucion_detalle_before_insert
-     *
-     * Copia el régimen de impuesto de la línea de venta original: la tasa de
-     * hoy puede no ser la de aquel día, y al cliente se le devuelve lo que pagó.
-     *
-     * @param  array<string, mixed>  $linea
-     * @return array<string, mixed>
-     */
-    public static function antesDeInsertarLineaDevolucion(array $linea): array
-    {
-        $original = DB::table('venta_detalle')->where('id', $linea['venta_detalle_id'])->first();
-
-        // El modo de precio de la venta, siempre: si el precio llevaba el
-        // impuesto adentro, la devolución lo separa igual.
-        $linea['impuesto_incluido'] = (int) ($original->impuesto_incluido ?? 0);
-
-        if ((float) ($linea['tasa_impuesto'] ?? 0) != 0) {
-            return $linea;
-        }
-
-        $afecto = (bool) ($original->afecto_impuesto ?? false);
-        $linea['afecto_impuesto'] = $afecto;
-        $linea['tasa_impuesto'] = $afecto ? (float) ($original->tasa_impuesto ?? 0) : 0;
-
-        return $linea;
-    }
-
-    /**
-     * trg_devolucion_detalle_after_insert
-     *
-     * Acumula lo devuelto en la línea original, recalcula el total de la
-     * devolución y el acumulado de la venta, mueve el estado de la venta y
-     * —si la mercadería vuelve al estante— reingresa el stock con su kardex.
-     */
-    public static function despuesDeInsertarLineaDevolucion(
-        int $devolucionId,
-        int $ventaDetalleId,
-        int $productoId,
-        float $cantidad,
-        bool $reingresaStock,
-    ): void {
-        DB::table('venta_detalle')->where('id', $ventaDetalleId)
-            ->update(['cantidad_devuelta' => DB::raw('cantidad_devuelta + '.self::num($cantidad))]);
-
-        $ventaId = (int) DB::table('devoluciones')->where('id', $devolucionId)->value('venta_id');
-
-        // Total de la devolución = suma de su detalle CON impuesto: es el dinero
-        // que sale del cajón, comparable con `ventas.total`.
-        DB::table('devoluciones')->where('id', $devolucionId)->update([
-            'total' => DB::table('devolucion_detalle')
-                ->where('devolucion_id', $devolucionId)
-                ->sum('total_linea') ?: 0,
-        ]);
-
-        DB::table('ventas')->where('id', $ventaId)->update([
-            'total_devuelto' => DB::table('devoluciones')->where('venta_id', $ventaId)->sum('total') ?: 0,
-        ]);
-
-        // DEVUELTA si ya no queda nada por devolver; si no, parcial. Una venta
-        // ANULADA no cambia de estado.
-        $pendientes = DB::table('venta_detalle')
-            ->where('venta_id', $ventaId)
-            ->whereColumn('cantidad_devuelta', '<', 'cantidad')
-            ->count();
-
-        DB::table('ventas')
-            ->where('id', $ventaId)
-            ->whereIn('estado', ['COMPLETADA', 'DEVUELTA_PARCIAL', 'DEVUELTA'])
-            ->update(['estado' => $pendientes === 0 ? 'DEVUELTA' : 'DEVUELTA_PARCIAL']);
-
-        if (! $reingresaStock) {
-            return;
-        }
-
-        $producto = DB::table('productos')->where('id', $productoId)->lockForUpdate()->first();
-        $anterior = (float) $producto->stock_actual;
-
-        DB::table('productos')->where('id', $productoId)
-            ->update(['stock_actual' => DB::raw('stock_actual + '.self::num($cantidad))]);
-
-        DB::table('movimientos_inventario')->insert([
-            'producto_id' => $productoId,
-            'usuario_id' => DB::table('devoluciones')->where('id', $devolucionId)->value('usuario_id'),
-            'tipo' => 'ENTRADA',
-            'origen' => 'DEVOLUCION',
-            'devolucion_id' => $devolucionId,
-            'cantidad' => $cantidad,
-            'stock_anterior' => $anterior,
-            'stock_resultante' => $anterior + $cantidad,
-            'motivo' => 'Devolución de cliente',
-            'fecha' => now(),
-        ]);
     }
 
     /**
@@ -339,7 +209,7 @@ class ReglasEnPhp
 
     /**
      * sp_emitir_comprobante — toma el correlativo y congela los datos del
-     * cliente y los importes en `comprobantes`.
+     * negocio, del cliente y los importes en `comprobantes`.
      *
      * @return array{0: int, 1: string} id del comprobante y número completo
      */
@@ -368,6 +238,11 @@ class ReglasEnPhp
             'serie_id' => $serieId,
             'numero' => $numero,
             'numero_completo' => $numeroCompleto,
+            // Los datos del negocio, congelados: el documento se reimprime como se entregó.
+            'emisor_nombre' => self::configONulo('negocio_nombre'),
+            'emisor_documento' => self::configONulo('negocio_documento'),
+            'emisor_direccion' => self::configONulo('negocio_direccion'),
+            'emisor_telefono' => self::configONulo('negocio_telefono'),
             'cliente_id' => $cliente?->id,
             'tipo_persona' => $cliente?->tipo_persona,
             'cliente_nombre' => $cliente->nombre ?? self::config('cliente_generico_nombre', 'Cliente varios'),
@@ -415,7 +290,7 @@ class ReglasEnPhp
         $venta = DB::table('ventas')->where('id', $comprobante->venta_id)->lockForUpdate()->first();
 
         if ($venta->estado !== 'COMPLETADA') {
-            throw new RuntimeException('No se sustituye el comprobante de una venta anulada o devuelta');
+            throw new RuntimeException('No se sustituye el comprobante de una venta anulada');
         }
 
         $diasMax = (int) self::config('dias_max_sustitucion', '1');
@@ -462,8 +337,8 @@ class ReglasEnPhp
     }
 
     /**
-     * sp_anular_venta — revierte el stock y marca el estado. La venta no se
-     * borra nunca (RNF6).
+     * sp_anular_venta — marca el estado y anula el comprobante, conservando el
+     * correlativo. La venta no se borra nunca (RNF6).
      */
     public static function anularVenta(int $ventaId, int $usuarioId, string $motivo): void
     {
@@ -476,26 +351,10 @@ class ReglasEnPhp
             throw new RuntimeException('Solo se puede anular una venta COMPLETADA');
         }
 
-        foreach (DB::table('venta_detalle')->where('venta_id', $ventaId)->get() as $linea) {
-            $producto = DB::table('productos')->where('id', $linea->producto_id)->lockForUpdate()->first();
-            $anterior = (float) $producto->stock_actual;
-            $cantidad = (float) $linea->cantidad;
+        $turno = DB::table('sesiones_caja')->where('id', $venta->sesion_caja_id)->sharedLock()->value('estado');
 
-            DB::table('movimientos_inventario')->insert([
-                'producto_id' => $linea->producto_id,
-                'usuario_id' => $usuarioId,
-                'tipo' => 'ENTRADA',
-                'origen' => 'ANULACION',
-                'venta_id' => $ventaId,
-                'cantidad' => $cantidad,
-                'stock_anterior' => $anterior,
-                'stock_resultante' => $anterior + $cantidad,
-                'motivo' => 'Anulación de venta: '.$motivo,
-                'fecha' => now(),
-            ]);
-
-            DB::table('productos')->where('id', $linea->producto_id)
-                ->update(['stock_actual' => DB::raw('stock_actual + '.self::num($cantidad))]);
+        if ($turno !== 'ABIERTA') {
+            throw new RuntimeException('El turno de caja de esta venta ya cerró: no se anula, su dinero ya se contó en el arqueo');
         }
 
         DB::table('ventas')->where('id', $ventaId)->update([
@@ -526,57 +385,28 @@ class ReglasEnPhp
      * sp_cerrar_caja — calcula el efectivo esperado y cierra el turno.
      *
      * Del cajón solo sale y entra lo que pasó por él: los pagos con método que
-     * afecta caja, los movimientos, y la parte en efectivo de lo devuelto.
+     * afecta caja y los movimientos. Lo cobrado en una venta anulada no cuenta.
+     *
+     * La cuenta es `SesionCaja::desgloseDelEfectivo()`, la misma que enseña la
+     * pantalla de cierre: en PHP la fórmula del arqueo tiene una sola copia
+     * (la otra vía es el procedimiento).
      */
     public static function cerrarCaja(int $sesionId, int $usuarioId, float $declarado, ?string $observacion): void
     {
-        $sesion = DB::table('sesiones_caja')
-            ->where('id', $sesionId)->where('estado', 'ABIERTA')
+        $sesion = SesionCaja::whereKey($sesionId)->where('estado', 'ABIERTA')
             ->lockForUpdate()->first();
 
         if (! $sesion) {
             throw new RuntimeException('La sesión de caja no existe o ya está cerrada');
         }
 
-        $ventas = (float) DB::table('venta_pagos as vp')
-            ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
-            ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->where('v.sesion_caja_id', $sesionId)
-            ->where('v.estado', '<>', 'ANULADA')
-            ->where('mp.afecta_caja', 1)
-            ->sum('vp.monto');
-
-        $movimientos = DB::table('movimientos_caja')
-            ->where('sesion_caja_id', $sesionId)
-            ->selectRaw("IFNULL(SUM(IF(tipo='INGRESO', monto, 0)),0) AS ingresos")
-            ->selectRaw("IFNULL(SUM(IF(tipo='EGRESO', monto, 0)),0) AS egresos")
-            ->first();
-
-        // De cada devolución sale del cajón solo la fracción que en su día
-        // entró en efectivo: lo cobrado con tarjeta se reembolsa por su medio.
-        $devuelto = (float) DB::table('devoluciones as d')
-            ->join('ventas as v', 'v.id', '=', 'd.venta_id')
-            ->where('d.sesion_caja_id', $sesionId)
-            // `efectivo` lo guarda la devolución desde el 14/09/2026; las
-            // anteriores siguen con la proporción, igual que sp_cerrar_caja.
-            ->selectRaw('IFNULL(SUM(IFNULL(d.efectivo, ROUND(d.total * IFNULL((
-                    SELECT SUM(vp.monto) FROM venta_pagos vp
-                      JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
-                     WHERE vp.venta_id = d.venta_id AND mp.afecta_caja = 1
-                 ) / NULLIF(v.total, 0), 0), 2))), 0) AS devuelto')
-            ->value('devuelto');
-
-        $esperado = (float) $sesion->monto_inicial
-            + $ventas
-            + (float) $movimientos->ingresos
-            - (float) $movimientos->egresos
-            - $devuelto;
+        $esperado = $sesion->desgloseDelEfectivo()['esperado'];
 
         // `diferencia` es columna generada: sale sola de esperado y declarado.
         DB::table('sesiones_caja')->where('id', $sesionId)->update([
             'fecha_cierre' => now(),
             'usuario_cierre_id' => $usuarioId,
-            'monto_esperado' => round($esperado, 2),
+            'monto_esperado' => $esperado,
             'monto_declarado' => $declarado,
             'estado' => 'CERRADA',
             'observacion_cierre' => $observacion,
@@ -592,6 +422,14 @@ class ReglasEnPhp
         $valor = DB::table('configuracion')->where('clave', $clave)->value('valor');
 
         return $valor !== null && $valor !== '' ? (string) $valor : $porOmision;
+    }
+
+    /** Como `config()`, pero sin valor por omisión: ausente o vacío es NULL (NULLIF en SQL). */
+    private static function configONulo(string $clave): ?string
+    {
+        $valor = DB::table('configuracion')->where('clave', $clave)->value('valor');
+
+        return $valor !== null && $valor !== '' ? (string) $valor : null;
     }
 
     private static function tasaImpuesto(): float

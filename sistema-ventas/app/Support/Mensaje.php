@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use PDOException;
 use Throwable;
@@ -22,6 +23,12 @@ class Mensaje
     {
         if ($e instanceof QueryException || $e instanceof PDOException) {
             return self::deLaBase($e, $generico);
+        }
+
+        // También es una RuntimeException: un `findOrFail` dentro de un
+        // servicio mostraba «No query results for model [App\Models\…]».
+        if ($e instanceof ModelNotFoundException) {
+            return 'Lo que se quería usar ya no existe: recarga la pantalla e inténtalo de nuevo.';
         }
 
         return $e->getMessage();

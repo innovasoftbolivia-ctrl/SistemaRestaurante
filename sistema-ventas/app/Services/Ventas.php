@@ -6,9 +6,11 @@ use App\Models\Cliente;
 use App\Models\CobroQr;
 use App\Models\Comprobante;
 use App\Models\MetodoPago;
+use App\Models\Pedido;
 use App\Models\Producto;
 use App\Models\SerieComprobante;
 use App\Models\SesionCaja;
+use App\Models\TipoComprobante;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Models\VentaDetalle;
@@ -21,12 +23,11 @@ use RuntimeException;
  * Registro y anulación de ventas.
  *
  * Buena parte de las reglas vive en la base y aquí no se repite:
- *   - al insertar una línea, un trigger valida el stock, lo descuenta y
- *     escribe el kardex;
+ *   - al insertar una línea, un trigger le copia el régimen de impuesto;
  *   - `sp_recalcular_venta` calcula subtotal e impuesto desde el detalle;
  *   - `sp_emitir_comprobante` toma el correlativo con bloqueo de fila y
- *     congela los datos del cliente;
- *   - `sp_anular_venta` revierte stock, marca la venta y anula el documento.
+ *     congela los datos del negocio y del cliente;
+ *   - `sp_anular_venta` marca la venta y anula el documento.
  *
  * Todo ocurre dentro de una transacción: o se guarda la venta completa, o no
  * se guarda nada (RNF5).
@@ -47,7 +48,10 @@ class Ventas
      * `precio_unitario` es solo para llamadores de confianza (no HTTP): ver
      * el comentario en `agregarLineas`.
      *
-     * @param  array<int, array{producto_id: int, cantidad: float, precio_unitario?: float, descuento?: float}>  $lineas
+     * `$pedido` es el pedido que se cobra (`Pedidos::cobrar`): la venta lo
+     * graba en `pedido_id` y lo conserva aunque después se anule.
+     *
+     * @param  array<int, array{producto_id: int, cantidad: float, precio_unitario?: float}>  $lineas
      * @param  array<int, array{metodo_pago_id: int, monto: float, monto_recibido?: float|null, referencia?: string|null}>  $pagos
      */
     public static function registrar(
@@ -59,9 +63,11 @@ class Ventas
         float $descuento = 0,
         ?string $observacion = null,
         ?float $totalEsperado = null,
+        ?Pedido $pedido = null,
+        bool $desdePedido = false,
     ): Venta {
         if ($lineas === []) {
-            throw new RuntimeException('La venta no tiene productos.');
+            throw new RuntimeException('La venta no tiene nada que cobrar.');
         }
 
         if (! $sesion->estaAbierta()) {
@@ -69,16 +75,14 @@ class Ventas
         }
 
         // El segundo argumento son reintentos ante un deadlock de MySQL. Dos
-        // cajeros vendiendo el MISMO producto al mismo tiempo se pelean por la
-        // fila de `productos` (el trigger la bloquea con FOR UPDATE para
-        // descontar stock), y InnoDB resuelve el empate matando a una de las
-        // dos transacciones. Los datos nunca quedan mal —para eso está el
-        // bloqueo—, pero sin reintentar, a un cajero se le caía la venta con
-        // un «revisa el stock y los importes» que además no era cierto: no
-        // había problema de stock, solo mala suerte de milisegundos. Laravel
+        // cajeros que cobran a la vez pueden pelearse por las mismas filas
+        // (el turno de caja, la serie del comprobante), e InnoDB resuelve el
+        // empate matando a una de las dos transacciones. Los datos nunca
+        // quedan mal —para eso están los bloqueos—, pero sin reintentar a un
+        // cajero se le caía la venta por mala suerte de milisegundos. Laravel
         // reintenta la transacción entera, que se deshizo por completo al
         // fallar, así que no queda nada a medias.
-        return DB::transaction(function () use ($sesion, $usuario, $lineas, $pagos, $cliente, $descuento, $observacion, $totalEsperado) {
+        return DB::transaction(function () use ($sesion, $usuario, $lineas, $pagos, $cliente, $descuento, $observacion, $totalEsperado, $pedido, $desdePedido) {
             // El turno, leído con candado compartido: varias ventas pueden
             // entrar a la vez, pero un cierre en curso las hace esperar, y al
             // terminar la venta encuentra la caja cerrada. Sin esto, una venta
@@ -94,6 +98,7 @@ class Ventas
                 'cliente_id' => $cliente?->id,
                 'usuario_id' => $usuario->id,
                 'sesion_caja_id' => $sesion->id,
+                'pedido_id' => $pedido?->id,
                 'fecha' => now(),
                 'descuento' => 0, // se aplica después: la base exige descuento <= subtotal
                 // El modo de precio queda con la venta: si mañana cambia la
@@ -103,13 +108,15 @@ class Ventas
                 'observacion' => $observacion,
             ]);
 
-            self::agregarLineas($venta, $lineas);
+            self::agregarLineas($venta, $lineas, $desdePedido);
 
             // Primer recálculo: deja el subtotal, sin descuento todavía.
             self::recalcular($venta->id);
 
             if ($descuento > 0) {
                 $venta->refresh();
+
+                self::exigirAutorizacionDelDescuento($venta, $usuario, $descuento);
 
                 if ($venta->impuesto_incluido) {
                     // El cliente ve el descuento sobre el precio final: el
@@ -135,7 +142,7 @@ class Ventas
 
             // Lo que el mostrador le cantó al cliente tiene que ser lo que se
             // registra. Si entre medio cambió la tasa, el modo de precios o un
-            // precio del catálogo, la pantalla y el servidor calculan distinto
+            // precio del menú, la pantalla y el servidor calculan distinto
             // y el cajero cobra un total que la venta no guarda: sobrante o
             // faltante en el arqueo, sin rastro. Mismo criterio que el cobro
             // por QR, que ya exigía el importe exacto.
@@ -160,6 +167,36 @@ class Ventas
         }, self::REINTENTOS);
     }
 
+    /**
+     * El descuento por encima de `descuento_max_cajero` necesita el permiso
+     * `ventas.descuento` (O4).
+     *
+     * Vive aquí, dentro de la transacción y después del primer recálculo, y no
+     * en los controladores: así la base del porcentaje es la de la venta que
+     * de verdad se registra —el subtotal, o el total si el precio ya trae el
+     * impuesto, que es sobre lo que el cliente ve el descuento— y ningún
+     * camino que llegue a `registrar()` se lo salta. El mostrador solo avisa.
+     */
+    private static function exigirAutorizacionDelDescuento(Venta $venta, Usuario $usuario, float $descuento): void
+    {
+        if ($usuario->tienePermiso('ventas.descuento')) {
+            return;
+        }
+
+        $base = (int) round((float) ($venta->impuesto_incluido ? $venta->total : $venta->subtotal) * 100);
+        $centavos = (int) round($descuento * 100);
+        $umbral = (int) Config::get('descuento_max_cajero', '0');
+
+        // En centavos enteros: en coma flotante, 10,89 sobre 108,90 daba
+        // 10,000000000000002 % y el descuento de exactamente el máximo se rechazaba.
+        if ($centavos * 100 > $umbral * $base) {
+            $porcentaje = $base > 0 ? $centavos / $base * 100 : 0;
+
+            throw new RuntimeException('Un descuento del '.round($porcentaje, 1).'% supera el máximo de '.$umbral.
+                '% permitido sin autorización. Pide a un administrador que registre el cobro.');
+        }
+    }
+
     /** Subtotal, impuesto y total desde el detalle. Lo hace la base, salvo en la vía portable. */
     private static function recalcular(int $ventaId): void
     {
@@ -170,23 +207,28 @@ class Ventas
 
     /**
      * @param  array<int, array<string, mixed>>  $lineas
+     * @param  bool  $desdePedido  las líneas vienen de un pedido ya tomado
      */
-    private static function agregarLineas(Venta $venta, array $lineas): void
+    private static function agregarLineas(Venta $venta, array $lineas, bool $desdePedido = false): void
     {
-        // Un producto, una línea. El mostrador ya las agrupa; esto cubre a los
-        // demás llamadores (scripts, pruebas), porque con líneas repetidas la
-        // anulación reponía el stock de una sola de ellas.
+        // Un ítem, una línea. El mostrador ya las agrupa; esto cubre a los
+        // demás llamadores (scripts, pruebas), y es lo que exige el índice
+        // único `uq_detalle_venta_producto` de la base.
         $productos = array_column($lineas, 'producto_id');
 
         if (count($productos) !== count(array_unique($productos))) {
-            throw new RuntimeException('La venta repite un producto en dos líneas: júntalas en una sola con la cantidad total.');
+            throw new RuntimeException('La venta repite el mismo ítem en dos líneas: júntalas en una sola con la cantidad total.');
         }
 
         foreach ($lineas as $linea) {
             $producto = Producto::findOrFail($linea['producto_id']);
 
-            if (! $producto->activo) {
-                throw new RuntimeException("«{$producto->nombre}» está descatalogado y no se puede vender.");
+            // Lo que viene de un pedido ya se validó al pedirlo: volver a
+            // cobrarlo (tras anular su venta) no puede fallar porque el plato
+            // salió del menú en el medio. El pedido quedaría sin forma de
+            // cobrarse y sin forma de cancelarse.
+            if (! $producto->activo && ! $desdePedido) {
+                throw new RuntimeException("«{$producto->nombre}» ya no está en el menú y no se puede vender.");
             }
 
             $cantidad = (float) $linea['cantidad'];
@@ -195,26 +237,18 @@ class Ventas
                 throw new RuntimeException("La cantidad de «{$producto->nombre}» debe ser mayor que cero.");
             }
 
-            if (! $producto->unidadMedida?->permite_decimal && fmod($cantidad, 1.0) !== 0.0) {
-                throw new RuntimeException("«{$producto->nombre}» se vende por unidad entera.");
-            }
-
-            if ($cantidad > (float) $producto->stock_actual) {
-                throw new RuntimeException(
-                    "No hay stock suficiente de «{$producto->nombre}»: quedan ".
-                    Config::cantidad($producto->stock_actual).' '.$producto->unidadMedida?->codigo.'.'
-                );
+            // Siempre entera: en un restaurante todo se despacha por porción,
+            // y media hamburguesa no se sirve. Antes lo decidía la unidad de
+            // medida del producto, que el negocio ya no lleva.
+            if (fmod($cantidad, 1.0) !== 0.0) {
+                throw new RuntimeException("«{$producto->nombre}» se vende por porción entera.");
             }
 
             $datos = [
                 'venta_id' => $venta->id,
                 'producto_id' => $producto->id,
-                // Copia histórica: la venta no cambia si mañana cambia el catálogo.
+                // Copia histórica: la venta no cambia si mañana cambia el menú.
                 'descripcion' => $producto->nombre,
-                // La unidad se copia por el mismo motivo que el nombre y el
-                // precio. Sin esto, corregir un producto de UND a KG reescribía
-                // todos los tickets viejos de ese producto.
-                'unidad' => $producto->unidadMedida?->codigo,
                 'cantidad' => $cantidad,
                 // `precio_unitario` explícito es para llamadores de confianza
                 // (pruebas, scripts internos): PosController, el único que
@@ -222,27 +256,14 @@ class Ventas
                 // reglas de validación a propósito— así que el navegador jamás
                 // decide el precio de una venta real.
                 'precio_unitario' => $linea['precio_unitario'] ?? $producto->precio_venta,
-                'descuento' => $linea['descuento'] ?? 0,
-                // El costo de hoy queda con la venta: la ganancia de este mes no
-                // cambia cuando el proveedor suba el precio el mes que viene.
-                'costo_unitario' => $producto->precio_compra,
+                // Sin descuento por línea: el descuento es de la venta entera.
             ];
 
-            // Sin triggers en la base, el régimen de impuesto y el descuento de
-            // stock los hace PHP (ver config/ventas.php).
-            if (ReglasEnPhp::activa()) {
-                $detalle = VentaDetalle::create(ReglasEnPhp::antesDeInsertarLineaVenta($datos));
-                ReglasEnPhp::despuesDeInsertarLineaVenta($venta->id, $producto->id, $cantidad);
-            } else {
-                $detalle = VentaDetalle::create($datos);
-            }
-
-            // Los lotes se descuentan aquí, fuera del `if`, y no dentro del
-            // trigger ni de su gemelo de PHP: así hay UNA implementación de
-            // FEFO para las dos vías en vez de dos que hay que mantener
-            // iguales a mano. El stock ya bajó arriba; esto solo reparte esa
-            // baja entre las tandas, empezando por la que vence antes.
-            Lotes::consumir($producto, $cantidad, $detalle->id);
+            // Sin triggers en la base, el régimen de impuesto lo copia PHP
+            // (ver config/ventas.php).
+            ReglasEnPhp::activa()
+                ? VentaDetalle::create(ReglasEnPhp::antesDeInsertarLineaVenta($datos))
+                : VentaDetalle::create($datos);
         }
     }
 
@@ -437,42 +458,44 @@ class Ventas
         return max(1.0, (float) config('ventas.billete_mayor', 200));
     }
 
-    /** La serie a usar sale de la configuración del negocio. */
+    /**
+     * La serie a usar: la serie por omisión del tipo de documento que le toca
+     * al cliente (`tipos_comprobante.serie_por_omision_id`). Un solo
+     * mecanismo para los tres tipos.
+     */
     public static function seriePara(?Cliente $cliente): SerieComprobante
     {
         // Sin facturación a la vista no se emiten facturas: todo sale como
         // recibo aunque el cliente tenga NIT. La excepción es la empresa: el
         // recibo es solo para personas naturales, así que a ella le toca la
         // nota de venta, que vale para cualquiera y tampoco lleva impuesto.
-        if (! Config::facturacionVisible() && $cliente?->esJuridica()) {
-            $notaDeVenta = SerieComprobante::with('tipo')
-                ->whereHas('tipo', fn ($q) => $q->where('codigo', 'NV'))
-                ->where('activo', 1)
-                ->orderBy('id')
-                ->first();
+        $codigo = match (true) {
+            ! Config::facturacionVisible() && (bool) $cliente?->esJuridica() => 'NV',
+            Config::facturacionVisible() && (bool) $cliente?->llevaFactura() => 'FAC',
+            default => 'REC',
+        };
 
-            if (! $notaDeVenta) {
-                throw new RuntimeException('No hay una serie de nota de venta activa para venderle a una empresa.');
-            }
+        $tipo = TipoComprobante::with('seriePorOmision.tipo')->where('codigo', $codigo)->first();
+        $serie = $tipo?->seriePorOmision;
 
-            return $notaDeVenta;
-        }
-
-        $clave = Config::facturacionVisible() && $cliente?->llevaFactura() ? 'serie_factura' : 'serie_recibo';
-        $id = (int) Config::get($clave, '0');
-
-        $serie = SerieComprobante::with('tipo')->find($id);
-
-        if (! $serie) {
-            throw new RuntimeException("No hay una serie configurada en «{$clave}».");
+        if (! $serie?->activo) {
+            throw new RuntimeException(sprintf(
+                'No hay una serie activa para %s: elígela en Sistema → Configuración.',
+                mb_strtolower($tipo->nombre ?? $codigo).($codigo === 'NV' ? ' (la que se le emite a una empresa sin facturación)' : ''),
+            ));
         }
 
         return $serie;
     }
 
     /**
-     * Anular revierte el stock y deja el documento anulado, conservando el
-     * correlativo. La venta no se borra nunca (RNF6).
+     * Anular deja el documento anulado, conservando el correlativo. La venta
+     * no se borra nunca (RNF6).
+     *
+     * Si la venta cobró un pedido, el pedido queda para volver a cobrar,
+     * con su número y sus platos, para cobrarlo de nuevo o cancelarlo
+     * (`Pedidos::reabrirTrasAnular`). Se hace aquí y no en `sp_anular_venta`
+     * para que valga igual con y sin los procedimientos de la base.
      */
     public static function anular(Venta $venta, Usuario $usuario, string $motivo): Venta
     {
@@ -484,7 +507,7 @@ class Ventas
         // FOR UPDATE y sus escrituras en sentencias separadas, así que sin
         // envolverlo en una transacción real el lock no sobrevive más allá
         // del propio SELECT (autocommit). Envuelto aquí, una anulación y una
-        // devolución que lleguen casi al mismo tiempo para la misma venta se
+        // anulación que lleguen casi al mismo tiempo para la misma venta se
         // serializan: la segunda espera, y al retomar ya ve el nuevo estado.
         //
         // sp_anular_venta ya escribe su propia entrada en `auditoria`.
@@ -495,22 +518,14 @@ class Ventas
             $turno = SesionCaja::whereKey($venta->sesion_caja_id)->lockForUpdate()->first();
 
             if ($turno?->estado !== 'ABIERTA') {
-                throw new RuntimeException('El turno de caja de esta venta ya cerró, así que no se puede anular: ese dinero ya se contó en su arqueo. Si hay que devolver algo, registra una devolución.');
+                throw new RuntimeException('El turno de caja de esta venta ya cerró, así que no se puede anular: ese dinero ya se contó en su arqueo.');
             }
 
             ReglasEnPhp::activa()
                 ? ReglasEnPhp::anularVenta($venta->id, $usuario->id, $motivo)
                 : DB::statement('CALL sp_anular_venta(?, ?, ?)', [$venta->id, $usuario->id, $motivo]);
 
-            // La anulación devuelve al estante TODO lo que salió, así que los
-            // lotes tienen que recibirlo de vuelta. Se lee el detalle después
-            // de anular porque el reparto sigue al stock, y el stock lo acaba
-            // de reponer el procedimiento.
-            foreach ($venta->detalle()->with('producto')->get() as $linea) {
-                if ($linea->producto) {
-                    Lotes::reponerDeVenta($linea->producto, $linea->id, (float) $linea->cantidad);
-                }
-            }
+            Pedidos::reabrirTrasAnular($venta, $usuario, $motivo);
         });
 
         return $venta->fresh();

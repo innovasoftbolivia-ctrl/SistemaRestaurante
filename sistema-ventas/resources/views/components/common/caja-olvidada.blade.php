@@ -7,42 +7,39 @@
     $horas = \App\Support\CajasOlvidadas::HORAS;
 @endphp
 
+{{-- Una franja de una línea, no un recuadro: sale en todas las pantallas y
+     no debe tapar el trabajo. Por qué importa lo explica la pantalla del
+     turno, a la que lleva el enlace. --}}
 @if ($olvidadas->isNotEmpty())
-    <div class="mb-6" data-aviso="caja-olvidada">
+    <div role="status" data-aviso="caja-olvidada"
+        class="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-warning-200 bg-warning-50 px-4 py-2.5 text-sm text-warning-800 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-orange-300">
+        <svg aria-hidden="true" class="flex-none" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7.5V12l3 2" />
+        </svg>
+
         @if ($puedeCerrar)
-            <x-ui.alert variant="warning"
-                :title="$olvidadas->count() === 1
+            <span class="font-semibold">
+                {{ $olvidadas->count() === 1
                     ? 'Hay un turno de caja abierto hace más de '.$horas.' horas'
-                    : 'Hay '.$olvidadas->count().' turnos de caja abiertos hace más de '.$horas.' horas'">
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Un turno que abarca más de una jornada ya no sirve para cuadrar el efectivo. Ciérralo contando el
-                    cajón junto al cajero.
-                </p>
-                <ul class="mt-3 space-y-1.5 text-sm">
-                    @foreach ($olvidadas as $sesion)
-                        <li class="flex flex-wrap items-baseline gap-x-2 text-gray-700 dark:text-gray-300">
-                            <span class="font-medium">{{ $sesion->caja?->nombre ?? 'Caja' }}</span>
-                            <span class="text-gray-500 dark:text-gray-400">
-                                abierta por {{ $sesion->usuarioApertura?->usuario ?? '—' }}
-                                el {{ $sesion->fecha_apertura->format('d/m/Y') }} a las {{ $sesion->fecha_apertura->format('H:i') }}
-                                ({{ $sesion->fecha_apertura->diffForHumans() }})
-                            </span>
-                            <a href="{{ route('caja.show', $sesion) }}" class="font-medium text-brand-500 hover:underline">
-                                Revisar y cerrar
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
-            </x-ui.alert>
+                    : 'Hay '.$olvidadas->count().' turnos de caja abiertos hace más de '.$horas.' horas' }}
+            </span>
+            @foreach ($olvidadas as $sesion)
+                <span class="text-warning-700 dark:text-orange-300/90">
+                    {{ $sesion->caja?->nombre ?? 'Caja' }} · {{ $sesion->usuarioApertura?->usuario ?? '—' }} ·
+                    desde el {{ $sesion->fecha_apertura->format('d/m H:i') }}
+                    <a href="{{ route('caja.show', $sesion) }}"
+                        class="ml-1 font-semibold text-warning-800 underline underline-offset-2 hover:no-underline dark:text-orange-200">Revisar y cerrar</a>
+                </span>
+            @endforeach
         @else
             @php $sesion = $olvidadas->first(); @endphp
-            <x-ui.alert variant="warning"
-                :title="'Tu turno en '.($sesion->caja?->nombre ?? 'la caja').' sigue abierto desde el '.$sesion->fecha_apertura->format('d/m/Y').' a las '.$sesion->fecha_apertura->format('H:i')">
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Pasaron más de {{ $horas }} horas. Pide a un administrador que lo cierre contando el cajón contigo:
-                    mientras siga abierto, el arqueo mezcla más de una jornada.
-                </p>
-            </x-ui.alert>
+            <span>
+                <span class="font-semibold">Tu turno en {{ $sesion->caja?->nombre ?? 'la caja' }} sigue abierto desde el
+                    {{ $sesion->fecha_apertura->format('d/m/Y') }} a las {{ $sesion->fecha_apertura->format('H:i') }}.</span>
+                Pide a un administrador que lo cierre contando el cajón contigo.
+            </span>
         @endif
     </div>
 @endif

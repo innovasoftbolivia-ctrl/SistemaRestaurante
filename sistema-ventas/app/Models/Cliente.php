@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *   NATURAL  -> nombres + apellidos, CI/CE/PAS. Recibe RECIBO.
  *   JURIDICA -> razón social + NIT + dirección fiscal. Recibe FACTURA.
  *
- * Registrarlo es opcional: la venta al paso va sin cliente y el comprobante
+ * Registrarlo es opcional: el pedido se cobra sin cliente y el comprobante
  * sale a nombre genérico. Solo la factura exige identificarlo.
  */
 class Cliente extends Model
@@ -23,8 +23,6 @@ class Cliente extends Model
     const UPDATED_AT = 'actualizado_en';
 
     public const TIPOS_PERSONA = ['NATURAL', 'JURIDICA'];
-
-    public const DOCUMENTOS_NATURAL = ['CI', 'CE', 'PAS', 'SIN', 'NIT'];
 
     protected $fillable = [
         'tipo_persona', 'tipo_documento', 'documento',

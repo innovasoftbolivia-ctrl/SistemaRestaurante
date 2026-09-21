@@ -19,7 +19,19 @@ class CrearRespaldo extends Command
 
     public function handle(): int
     {
-        $hecho = Respaldos::crear();
+        // Si el volcado falla, queda en la bitácora: sin pantalla de
+        // respaldos, es donde se ve que anoche no hubo.
+        try {
+            $hecho = Respaldos::crear();
+        } catch (\Throwable $e) {
+            Auditor::registrar('RESPALDO_FALLIDO', null, null, [
+                'error' => mb_substr($e->getMessage(), 0, 300),
+            ]);
+            $this->error('No se pudo hacer el respaldo: '.$e->getMessage());
+
+            return self::FAILURE;
+        }
+
         $nombre = basename($hecho['base']);
 
         Auditor::registrar('RESPALDO_CREADO', null, null, [
@@ -42,10 +54,20 @@ class CrearRespaldo extends Command
                 'error' => $hecho['error_copia'],
             ]);
             $this->error('No se pudo copiar a la carpeta externa: '.$hecho['error_copia']);
-
-            return self::FAILURE;
         }
 
-        return self::SUCCESS;
+        // Lo mismo con la nube: sin internet o con el permiso de Drive
+        // vencido, el respaldo queda solo en el servidor.
+        if ($hecho['error_nube'] ?? null) {
+            Auditor::registrar('RESPALDO_NUBE_FALLIDA', null, null, [
+                'archivo' => $nombre,
+                'error' => $hecho['error_nube'],
+            ]);
+            $this->error('No se pudo subir a la nube: '.$hecho['error_nube']);
+        } elseif ($hecho['nube'] ?? null) {
+            $this->line('Nube:  subido a '.$hecho['nube']);
+        }
+
+        return ($hecho['error_copia'] ?? null) || ($hecho['error_nube'] ?? null) ? self::FAILURE : self::SUCCESS;
     }
 }

@@ -38,7 +38,10 @@ class CajasOlvidadas
 
         $consulta = SesionCaja::query()
             ->with('caja:id,nombre', 'usuarioApertura:id,usuario')
-            ->where('estado', 'ABIERTA')
+            // Por `caja_abierta_uk` y no por `estado`: su índice único solo
+            // tiene los turnos abiertos (uno por caja), mientras que buscar por
+            // fecha recorría todo el historial. Corre en cada pantalla.
+            ->whereNotNull('caja_abierta_uk')
             ->where('fecha_apertura', '<', now()->subHours(self::HORAS))
             ->orderBy('fecha_apertura');
 

@@ -12,7 +12,6 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Comprobantes;
-use App\Services\Devoluciones;
 use App\Services\ReglasEnPhp;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -117,16 +116,14 @@ class SustitucionComprobanteTest extends TestCase
         $this->assertSame($this->empresa()->id, $venta->fresh()->cliente_id);
     }
 
-    /** La venta no se toca: ni importes, ni stock, ni estado. */
-    public function test_la_sustitucion_no_altera_la_venta_ni_el_stock(): void
+    /** La venta no se toca: ni importes ni estado. */
+    public function test_la_sustitucion_no_altera_la_venta(): void
     {
         $sesion = $this->turno();
         $venta = $this->ventaConRecibo($sesion);
-        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
 
         $totalAntes = $venta->fresh()->total;
-        $stockAntes = (float) $producto->fresh()->stock_actual;
-        $movimientosAntes = $producto->movimientos()->count();
+        $lineasAntes = $venta->detalle()->count();
 
         Comprobantes::sustituir($venta->comprobante, $this->admin(), $this->empresa(), 'Pidió factura');
 
@@ -134,8 +131,7 @@ class SustitucionComprobanteTest extends TestCase
 
         $this->assertSame($totalAntes, $venta->total);
         $this->assertSame('COMPLETADA', $venta->estado);
-        $this->assertSame($stockAntes, (float) $producto->fresh()->stock_actual);
-        $this->assertSame($movimientosAntes, $producto->movimientos()->count());
+        $this->assertSame($lineasAntes, $venta->detalle()->count());
     }
 
     /** El documento vigente es siempre uno solo. */
@@ -219,21 +215,6 @@ class SustitucionComprobanteTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('anulado');
-
-        Comprobantes::sustituir($recibo->fresh(), $this->admin(), $this->empresa(), 'Pidió factura');
-    }
-
-    public function test_no_se_sustituye_el_documento_de_una_venta_devuelta(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->ventaConRecibo($sesion);
-        $recibo = $venta->comprobante;
-
-        Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota');
-
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('devoluciones');
 
         Comprobantes::sustituir($recibo->fresh(), $this->admin(), $this->empresa(), 'Pidió factura');
     }

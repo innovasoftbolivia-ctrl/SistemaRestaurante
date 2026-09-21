@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * `afecta_caja` distingue el dinero que queda físicamente en el cajón
  * (efectivo) del que no (tarjeta, transferencia). Solo el primero cuenta
- * para el arqueo de cierre.
+ * para el arqueo de cierre, y solo el primero admite vuelto: es la única
+ * definición de «efectivo» del sistema.
  */
 class MetodoPago extends Model
 {
@@ -32,9 +33,15 @@ class MetodoPago extends Model
         return $query->where('activo', 1);
     }
 
+    /**
+     * El dinero que entra al cajón es el que admite monto recibido y vuelto.
+     * Lo dice `afecta_caja`, la misma columna que suma en el arqueo: antes el
+     * vuelto miraba el código `EFECTIVO`, y un segundo método de caja (dólares,
+     * por ejemplo) entraba al arqueo pero no daba vuelto.
+     */
     public function esEfectivo(): bool
     {
-        return $this->codigo === 'EFECTIVO';
+        return (bool) $this->afecta_caja;
     }
 
     /**

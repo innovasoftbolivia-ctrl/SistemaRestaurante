@@ -4,7 +4,7 @@
 
 <div class="relative" x-data="{ abierto: false }" @click.away="abierto = false">
     <button type="button" class="flex items-center text-gray-700 dark:text-gray-400" @click="abierto = !abierto">
-        <x-ui.inicial :nombre="$usuario->nombre_completo" size="md" class="mr-3" />
+        <x-ui.inicial :nombre="$usuario->nombre_completo" size="md" class="mr-3" marca />
 
         <span class="block mr-1 font-medium text-theme-sm">{{ $usuario->empleado?->nombres ?? $usuario->usuario }}</span>
 

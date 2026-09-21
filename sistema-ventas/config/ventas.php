@@ -8,7 +8,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | El esquema apoya reglas críticas en 6 procedimientos almacenados y 7
-    | triggers: descontar stock y escribir el kardex al vender, recalcular los
+    | triggers: copiar el régimen de impuesto de cada línea, recalcular los
     | totales, tomar el correlativo del comprobante con bloqueo de fila, y
     | calcular el arqueo al cerrar caja.
     |
@@ -50,6 +50,11 @@ return [
         // Una segunda carpeta FUERA del disco del servidor (disco externo,
         // carpeta sincronizada, unidad de red): cada respaldo se copia ahí.
         'copia' => env('RESPALDOS_COPIA'),
+        // Y la nube: cada respaldo se sube con rclone a este remoto (`drive:`,
+        // el que deja configurado scripts/conectar-drive.sh). Vacío = no se
+        // sube. Ver Respaldos::subirALaNube().
+        'nube' => env('RESPALDOS_NUBE'),
+        'rclone' => env('RCLONE_BIN', 'rclone'),
     ],
 
     /*
@@ -81,11 +86,25 @@ return [
     |
     | Mientras el negocio no factura, las pantallas no hablan de impuesto, IVA
     | ni facturas: todo sale como recibo y sin desglose. El código queda entero
-    | —el cálculo del IVA, las facturas, el libro de ventas— y se vuelve a ver
-    | poniendo MOSTRAR_FACTURACION=true.
+    | —el cálculo del IVA y las facturas— y se vuelve a ver poniendo
+    | MOSTRAR_FACTURACION=true. El libro de ventas ya no está: se quitó con el
+    | inventario, y facturar de nuevo pediría rehacerlo.
     |
     */
 
     'mostrar_facturacion' => (bool) env('MOSTRAR_FACTURACION', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Quién desarrolló el sistema
+    |--------------------------------------------------------------------------
+    |
+    | Una línea discreta, «Desarrollado por …», en el inicio de sesión y al pie
+    | del menú. El nombre grande sigue siendo el del negocio. Vacío = no se
+    | muestra, para el cliente que no la quiera.
+    |
+    */
+
+    'desarrollado_por' => (string) env('DESARROLLADO_POR', 'InnovaDevs'),
 
 ];

@@ -121,7 +121,7 @@
             cursor: pointer;
         }
 
-        .acciones .principal { background: #465fff; border-color: #465fff; color: #fff; }
+        .acciones .principal { background: #0a5cff; border-color: #0a5cff; color: #fff; }
 
         @media print {
             body { background: #fff; padding: 0; }
@@ -284,10 +284,6 @@
             <tr>
                 <td class="tenue">− Egresos de caja</td>
                 <td class="derecha">{{ Config::importe($desglose['egresos']) }}</td>
-            </tr>
-            <tr>
-                <td class="tenue">− Devoluciones en efectivo</td>
-                <td class="derecha">{{ Config::importe($desglose['devuelto']) }}</td>
             </tr>
             <tr>
                 <td class="tenue">= Efectivo esperado</td>

@@ -69,7 +69,6 @@ class Comprobantes
             $comprobante->estado === 'SUSTITUIDO' => 'Este documento ya fue sustituido por otro.',
             $comprobante->estado === 'ANULADO' => 'Este documento está anulado.',
             $venta?->estado === 'ANULADA' => 'La venta está anulada: su documento no se sustituye.',
-            in_array($venta?->estado, ['DEVUELTA', 'DEVUELTA_PARCIAL'], true) => 'La venta tiene devoluciones: su documento no se sustituye.',
             $venta && self::diasTranscurridos($venta) > self::plazoDias() => 'Pasó el plazo de '.self::plazoDias().' día(s) para sustituir el documento de esta venta.',
             default => null,
         };

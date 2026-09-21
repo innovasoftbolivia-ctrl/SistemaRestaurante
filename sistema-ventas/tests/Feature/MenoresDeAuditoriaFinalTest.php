@@ -5,17 +5,14 @@ namespace Tests\Feature;
 use App\Models\Caja;
 use App\Models\Categoria;
 use App\Models\Cliente;
-use App\Models\Lote;
 use App\Models\MetodoPago;
 use App\Models\Permiso;
 use App\Models\Producto;
 use App\Models\Rol;
 use App\Models\SesionCaja;
-use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
-use App\Services\TomasInventario;
 use App\Services\Ventas;
 use App\Support\Mensaje;
 use Illuminate\Database\QueryException;
@@ -55,7 +52,6 @@ class MenoresDeAuditoriaFinalTest extends TestCase
     private function vender(Usuario $cajero, SesionCaja $turno, ?Cliente $cliente = null): Venta
     {
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
-        $producto->forceFill(['stock_actual' => 100])->save();
 
         return Ventas::registrar(
             sesion: $turno->fresh(),
@@ -82,28 +78,33 @@ class MenoresDeAuditoriaFinalTest extends TestCase
     {
         return Producto::create([
             'categoria_id' => $categoria->id,
-            'unidad_medida_id' => UnidadMedida::where('codigo', 'UND')->firstOrFail()->id,
             'codigo' => 'P-9933',
             'nombre' => 'Producto recién creado',
-            'precio_compra' => '5.00',
             'precio_venta' => '8.00',
             'afecto_impuesto' => 1,
-            'stock_minimo' => '0',
             'activo' => 1,
         ]);
     }
 
-    // ============================================================ 1. borrar un producto contado en una toma
+    // ============================================================ 1. borrar un producto con historial
 
-    public function test_borrar_un_producto_sin_movimientos_pero_contado_en_una_toma_lo_descataloga(): void
+    /** Quien decide es la clave foránea: un producto que ya se vendió no se puede borrar. */
+    public function test_borrar_un_producto_recien_creado_pero_ya_vendido_lo_descataloga(): void
     {
-        $categoria = Categoria::create(['nombre' => 'Categoría de la toma', 'activo' => 1]);
+        $categoria = Categoria::create(['nombre' => 'Categoría nueva', 'activo' => 1]);
         $producto = $this->productoNuevo($categoria);
-        TomasInventario::abrir($this->u('admin'), $categoria->id);
+        $cajero = $this->u('cajero1');
+
+        Ventas::registrar(
+            sesion: $this->turno($cajero),
+            usuario: $cajero,
+            lineas: [['producto_id' => $producto->id, 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+        );
 
         $this->como($this->u('admin'))->delete(route('productos.destroy', $producto))
             ->assertRedirect(route('productos.index'))
-            ->assertSessionHas('exito', fn ($m) => str_contains($m, 'se descatalogó'));
+            ->assertSessionHas('exito', fn ($m) => str_contains($m, 'se retiró del menú'));
 
         $this->assertFalse((bool) $producto->fresh()->activo);
     }
@@ -114,43 +115,9 @@ class MenoresDeAuditoriaFinalTest extends TestCase
 
         $this->como($this->u('admin'))->delete(route('productos.destroy', $producto))
             ->assertRedirect(route('productos.index'))
-            ->assertSessionHas('exito', fn ($m) => str_contains($m, 'eliminado'));
+            ->assertSessionHas('exito', fn ($m) => str_contains($m, 'se quitó del menú'));
 
         $this->assertNull(Producto::find($producto->id));
-    }
-
-    // ============================================================ 2. resumen de vencimientos
-
-    public function test_el_resumen_de_vencimientos_no_cuenta_productos_sin_control(): void
-    {
-        $admin = $this->u('admin');
-        $antes = $this->como($admin)->get(route('vencimientos.index'))->assertOk()->viewData('resumen');
-
-        $producto = Producto::activos()->where('controla_vencimiento', 0)->orderBy('id')->firstOrFail();
-        Lote::create([
-            'producto_id' => $producto->id, 'codigo' => 'VIEJO-1', 'fecha_vencimiento' => now()->subDays(3)->toDateString(),
-            'cantidad_inicial' => 5, 'cantidad_actual' => 5, 'fecha_ingreso' => now()->subMonth(),
-        ]);
-
-        $despues = $this->como($admin)->get(route('vencimientos.index'))->assertOk()->viewData('resumen');
-
-        $this->assertSame($antes['vencidos'], $despues['vencidos']);
-        $this->assertEquals($antes['valor_vencido'], $despues['valor_vencido']);
-    }
-
-    // ============================================================ 3. ajuste de un descatalogado
-
-    public function test_un_descatalogado_se_ajusta_desde_inventario_igual_que_desde_su_ficha(): void
-    {
-        $producto = Producto::activos()->where('controla_vencimiento', 0)
-            ->whereHas('unidadMedida', fn ($q) => $q->where('permite_decimal', 0))->orderBy('id')->firstOrFail();
-        $producto->forceFill(['stock_actual' => 4, 'activo' => 0])->save();
-
-        $this->como($this->u('admin'))->post(route('inventario.ajuste'), [
-            'producto_id' => $producto->id, 'stock_contado' => 0, 'motivo' => 'Sobrante de un producto dado de baja',
-        ])->assertSessionHasNoErrors();
-
-        $this->assertEquals(0, (float) $producto->fresh()->stock_actual);
     }
 
     // ============================================================ 4. errores de la base en pantalla
@@ -217,23 +184,6 @@ class MenoresDeAuditoriaFinalTest extends TestCase
 
         $this->assertSame(1, (int) $cuenta($cajero1));
         $this->assertSame(3, (int) $cuenta($this->u('admin')));
-    }
-
-    // ============================================================ 7. kardex
-
-    public function test_el_kardex_no_muestra_el_numero_de_venta_ni_el_motivo_de_anulacion_a_quien_no_es_admin(): void
-    {
-        $cajero = $this->u('cajero1');
-        $venta = $this->vender($cajero, $this->turno($cajero));
-        Ventas::anular($venta, $this->u('admin'), 'Motivo reservado del cajero');
-
-        $this->como($this->u('almacen'))->get(route('inventario.movimientos'))->assertOk()
-            ->assertDontSee('Motivo reservado del cajero')
-            ->assertDontSee('Venta #'.$venta->id);
-
-        $this->como($this->u('admin'))->get(route('inventario.movimientos'))->assertOk()
-            ->assertSee('Motivo reservado del cajero')
-            ->assertSee('Venta #'.$venta->id);
     }
 
     // ============================================================ 8. rol a medida con anular

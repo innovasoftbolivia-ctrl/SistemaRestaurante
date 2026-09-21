@@ -22,8 +22,8 @@ use Tests\TestCase;
  * importe cuando la línea iba sin monto: un QR de Bs 5 pagaba una venta mayor,
  * una venta «por QR» se aceptaba sin cobro detrás, y un QR pagado podía
  * respaldar un pago en efectivo. Ahora lo decide `Ventas::registrar`, con la
- * fila del cobro bloqueada. Cada prueba confirma también que el stock no se
- * tocó: si la regla falla, la venta no llega a existir.
+ * fila del cobro bloqueada. Cada prueba confirma también que, si la regla
+ * falla, la venta no llega a existir.
  */
 class CobroQrEnLaVentaTest extends TestCase
 {
@@ -78,9 +78,8 @@ class CobroQrEnLaVentaTest extends TestCase
         ]);
     }
 
-    private function sinVenta(float $stockAntes): void
+    private function sinVenta(): void
     {
-        $this->assertSame($stockAntes, (float) $this->producto()->stock_actual, 'se descontó stock de una venta rechazada');
         $this->assertSame(0, Venta::where('sesion_caja_id', $this->turno()->id)->count());
     }
 
@@ -89,50 +88,42 @@ class CobroQrEnLaVentaTest extends TestCase
     public function test_una_venta_por_qr_sin_cobro_se_rechaza(): void
     {
         $this->turno();
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(1, [['metodo_pago_id' => $this->metodo('QR')]])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'necesita su cobro'));
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
     }
 
     /** El caso crítico: QR de Bs 5, carrito que creció, línea «el resto». */
     public function test_un_qr_por_menos_no_paga_una_venta_mayor_aunque_la_linea_vaya_sin_importe(): void
     {
         $cobro = $this->cobroPagado(5.00);
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(5, [['metodo_pago_id' => $this->metodo('QR'), 'cobro_qr_id' => $cobro->id]])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'el total cambió'));
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
         $this->assertNull($cobro->fresh()->venta_id);
     }
 
     public function test_un_cobro_qr_no_respalda_un_pago_en_efectivo(): void
     {
         $cobro = $this->cobroPagado($this->total(1));
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(1, [['metodo_pago_id' => $this->metodo('EFECTIVO'), 'cobro_qr_id' => $cobro->id]])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'solo puede respaldar un pago por QR'));
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
     }
 
     public function test_el_mismo_cobro_no_paga_dos_lineas(): void
     {
         $mitad = round($this->total(2) / 2, 2);
         $cobro = $this->cobroPagado($mitad);
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(2, [
             ['metodo_pago_id' => $this->metodo('QR'), 'monto' => $mitad, 'cobro_qr_id' => $cobro->id],
             ['metodo_pago_id' => $this->metodo('QR'), 'cobro_qr_id' => $cobro->id],
         ])->assertSessionHas('error');
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
     }
 
     public function test_un_cobro_de_otro_turno_no_se_puede_usar(): void
@@ -141,23 +132,19 @@ class CobroQrEnLaVentaTest extends TestCase
         $ajeno = $this->cobroPagado($this->total(1), $admin);
         Cajas::cerrar($this->turno($admin)->fresh(), $admin, 100);
         $this->turno();
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(1, [['metodo_pago_id' => $this->metodo('QR'), 'cobro_qr_id' => $ajeno->id]])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'no es de este turno'));
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
     }
 
     public function test_un_cobro_sin_pagar_no_se_usa(): void
     {
         $cobro = CobrosQr::generar($this->turno(), $this->cajero(), $this->total(1));
-        $stock = (float) $this->producto()->stock_actual;
-
         $this->vender(1, [['metodo_pago_id' => $this->metodo('QR'), 'cobro_qr_id' => $cobro->id]])
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'todavía no está pagado'));
 
-        $this->sinVenta($stock);
+        $this->sinVenta();
     }
 
     // ---------------------------------------------------------------- caminos buenos

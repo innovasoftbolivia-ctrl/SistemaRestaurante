@@ -72,7 +72,7 @@
 
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <p class="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">
-                Registrar al cliente es <b>opcional</b>: la venta al paso se cobra sin pedir ningún dato y el recibo
+                Registrar al cliente es <b>opcional</b>: el pedido se cobra sin pedir ningún dato y el recibo
                 sale a nombre genérico.
                 @facturacion
                     Solo la <b>factura</b> obliga a identificarlo, y para eso tiene que ser persona jurídica con NIT y
@@ -268,7 +268,7 @@
 
                             <x-form.campo label="Tipo de documento" for="cliente-tipodoc" name="tipo_documento" required>
                                 <x-form.select id="cliente-tipodoc" name="tipo_documento" x-model="f.tipo_documento"
-                                    :opciones="['CI' => 'CI (cédula de identidad)', 'NIT' => App\Support\Config::facturacionVisible() ? 'NIT (unipersonal: recibe factura)' : 'NIT', 'CE' => 'Carné de extranjería', 'PAS' => 'Pasaporte', 'SIN' => 'Sin documento']" />
+                                    :opciones="collect(App\Models\TipoDocumento::opciones('NATURAL'))->map(fn ($nombre, $codigo) => $codigo === 'NIT' && App\Support\Config::facturacionVisible() ? 'NIT (unipersonal: recibe factura)' : $nombre)->all()" />
                             </x-form.campo>
 
                             <x-form.campo label="Documento" for="cliente-doc-nat" name="documento">

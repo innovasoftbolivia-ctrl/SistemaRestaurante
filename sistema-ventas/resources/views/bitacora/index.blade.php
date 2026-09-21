@@ -60,7 +60,7 @@
                         @forelse ($registros as $registro)
                             @php
                                 $sobre = B::entidad($registro->entidad, $registro->entidad_id);
-                                $enlace = B::enlace($registro->entidad, $registro->entidad_id);
+                                $enlace = B::enlace($registro->entidad, $registro->entidad_id, $registro->detalle);
                                 $filas = B::detalle($registro->detalle);
                                 $quien = $registro->usuario;
                             @endphp
@@ -87,7 +87,7 @@
                                 </td>
                                 <td class="whitespace-nowrap px-5 py-4 text-theme-sm">
                                     @if ($enlace)
-                                        <a href="{{ $enlace }}" class="text-brand-500 hover:underline">{{ $sobre }}</a>
+                                        <a href="{{ $enlace }}" class="text-brand-500 hover:underline dark:text-brand-400">{{ $sobre }}</a>
                                     @else
                                         <span class="text-gray-500 dark:text-gray-400">{{ $sobre ?? '—' }}</span>
                                     @endif

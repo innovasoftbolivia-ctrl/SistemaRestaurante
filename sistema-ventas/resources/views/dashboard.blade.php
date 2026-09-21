@@ -140,7 +140,12 @@
                     <p class="mb-1 text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Frente a ayer
                     </p>
-                    @if ($variacion === null)
+                    {{-- Sin ventas todavía hoy, la comparación daría −100% en rojo
+                         cada mañana: una alarma que no es. Se espera a la primera. --}}
+                    @if ($hoy['hoy']['operaciones'] === 0)
+                        <p class="text-title-sm font-semibold text-gray-500 dark:text-gray-400">—</p>
+                        <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400" data-aun-sin-ventas>aún sin ventas hoy</p>
+                    @elseif ($variacion === null)
                         <p class="text-title-sm font-semibold text-gray-500 dark:text-gray-400">—</p>
                         <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">ayer no hubo ventas</p>
                     @else
@@ -160,7 +165,8 @@
                     <div>
                         <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Últimas dos semanas</h2>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            Vendido por día, sin contar las ventas anuladas.
+                            Vendido por jornada, sin contar las ventas anuladas.
+                            {{ \App\Http\Controllers\ReporteController::notaJornada() }}
                         </p>
                     </div>
                     <x-ui.button size="xs" variant="outline" :href="route('reportes.ventas')">
@@ -173,10 +179,10 @@
             </div>
         @endif
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div class="grid grid-cols-1 gap-6">
             {{-- Últimas ventas --}}
             @if ($ultimas)
-                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] lg:col-span-2">
+                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
                     <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
                         <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Últimas ventas</h2>
                         <x-ui.button size="xs" variant="outline" :href="route('ventas.index')">Ver todas</x-ui.button>
@@ -197,7 +203,7 @@
                                             </span>
                                         </td>
                                         <td class="px-6 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
-                                            {{ $venta->cliente?->nombre ?? 'Cliente varios' }}
+                                            {{ $venta->cliente?->nombre ?? Config::get('cliente_generico_nombre', 'Cliente varios') }}
                                         </td>
                                         <td class="px-6 py-3">
                                             @if ($venta->estado !== 'COMPLETADA')
@@ -220,55 +226,6 @@
                             </tbody>
                         </table>
                     </div>
-                </div>
-            @endif
-
-            {{-- Alertas de reposición --}}
-            @if ($alertas !== null)
-                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] {{ $ultimas ? '' : 'lg:col-span-3' }}">
-                    <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
-                        <div>
-                            <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Reponer</h2>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                Productos en su stock mínimo.
-                            </p>
-                        </div>
-                        @if ($alertas->isNotEmpty())
-                            <x-ui.estado estado="SUSPENDIDO" :texto="$alertasTotal" />
-                        @endif
-                    </div>
-
-                    <div class="border-t border-gray-100 dark:border-gray-800">
-                        @forelse ($alertas as $alerta)
-                            <a href="{{ route('productos.show', $alerta->id) }}"
-                                class="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-3 transition last:border-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/[0.02]">
-                                <div class="min-w-0">
-                                    <span class="block truncate text-theme-sm text-gray-800 dark:text-white/90">
-                                        {{ $alerta->nombre }}
-                                    </span>
-                                    <span class="text-theme-xs text-gray-500 dark:text-gray-400">
-                                        {{ $alerta->categoria }}
-                                    </span>
-                                </div>
-                                <span class="whitespace-nowrap text-theme-sm font-medium {{ (float) $alerta->stock_actual <= 0 ? 'text-error-600 dark:text-error-400' : 'text-warning-700 dark:text-orange-400' }}">
-                                    {{ Config::cantidad($alerta->stock_actual) }} / {{ Config::cantidad($alerta->stock_minimo) }}
-                                </span>
-                            </a>
-                        @empty
-                            <p class="px-6 py-10 text-center text-theme-sm text-success-700 dark:text-success-500">
-                                Nada por reponer.
-                            </p>
-                        @endforelse
-                    </div>
-
-                    @if ($gestion && $alertas->isNotEmpty())
-                        <div class="px-6 py-4">
-                            <x-ui.button size="xs" variant="outline" class="w-full"
-                                :href="route('reportes.productos')">
-                                Ver todas las alertas
-                            </x-ui.button>
-                        </div>
-                    @endif
                 </div>
             @endif
         </div>

@@ -57,18 +57,31 @@
   --color-white: #ffffff;
   --color-black: #101828;
 
-  --color-brand-25: #f2f7ff;
-  --color-brand-50: #ecf3ff;
-  --color-brand-100: #dde9ff;
-  --color-brand-200: #c2d6ff;
-  --color-brand-300: #9cb9ff;
-  --color-brand-400: #7592ff;
-  --color-brand-500: #465fff;
-  --color-brand-600: #3641f5;
-  --color-brand-700: #2a31d8;
-  --color-brand-800: #252dae;
-  --color-brand-900: #262e89;
-  --color-brand-950: #161950;
+  /* El color de la marca: el azul de InnovaDevs. Para personalizar el
+     sistema de un cliente se cambia esta escala (y, si hace falta, la del
+     modo oscuro al final del archivo) y se vuelve a compilar con
+     `npm run build`. brand-500 lleva texto blanco encima: tiene que
+     mantener un contraste de 4.5:1 o más. */
+  --color-brand-25: #f3f8ff;
+  --color-brand-50: #e8f1ff;
+  --color-brand-100: #d2e3ff;
+  --color-brand-200: #a8c9ff;
+  --color-brand-300: #6fa6ff;
+  --color-brand-400: #3380ff;
+  --color-brand-500: #0a5cff;
+  --color-brand-600: #0848d6;
+  --color-brand-700: #0a3bab;
+  --color-brand-800: #0e3285;
+  --color-brand-900: #102c69;
+  --color-brand-950: #0b1b42;
+
+  /* El azul marino de InnovaDevs: el fondo del modo oscuro y el del inicio
+     de sesión, que es oscuro siempre. Se personaliza junto con `brand`. */
+  --color-marino-950: #040a1c;
+  --color-marino-900: #060d24;
+  --color-marino-800: #0b1638;
+  --color-marino-700: #16244a;
+  --color-marino-600: #26365e;
 
   --color-blue-light-25: #f5fbff;
   --color-blue-light-50: #f0f9ff;
@@ -204,7 +217,7 @@
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.15] dark:text-brand-300;
 }
 
 @utility menu-item-inactive {
@@ -216,7 +229,7 @@
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-400;
+  @apply text-brand-500 dark:text-brand-300;
 }
 
 @utility menu-item-icon-inactive {
@@ -525,27 +538,6 @@ th,
 }
 .jvm-marker.jvm-element {
   @apply !stroke-gray-200 dark:!stroke-gray-800;
-}
-
-.stocks-slider-outer .swiper-button-next:after,
-.stocks-slider-outer .swiper-button-prev:after {
-  @apply hidden;
-}
-
-.stocks-slider-outer .swiper-button-next,
-.stocks-slider-outer .swiper-button-prev {
-  @apply static! mt-0 h-8 w-9 rounded-full border border-gray-200 !text-gray-700 transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400!;
-}
-
-.stocks-slider-outer .swiper-button-next.swiper-button-disabled,
-.stocks-slider-outer .swiper-button-prev.swiper-button-disabled {
-  @apply bg-white opacity-50 dark:bg-gray-900;
-}
-
-.stocks-slider-outer .swiper-button-next svg,
-.stocks-slider-outer .swiper-button-prev svg {
-  @apply !h-auto !w-auto;
-  fill: none;
 }
 
 .flatpickr-wrapper {
@@ -1002,4 +994,41 @@ pre[class*='language-'] {
 /* Alpine oculta con x-cloak lo que no debe verse antes de arrancar. */
 [x-cloak] {
   display: none !important;
+}
+
+/* Pantalla completa de la cocina (ver cocina/index.blade.php): la tablet de la
+   cocina no necesita el menú ni la cabecera, necesita espacio para pedidos.
+   El título de la página se queda para los lectores de pantalla. */
+html.modo-cocina #sidebar,
+html.modo-cocina .contenido-principal > header {
+  display: none;
+}
+
+html.modo-cocina .contenido-principal {
+  margin-left: 0;
+}
+
+html.modo-cocina main#contenido {
+  max-width: none;
+}
+
+html.modo-cocina [data-migas] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Modo oscuro con el azul marino de InnovaDevs en vez del gris de la
+   plantilla. Solo en oscuro: en claro esos grises son texto y bordes, y ahí
+   se quedan como están. Las utilidades de Tailwind leen estas variables, así
+   que todo lo que es `dark:bg-gray-900`, `dark:border-gray-800`… cambia solo. */
+.dark {
+  --color-gray-700: var(--color-marino-600);
+  --color-gray-800: var(--color-marino-700);
+  --color-gray-900: var(--color-marino-900);
+  --color-gray-950: var(--color-marino-950);
+  --color-gray-dark: var(--color-marino-800);
 }

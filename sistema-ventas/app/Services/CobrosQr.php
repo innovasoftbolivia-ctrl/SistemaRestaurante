@@ -22,9 +22,10 @@ use RuntimeException;
  * cuándo un cobro puede usarse para pagar una venta.
  *
  * La regla que ordena todo: un cobro solo sirve UNA vez y solo si está pagado.
- * De eso se encarga {@see self::consumir()}, que además bloquea la fila: dos
+ * Esa guarda no vive aquí sino en `Ventas::registrar()` (`cobroQrDelPago`),
+ * con la fila del cobro bloqueada dentro de la transacción de la venta: dos
  * pestañas del mostrador cobrando a la vez no pueden gastar el mismo QR dos
- * veces.
+ * veces, y si algo no cuadra se deshace la venta entera.
  */
 class CobrosQr
 {
@@ -120,9 +121,25 @@ class CobrosQr
             return self::marcarPagado($cobro, 'PASARELA', null, $pasarela->referenciaDelPago());
         }
 
-        $cobro->update(['estado' => $estado]);
+        // Solo si sigue pendiente: el aviso del banco, el sondeo del mostrador
+        // y la confirmación a mano pueden llegar a la vez, y el primero gana.
+        self::siSiguePendiente($cobro, ['estado' => $estado]);
 
         return $cobro->fresh();
+    }
+
+    /**
+     * Cambia el cobro solo si sigue PENDIENTE, en un único UPDATE con esa
+     * condición: sin leer y después escribir, que dejaba pisar un PAGADO.
+     * Devuelve si lo cambió.
+     *
+     * @param  array<string, mixed>  $cambios
+     */
+    private static function siSiguePendiente(CobroQr $cobro, array $cambios): bool
+    {
+        return CobroQr::whereKey($cobro->id)
+            ->where('estado', CobroQr::PENDIENTE)
+            ->update($cambios) === 1;
     }
 
     /**
@@ -219,6 +236,10 @@ class CobrosQr
             throw new RuntimeException('Ese cobro ya está pagado: no se puede cancelar.');
         }
 
+        if ($cobro->estado === CobroQr::ANULADO) {
+            return $cobro;
+        }
+
         // En el banco primero: un QR que queda vivo allá se puede pagar después,
         // cuando ya no hay venta esperándolo.
         if ($cobro->estaPendiente()) {
@@ -234,41 +255,23 @@ class CobrosQr
             }
         }
 
-        $cobro->update(['estado' => CobroQr::ANULADO]);
+        // Nunca sobre un PAGADO: si el banco lo marcó pagado entre la consulta
+        // y aquí, el dinero entró y el cobro tiene que seguir a la vista.
+        $cambiado = CobroQr::whereKey($cobro->id)
+            ->whereNotIn('estado', [CobroQr::PAGADO, CobroQr::ANULADO])
+            ->update(['estado' => CobroQr::ANULADO]) === 1;
+
+        if (! $cambiado && $cobro->fresh()?->estaPagado()) {
+            throw new RuntimeException('El cliente ya pagó ese QR: no se puede cancelar. Úsalo para cobrar.');
+        }
+
+        if (! $cambiado) {
+            return $cobro->fresh();
+        }
 
         Auditor::registrar('QR_ANULADO', 'cobros_qr', $cobro->id, [], $usuario->id);
 
         return $cobro->fresh();
-    }
-
-    /**
-     * Ata el cobro a la venta que acaba de registrarse.
-     *
-     * Con bloqueo de fila y comprobando de nuevo el estado DENTRO de la
-     * transacción: si no, dos pestañas del mostrador que cobran a la vez
-     * podrían pagar dos ventas distintas con el mismo QR.
-     */
-    public static function consumir(int $cobroId, Venta $venta): CobroQr
-    {
-        return DB::transaction(function () use ($cobroId, $venta) {
-            $cobro = CobroQr::whereKey($cobroId)->lockForUpdate()->first();
-
-            if (! $cobro) {
-                throw new RuntimeException('El cobro por QR no existe.');
-            }
-
-            if (! $cobro->estaPagado()) {
-                throw new RuntimeException('El cobro por QR todavía no está pagado.');
-            }
-
-            if ($cobro->venta_id !== null) {
-                throw new RuntimeException('Ese cobro por QR ya se usó en otra venta.');
-            }
-
-            $cobro->update(['venta_id' => $venta->id]);
-
-            return $cobro->fresh();
-        });
     }
 
     /**
@@ -312,13 +315,25 @@ class CobrosQr
         ?Usuario $usuario = null,
         ?string $referencia = null,
     ): CobroQr {
-        $cobro->update([
+        $pagado = self::siSiguePendiente($cobro, [
             'estado' => CobroQr::PAGADO,
             'pagado_en' => now(),
             'confirmado_por' => $quien,
             'confirmado_por_id' => $usuario?->id,
             'referencia_bancaria' => $referencia,
         ]);
+
+        // Otro llegó primero (el aviso del banco y el sondeo a la vez): el
+        // pago ya quedó registrado una vez, con quien lo registró.
+        if (! $pagado) {
+            $actual = $cobro->fresh();
+
+            if ($actual?->estaPagado()) {
+                return $actual;
+            }
+
+            throw new RuntimeException('Ese cobro ya no está pendiente: genera uno nuevo.');
+        }
 
         Auditor::registrar('QR_PAGADO', 'cobros_qr', $cobro->id, [
             'monto' => $cobro->monto,

@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Support\Config;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -26,10 +25,10 @@ class Venta extends Model
 
     const UPDATED_AT = null;
 
-    public const ESTADOS = ['COMPLETADA', 'ANULADA', 'DEVUELTA_PARCIAL', 'DEVUELTA'];
+    public const ESTADOS = ['COMPLETADA', 'ANULADA'];
 
     protected $fillable = [
-        'cliente_id', 'usuario_id', 'sesion_caja_id', 'fecha',
+        'cliente_id', 'usuario_id', 'sesion_caja_id', 'pedido_id', 'fecha',
         'descuento', 'estado', 'observacion',
         'impuesto_incluido', 'descuento_precio_final',
     ];
@@ -45,7 +44,6 @@ class Venta extends Model
             'impuesto_incluido' => 'boolean',
             'descuento_precio_final' => 'decimal:2',
             'total' => 'decimal:2',
-            'total_devuelto' => 'decimal:2',
         ];
     }
 
@@ -108,15 +106,24 @@ class Venta extends Model
         return $this->hasMany(Comprobante::class, 'venta_id');
     }
 
-    public function devoluciones(): HasMany
-    {
-        return $this->hasMany(Devolucion::class, 'venta_id');
-    }
-
     /** El documento válido hoy; los sustituidos y anulados son historial. */
     public function comprobante(): HasOne
     {
         return $this->hasOne(Comprobante::class, 'venta_id')->where('estado', 'EMITIDO');
+    }
+
+    /**
+     * El pedido que cobró esta venta: toda venta del mostrador trae uno, y lo
+     * sigue diciendo aunque se anule. Una venta vieja, de antes de los
+     * pedidos, no tiene ninguno.
+     *
+     * La clave vive aquí (`ventas.pedido_id`) porque un pedido puede tener
+     * varias ventas —la anulada y la que lo volvió a cobrar—, pero una sola
+     * vigente: eso lo garantiza el índice único de `pedido_cobrado_uk`.
+     */
+    public function pedido(): BelongsTo
+    {
+        return $this->belongsTo(Pedido::class, 'pedido_id');
     }
 
     public function scopeCompletadas(Builder $query): Builder
@@ -127,9 +134,8 @@ class Venta extends Model
     /**
      * Anular es para el error del momento: solo mientras el turno de caja de
      * la venta sigue abierto. Si el turno ya cerró, ese dinero ya se contó en
-     * su arqueo; anular cambiaría los reportes de ese día y la plata devuelta
-     * saldría de un cajón que no la registra. Para eso está la devolución,
-     * que queda en el turno de hoy.
+     * su arqueo, y anular cambiaría un cierre ya firmado. Pasado ese punto, la
+     * corrección se hace fuera del sistema, con el arqueo del día siguiente.
      */
     public function puedeAnularse(): bool
     {
@@ -141,10 +147,6 @@ class Venta extends Model
         return $this->sesionCaja?->estado === 'ABIERTA';
     }
 
-    /**
-     * Una venta anulada ya devolvió su stock y su dinero; una totalmente
-     * devuelta no tiene nada más que devolver.
-     */
     /**
      * El descuento como lo vio el cliente: con el impuesto incluido, sobre el
      * precio final; si no, sobre la base.
@@ -158,29 +160,6 @@ class Venta extends Model
     public function getTotalAntesDelDescuentoAttribute(): float
     {
         return round((float) $this->total + $this->descuento_visible, 2);
-    }
-
-    /** Días después de la venta en que todavía se acepta una devolución. */
-    public static function diasParaDevolver(): int
-    {
-        return max(0, (int) Config::get('dias_max_devolucion', '7'));
-    }
-
-    /** Del día de la venta a hoy, en días de calendario. */
-    public function dentroDelPlazoDeDevolucion(): bool
-    {
-        return $this->fecha->copy()->startOfDay()->diffInDays(now()->startOfDay()) <= self::diasParaDevolver();
-    }
-
-    public function admiteDevolucion(): bool
-    {
-        return in_array($this->estado, ['COMPLETADA', 'DEVUELTA_PARCIAL'], true);
-    }
-
-    /** Lo que aún se le puede devolver al cliente. */
-    public function getTotalDevolvibleAttribute(): float
-    {
-        return round((float) $this->total - (float) $this->total_devuelto, 2);
     }
 
     public function getVueltoAttribute(): float

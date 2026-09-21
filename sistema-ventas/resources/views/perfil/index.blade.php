@@ -8,7 +8,7 @@
         <div class="space-y-6 lg:col-span-2">
             <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
                 <div class="flex items-center gap-4">
-                    <x-ui.inicial :nombre="$usuario->nombre_completo" size="xl" />
+                    <x-ui.inicial :nombre="$usuario->nombre_completo" size="xl" marca />
                     <div>
                         <h2 class="mb-1 text-lg font-semibold text-gray-800 dark:text-white/90">
                             {{ $usuario->nombre_completo }}

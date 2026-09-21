@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Rol de acceso al sistema (Administrador, Cajero, Almacenero).
+ * Rol de acceso al sistema (Administrador, Cajero, Cocina).
  * Define qué puede hacer la cuenta; es independiente del cargo laboral.
  */
 class Rol extends Model

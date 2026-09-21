@@ -1,6 +1,9 @@
 @props([
     'nombre' => '',
     'size' => 'md',
+    // La cuenta en sesión va en el azul de la marca; en las listas, cada
+    // persona con su color.
+    'marca' => false,
 ])
 
 @php
@@ -23,7 +26,7 @@
         'bg-blue-light-100 text-blue-light-700 dark:bg-blue-light-500/20 dark:text-blue-light-400',
         'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400',
     ];
-    $color = $paleta[crc32($nombre) % count($paleta)];
+    $color = $marca ? $paleta[0] : $paleta[crc32($nombre) % count($paleta)];
 @endphp
 
 <span

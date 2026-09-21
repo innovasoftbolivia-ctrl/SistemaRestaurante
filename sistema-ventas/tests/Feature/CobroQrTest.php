@@ -8,6 +8,7 @@ use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
+use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
 use App\Services\Qr\QrBanco;
@@ -21,7 +22,7 @@ use Tests\TestCase;
  *
  * La regla que ordena todo: el QR se genera contra el CARRITO, y la venta se
  * registra recién cuando el pago está confirmado. Si fuera al revés, un cliente
- * que se arrepiente dejaría una venta con stock descontado y comprobante
+ * que se arrepiente dejaría una venta cobrada y con comprobante
  * emitido por mercadería que nadie se llevó.
  */
 class CobroQrTest extends TestCase
@@ -152,33 +153,44 @@ class CobroQrTest extends TestCase
             ->assertStatus(422);
     }
 
-    // -------------------------------------------------------------- consumir
+    // ------------------------------------------------ atarlo a una sola venta
 
-    /** Un cobro paga UNA venta. Si no, el mismo QR compraría dos veces. */
+    /**
+     * Un cobro paga UNA venta. Si no, el mismo QR compraría dos veces. La
+     * guarda es la de `Ventas::registrar()`, con la fila del cobro bloqueada
+     * dentro de la transacción de la venta: es el único camino que ata un
+     * cobro a su venta (el viejo `CobrosQr::consumir` no lo llamaba nadie).
+     */
     public function test_un_cobro_pagado_solo_se_usa_una_vez(): void
     {
         $sesion = $this->turno();
-        $cobro = CobrosQr::generar($sesion, $this->cajero(), 10.00);
-        CobrosQr::confirmarAMano($cobro, $this->cajero());
+        $total = $this->totalDe($this->producto(), 1);
+        $cobro = CobrosQr::confirmarAMano(CobrosQr::generar($sesion, $this->cajero(), $total), $this->cajero());
 
-        $primera = $this->ventaDe($sesion);
-        CobrosQr::consumir($cobro->id, $primera);
-
+        $primera = $this->ventaPorQr($sesion, $cobro->id);
         $this->assertSame($primera->id, $cobro->fresh()->venta_id);
 
-        $segunda = $this->ventaDe($sesion);
-
         $this->expectExceptionMessage('ya se usó en otra venta');
-        CobrosQr::consumir($cobro->id, $segunda);
+        $this->ventaPorQr($sesion, $cobro->id);
     }
 
-    public function test_un_cobro_sin_pagar_no_se_puede_consumir(): void
+    public function test_un_cobro_sin_pagar_no_paga_una_venta(): void
     {
         $sesion = $this->turno();
-        $cobro = CobrosQr::generar($sesion, $this->cajero(), 10.00);
+        $cobro = CobrosQr::generar($sesion, $this->cajero(), $this->totalDe($this->producto(), 1));
 
         $this->expectExceptionMessage('todavía no está pagado');
-        CobrosQr::consumir($cobro->id, $this->ventaDe($sesion));
+        $this->ventaPorQr($sesion, $cobro->id);
+    }
+
+    private function ventaPorQr(SesionCaja $sesion, int $cobroId): Venta
+    {
+        return Ventas::registrar(
+            sesion: $sesion->fresh(),
+            usuario: $this->cajero(),
+            lineas: [['producto_id' => $this->producto()->id, 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => $this->metodoQr()->id, 'monto' => null, 'cobro_qr_id' => $cobroId]],
+        );
     }
 
     // ------------------------------------------- la venta con pago por QR
@@ -210,7 +222,7 @@ class CobroQrTest extends TestCase
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $stockAntes = (float) $producto->stock_actual;
+        $ventasAntes = Venta::count();
 
         $cobro = CobrosQr::generar($sesion, $this->cajero(), 50.00);
 
@@ -219,8 +231,8 @@ class CobroQrTest extends TestCase
             'pagos' => [['metodo_pago_id' => $this->metodoQr()->id, 'cobro_qr_id' => $cobro->id]],
         ])->assertSessionHas('error');
 
-        // Ni venta, ni stock descontado, ni comprobante emitido.
-        $this->assertSame($stockAntes, (float) $producto->fresh()->stock_actual);
+        // Ni venta ni comprobante emitido.
+        $this->assertSame($ventasAntes, Venta::count());
     }
 
     /** Un QR de Bs 5 no puede pagar una venta de Bs 50. */
@@ -228,7 +240,7 @@ class CobroQrTest extends TestCase
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $stockAntes = (float) $producto->stock_actual;
+        $ventasAntes = Venta::count();
 
         $cobro = CobrosQr::generar($sesion, $this->cajero(), 5.00);
         CobrosQr::confirmarAMano($cobro, $this->cajero());
@@ -242,7 +254,7 @@ class CobroQrTest extends TestCase
             ]],
         ])->assertSessionHas('error');
 
-        $this->assertSame($stockAntes, (float) $producto->fresh()->stock_actual);
+        $this->assertSame($ventasAntes, Venta::count());
     }
 
     /** Lo que pidió el negocio: una parte por QR y otra en efectivo. */

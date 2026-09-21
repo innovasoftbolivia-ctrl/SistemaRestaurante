@@ -54,7 +54,7 @@ class CajaController extends Controller
      */
     public static function arquea(?Usuario $usuario): bool
     {
-        return $usuario !== null && ($usuario->tienePermiso('caja.cerrar') || $usuario->tienePermiso('reportes.ver'));
+        return Cajas::arquea($usuario);
     }
 
     public function show(SesionCaja $sesion): View
@@ -83,6 +83,10 @@ class CajaController extends Controller
                 : Auth::user()->tienePermiso('caja.cerrar'),
             'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
             'qrAMano' => self::arquea(Auth::user()) ? $sesion->cobrosQrConfirmadosAMano()->with('confirmadoPor:id,usuario')->get() : collect(),
+            // Solo hace falta para cerrar: los pedidos con el cobro anulado que falta volver a cobrar.
+            'cuentasAbiertas' => $sesion->estaAbierta() && Auth::user()->tienePermiso('caja.cerrar')
+                ? Cajas::cuentasAbiertas()
+                : collect(),
         ]);
     }
 
@@ -150,6 +154,11 @@ class CajaController extends Controller
             return back()->with('error', Mensaje::de($e))->withInput();
         }
 
+        // Abierta desde el mostrador: se vuelve a vender, sin pasar por Caja.
+        if ($request->input('volver') === 'pos') {
+            return redirect()->route('pos.index')->with('exito', 'Caja abierta. Ya puedes cobrar.');
+        }
+
         return redirect()->route('caja.index')->with('exito', 'Caja abierta. Ya puedes vender.');
     }
 
@@ -198,6 +207,7 @@ class CajaController extends Controller
             // sin ella el cierre se saltaba el aviso de «entró una venta
             // mientras contabas» simplemente no mandando el campo.
             'huella' => ['required', 'string', 'max:100'],
+            'con_cuentas_abiertas' => ['nullable', 'boolean'],
         ], [], [
             'monto_declarado' => 'efectivo contado',
             'observacion' => 'observación',
@@ -219,6 +229,7 @@ class CajaController extends Controller
                 $datos['observacion'] ?? null,
                 isset($datos['fondo_dejado']) ? (float) $datos['fondo_dejado'] : null,
                 $datos['huella'],
+                $request->boolean('con_cuentas_abiertas'),
             );
         } catch (RuntimeException $e) {
             return back()->with('error', Mensaje::de($e));

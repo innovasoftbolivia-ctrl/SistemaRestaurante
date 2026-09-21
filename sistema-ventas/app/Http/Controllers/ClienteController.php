@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Cliente;
 use App\Models\Comprobante;
+use App\Models\TipoDocumento;
 use App\Services\Auditor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -14,7 +15,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
- * Registrar al cliente es opcional: la venta al paso va sin él. Solo la
+ * Registrar al cliente es opcional: el pedido se cobra sin él. Solo la
  * factura obliga a identificarlo, y para eso tiene que ser persona jurídica
  * con NIT y dirección fiscal.
  */
@@ -159,10 +160,17 @@ class ClienteController extends Controller
             'tipo_persona' => ['required', Rule::in(Cliente::TIPOS_PERSONA)],
             'tipo_documento' => [
                 'required',
-                $juridica ? Rule::in(['NIT']) : Rule::in(Cliente::DOCUMENTOS_NATURAL),
+                // Qué documento vale para cada tipo de persona lo dice la
+                // tabla `tipos_documento`, igual que la FK de la base.
+                TipoDocumento::regla($juridica ? 'JURIDICA' : 'NATURAL'),
             ],
             'documento' => [
-                $conNit ? 'required' : 'nullable',
+                // «Sin documento» es eso: sin número (ck_clientes_sin_doc).
+                match (true) {
+                    $request->input('tipo_documento') === 'SIN' => 'prohibited',
+                    $conNit => 'required',
+                    default => 'nullable',
+                },
                 'string', 'max:20',
                 // Documentos bolivianos: el NIT son solo dígitos; el CI, dígitos
                 // con complemento opcional (-1A) y extensión opcional (LP, SC…).
@@ -193,6 +201,7 @@ class ClienteController extends Controller
                 default => 'El documento lleva letras, números o guiones, entre 4 y 20 caracteres.',
             },
             'documento.required' => 'Escribe el NIT: con él se emite la factura.',
+            'documento.prohibited' => 'Con «Sin documento» no se escribe un número: elige el tipo de documento que corresponde o deja el número vacío.',
             'direccion.required' => 'La factura exige la dirección fiscal de la empresa.',
             'razon_social.required' => 'La persona jurídica se identifica por su razón social.',
             'nombres.required' => 'La persona natural se identifica por sus nombres y apellidos.',

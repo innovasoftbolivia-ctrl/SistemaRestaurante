@@ -30,8 +30,12 @@ fi
 # ya existente de una instalación vieja puede seguir siendo de root. Se
 # corrige aquí, mientras el entrypoint todavía corre como root, para que los
 # workers de php-fpm (que corren como www-data) puedan escribir en ellos.
-mkdir -p storage/app/respaldos
-chown -R www-data:www-data storage/app/public storage/logs storage/app/respaldos 2>/dev/null || true
+mkdir -p storage/app/respaldos storage/app/rclone
+chown -R www-data:www-data storage/app/public storage/logs storage/app/respaldos storage/app/rclone 2>/dev/null || true
+# La conexión con Google Drive (RCLONE_CONFIG) lleva el permiso de la cuenta:
+# solo la aplicación la lee. rclone la reescribe cada vez que renueva el
+# permiso, por eso vive en un volumen y es de www-data.
+chmod 700 storage/app/rclone 2>/dev/null || true
 
 # La copia externa de los respaldos (RESPALDOS_COPIA), si está montada: el
 # programador corre como www-data y tiene que poder escribir ahí. En un disco

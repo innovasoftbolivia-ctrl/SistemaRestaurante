@@ -11,9 +11,9 @@
         <x-common.common-grid-shape />
 
         <div class="z-1 mx-auto flex max-w-md flex-col items-center text-center">
-            <img class="mb-8 h-8 w-auto dark:hidden" src="/images/logo/logo.svg" alt="Sistema de Ventas" width="184" height="32" />
-            <img class="mb-8 hidden h-8 w-auto dark:block" src="/images/logo/logo-dark.svg" width="184" height="32"
-                alt="Sistema de Ventas" />
+            {{-- Solo el ícono, sin el nombre del negocio: una página de error
+                 puede salir justo porque la base no responde. --}}
+            <x-common.icono-negocio class="mb-8" />
 
             <p class="text-title-md sm:text-title-lg font-bold text-brand-500 dark:text-brand-400">{{ $codigo }}</p>
             <h1 class="text-title-sm sm:text-title-md mt-2 mb-3 font-semibold text-gray-800 dark:text-white/90">

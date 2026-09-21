@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use FilesystemIterator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use PDO;
 use PharData;
@@ -27,7 +28,7 @@ use Throwable;
  *
  *   ventas_db_<fecha>.sql.gz      la base, restaurable con `scripts/restore-db.sh`,
  *                                 con `mysql` o importándolo en phpMyAdmin
- *   ventas_fotos_<fecha>.tar.gz   las fotos de producto (storage/app/public)
+ *   ventas_fotos_<fecha>.tar.gz   las fotos del menú (storage/app/public)
  *
  * Cuatro detalles que, hechos mal, dan un respaldo que PARECE bueno y no se
  * puede restaurar —y eso se descubre justo el día que hace falta—:
@@ -35,8 +36,10 @@ use Throwable;
  *   1. Las columnas GENERADAS no se insertan. MySQL rechaza un valor para
  *      ellas, y el esquema tiene varias (importes, subtotales, vueltos).
  *   2. Los triggers se crean DESPUÉS de cargar los datos. Si se crearan antes,
- *      insertar las ventas del respaldo volvería a descontar el stock y a
- *      escribir el kardex: el respaldo restaurado no sería el original.
+ *      volverían a actuar sobre cada fila del respaldo: rechazarían las ventas
+ *      de turnos ya cerrados y los platos de cuentas ya cobradas, y le
+ *      recalcularían el impuesto a cada línea. El respaldo no cargaría, o no
+ *      sería el original.
  *   3. Las fechas TIMESTAMP se vuelcan en UTC y el archivo lo declara. Si no,
  *      restaurar desde una sesión con otra zona horaria las corre de hora.
  *   4. Se quita el DEFINER de procedimientos, vistas y triggers: apunta a un
@@ -45,6 +48,12 @@ use Throwable;
  * El archivo no trae `USE` ni `CREATE DATABASE`: se restaura sobre la base que
  * esté elegida. Es a propósito —ver la nota de `01_schema_mysql.sql`, que sí
  * los trae y por eso borró una vez la base de desarrollo—.
+ *
+ * No tiene pantalla: lo corre el programador de tareas cada noche
+ * (`respaldo:crear`) y cada respaldo se sube a la nube (Google Drive, con
+ * rclone; ver `subirALaNube`). La base entera —con los hashes de las
+ * contraseñas— no sale por el navegador para nadie, ni para el administrador
+ * del local.
  */
 class Respaldos
 {
@@ -87,9 +96,22 @@ class Respaldos
     }
 
     /**
-     * Hace un respaldo completo y borra los viejos.
+     * Dónde se suben los respaldos, en la sintaxis de rclone: `drive:` (el
+     * remoto que deja configurado `scripts/conectar-drive.sh`, con la carpeta
+     * de Drive como raíz), o `drive:respaldos` para una subcarpeta. Vacío =
+     * no se suben.
+     */
+    public static function nube(): ?string
+    {
+        $remoto = trim((string) config('ventas.respaldos.nube'));
+
+        return $remoto === '' ? null : $remoto;
+    }
+
+    /**
+     * Hace un respaldo completo, borra los viejos y lo sube a la nube.
      *
-     * @return array{base: string, fotos: ?string, copia: ?string, error_copia: ?string}
+     * @return array{base: string, fotos: ?string, copia: ?string, error_copia: ?string, nube: ?string, error_nube: ?string}
      */
     public static function crear(): array
     {
@@ -127,7 +149,79 @@ class Respaldos
         // está enchufado, el respaldo local ya quedó bien, y se avisa.
         [$copia, $errorCopia] = self::copiarAfuera(array_filter([$base, $fotos]));
 
-        return ['base' => $base, 'fotos' => $fotos, 'copia' => $copia, 'error_copia' => $errorCopia];
+        // Y la nube, igual: si no hay internet, el respaldo local ya quedó.
+        [$nube, $errorNube] = self::subirALaNube(array_filter([$base, $fotos]));
+
+        return [
+            'base' => $base, 'fotos' => $fotos,
+            'copia' => $copia, 'error_copia' => $errorCopia,
+            'nube' => $nube, 'error_nube' => $errorNube,
+        ];
+    }
+
+    /**
+     * Sube los archivos a la nube con rclone y, solo si subieron, borra allá
+     * los de más de DIAS días.
+     *
+     * Se suben uno por uno y por su nombre (`copyto`), nunca la carpeta
+     * entera: en la carpeta local también vive `PRIMER-ACCESO.txt`, con la
+     * contraseña inicial del administrador, y eso no se sube a ningún lado.
+     * Por lo mismo, la limpieza de allá solo toca archivos con nombre de
+     * respaldo. Si la subida falla no se borra nada: nunca se tiran los
+     * viejos sin que haya llegado el nuevo.
+     *
+     * @param  array<int, string>  $archivos
+     * @return array{0: ?string, 1: ?string} a dónde se subió y, si falló, por qué
+     */
+    private static function subirALaNube(array $archivos): array
+    {
+        $remoto = self::nube();
+
+        if ($remoto === null) {
+            return [null, null];
+        }
+
+        $rclone = (string) config('ventas.respaldos.rclone', 'rclone');
+        $destino = rtrim($remoto, '/');
+        $separador = str_ends_with($destino, ':') ? '' : '/';
+
+        try {
+            foreach ($archivos as $archivo) {
+                $subida = Process::timeout(3600)->run([
+                    $rclone, 'copyto', $archivo, $destino.$separador.basename($archivo),
+                ]);
+
+                if ($subida->failed()) {
+                    throw new RuntimeException('no se pudo subir '.basename($archivo).' a '.$remoto.': '.self::ultimaLinea($subida->errorOutput()));
+                }
+            }
+
+            $limpieza = Process::timeout(600)->run([
+                $rclone, 'delete', $destino.($separador === '' ? '' : '/'),
+                '--min-age', self::DIAS.'d',
+                '--include', 'ventas_db_*.sql.gz',
+                '--include', 'ventas_fotos_*.tar.gz',
+            ]);
+
+            // Que no se borren los viejos no es grave: se reintenta mañana.
+            if ($limpieza->failed()) {
+                report(new RuntimeException('No se pudieron borrar los respaldos viejos de '.$remoto.': '.self::ultimaLinea($limpieza->errorOutput())));
+            }
+
+            return [$remoto, null];
+        } catch (Throwable $e) {
+            report($e);
+
+            return [null, $e->getMessage()];
+        }
+    }
+
+    /** rclone explica el error en la última línea; lo demás es ruido para la bitácora. */
+    private static function ultimaLinea(string $salida): string
+    {
+        $lineas = array_values(array_filter(array_map('trim', explode("\n", $salida))));
+
+        return mb_substr(end($lineas) ?: 'sin detalle', 0, 300);
     }
 
     /**
@@ -191,20 +285,6 @@ class Respaldos
         return self::listar()->firstWhere('tipo', 'base');
     }
 
-    /** La ruta de un respaldo por su nombre, o null si el nombre no es de un respaldo. */
-    public static function ruta(string $nombre): ?string
-    {
-        // Solo nombres que este servicio genera: nada de barras ni puntos de más
-        // con los que pedir otro archivo del servidor.
-        if (! preg_match('/^ventas_(db_[\w\-]+\.sql|fotos_[\w\-]+\.tar)\.gz$/', $nombre)) {
-            return null;
-        }
-
-        $ruta = self::carpeta().DIRECTORY_SEPARATOR.$nombre;
-
-        return is_file($ruta) ? $ruta : null;
-    }
-
     /** Borra lo que tenga más de $dias días, pero nunca el respaldo de base más nuevo. */
     public static function limpiar(int $dias = self::DIAS): int
     {
@@ -265,7 +345,7 @@ class Respaldos
             )->fetch(PDO::FETCH_NUM);
 
             $escribir(implode("\n", [
-                '-- Respaldo del Sistema de Ventas',
+                '-- Respaldo del Sistema de Restaurante',
                 "-- Base de origen: {$base} ({$colacion[1]})",
                 '-- Hecho: '.now()->format('d/m/Y H:i:s'),
                 '--',
@@ -370,7 +450,7 @@ class Respaldos
         $cabecera = 'INSERT INTO '.self::id($tabla)." ({$lista}) VALUES\n";
         $filas = [];
 
-        // Fila a fila, sin traer la tabla entera a memoria: el kardex o la
+        // Fila a fila, sin traer la tabla entera a memoria: las ventas o la
         // bitácora de unos años no entran en los 128 MB de un hosting.
         $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
 
@@ -476,7 +556,7 @@ class Respaldos
     // ================================================================ las fotos
 
     /**
-     * Las fotos de producto en un .tar.gz con la carpeta `public/` adentro,
+     * Las fotos del menú en un .tar.gz con la carpeta `public/` adentro,
      * que es lo que `scripts/restore-db.sh` desempaca en storage/app.
      */
     private static function fotos(string $carpeta, string $sello): ?string

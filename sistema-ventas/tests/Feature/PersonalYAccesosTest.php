@@ -71,16 +71,46 @@ class PersonalYAccesosTest extends TestCase
     /**
      * Cada rol entra a su pantalla de trabajo: quien lleva la gestión, a la
      * portada; el cajero, directo al mostrador, porque un clic de más en cada
-     * venta se nota.
+     * venta se nota, y la cocina, a su pantalla. Ya no hay mozo: el cajero
+     * toma el pedido en el mostrador.
      */
     public function test_la_raiz_lleva_a_la_pantalla_de_trabajo_de_cada_rol(): void
     {
-        $almacenero = Usuario::where('usuario', 'almacen')->firstOrFail();
+        $cocina = Usuario::where('usuario', 'cocina1')->firstOrFail();
 
         $this->actingAs($this->admin())->get('/')->assertRedirect('/inicio');
-        // Sin reportes, el almacenero entra directo a su catálogo.
-        $this->actingAs($almacenero)->get('/')->assertRedirect('/productos');
+        $this->actingAs($cocina)->get('/')->assertRedirect('/cocina');
         $this->actingAs($this->cajero())->get('/')->assertRedirect('/pos');
+    }
+
+    /**
+     * El local no trabaja con mozos (decisión del 2026-09-18): ni el rol ni el
+     * cargo existen, ninguna cuenta queda con él, y quien toma los pedidos es
+     * el cajero, que tiene `pedidos.registrar` pero no `ventas.anular`.
+     *
+     * Se mira la base y también los archivos de instalación: una base vieja
+     * pasa por `2026_09_18_sin_mozos.sql`, que deja a sus mozos como cajeros,
+     * pero una nueva no tiene que traerlos de fábrica.
+     */
+    public function test_ya_no_hay_mozos_y_el_cajero_toma_los_pedidos(): void
+    {
+        $this->assertFalse(Rol::where('nombre', 'Mozo')->exists(), 'el rol Mozo sigue en la base');
+        $this->assertFalse(
+            Usuario::whereHas('rol', fn ($q) => $q->where('nombre', 'Mozo'))->exists(),
+            'hay cuentas con el rol Mozo',
+        );
+
+        foreach (['02_datos_iniciales.sql', 'produccion/02_datos_base.sql'] as $archivo) {
+            $sql = (string) file_get_contents(base_path('../docs/sql/'.$archivo));
+            $this->assertDoesNotMatchRegularExpression("/\\(\\s*\\d+,\\s*'Mozo'/", $sql, "{$archivo} todavía crea el rol Mozo");
+            $this->assertDoesNotMatchRegularExpression("/\\(\\s*\\d+,\\s*'Mesero'/", $sql, "{$archivo} todavía crea el cargo Mesero");
+            $this->assertStringNotContainsString("'mozo1'", $sql, "{$archivo} todavía trae la cuenta mozo1");
+        }
+
+        $cajero = $this->cajero();
+        $this->assertTrue($cajero->tienePermiso('pedidos.registrar'));
+        $this->assertFalse($cajero->tienePermiso('ventas.anular'));
+        $this->actingAs($cajero)->get('/')->assertRedirect('/pos');
     }
 
     public function test_un_rol_puede_cambiar_sus_permisos(): void

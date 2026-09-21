@@ -8,8 +8,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * El documento entregado al cliente. Guarda una FOTO de los datos al emitir:
- * si el cliente después cambia de razón social o de dirección, el documento
- * ya emitido no se altera. Nada se borra; se anula o se sustituye.
+ * los del cliente y los del negocio (`emisor_*`). Si después cambian la razón
+ * social, el NIT o la dirección, el documento ya emitido se sigue imprimiendo
+ * como se entregó. Nada se borra; se anula o se sustituye.
  */
 class Comprobante extends Model
 {
@@ -21,6 +22,7 @@ class Comprobante extends Model
 
     protected $fillable = [
         'venta_id', 'serie_id', 'numero', 'numero_completo', 'fecha_emision',
+        'emisor_nombre', 'emisor_documento', 'emisor_direccion', 'emisor_telefono',
         'cliente_id', 'tipo_persona', 'cliente_nombre', 'cliente_tipo_documento',
         'cliente_documento', 'cliente_direccion', 'representante_legal',
         'subtotal', 'descuento', 'impuesto', 'moneda',

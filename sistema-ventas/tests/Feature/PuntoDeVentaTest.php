@@ -7,7 +7,6 @@ use App\Models\Cliente;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\SesionCaja;
-use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Models\VentaDetalle;
@@ -34,9 +33,9 @@ class PuntoDeVentaTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function producto(string $codigo = 'P-0001'): Producto
@@ -87,16 +86,15 @@ class PuntoDeVentaTest extends TestCase
     // -------------------------------------------------------------- permisos
 
     /**
-     * Vender y consultar ventas son permisos distintos. El almacenero no tiene
-     * `ventas.registrar`, así que no entra al mostrador; pero sí tiene
-     * `reportes.ver`, y el listado de ventas es información de gestión.
+     * Quien no tiene `ventas.registrar` —la cocina— no entra al mostrador ni
+     * al listado de ventas, ni registra una venta llamando a la ruta.
      */
-    public function test_el_almacenero_no_vende_ni_ve_las_ventas(): void
+    public function test_la_cocina_no_vende_ni_ve_las_ventas(): void
     {
-        $this->actingAs($this->almacenero())->get('/pos')->assertForbidden();
-        $this->actingAs($this->almacenero())->get('/ventas')->assertForbidden();
+        $this->actingAs($this->cocina())->get('/pos')->assertForbidden();
+        $this->actingAs($this->cocina())->get('/ventas')->assertForbidden();
 
-        $this->actingAs($this->almacenero())
+        $this->actingAs($this->cocina())
             ->post('/pos', [
                 'lineas' => [['producto_id' => $this->producto()->id, 'cantidad' => 1, 'precio_unitario' => 3.98]],
                 'pagos' => [['metodo_pago_id' => $this->efectivo()->id]],
@@ -187,22 +185,20 @@ class PuntoDeVentaTest extends TestCase
 
     // ---------------------------------------------------------------- ventas
 
-    public function test_una_venta_descuenta_stock_y_deja_kardex(): void
+    /** La línea guarda la foto del producto: nombre, cantidad y precio del día. */
+    public function test_una_venta_guarda_la_copia_historica_de_la_linea(): void
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $antes = (float) $producto->stock_actual;
 
         $venta = $this->vender($sesion, $producto, 3);
 
-        $this->assertSame($antes - 3, (float) $producto->fresh()->stock_actual);
-
-        // El trigger de la base escribe el movimiento: aquí se comprueba que ocurre.
-        $this->assertDatabaseHas('movimientos_inventario', [
-            'producto_id' => $producto->id,
+        $this->assertDatabaseHas('venta_detalle', [
             'venta_id' => $venta->id,
-            'origen' => 'VENTA',
-            'tipo' => 'SALIDA',
+            'producto_id' => $producto->id,
+            'descripcion' => $producto->nombre,
+            'cantidad' => '3.000',
+            'precio_unitario' => $producto->precio_venta,
         ]);
     }
 
@@ -221,7 +217,9 @@ class PuntoDeVentaTest extends TestCase
 
     public function test_el_descuento_reduce_el_impuesto_en_proporcion(): void
     {
-        $sesion = $this->turno();
+        // Un 20 % de descuento: lo registra quien puede autorizarlo (el tope
+        // lo exige ahora la propia venta).
+        $sesion = $this->turno($this->admin());
 
         $venta = $this->vender($sesion, $this->producto(), 2, ['descuento' => 1.62])->fresh();
 
@@ -232,15 +230,16 @@ class PuntoDeVentaTest extends TestCase
         $this->assertSame('7.16', $venta->total);      // 7.96 − 1.62 + 0.82
     }
 
-    public function test_no_se_vende_mas_de_lo_que_hay_en_stock(): void
+    public function test_no_se_vende_un_producto_descatalogado(): void
     {
         $sesion = $this->turno();
         $producto = $this->producto();
+        $producto->forceFill(['activo' => 0])->save();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No hay stock suficiente');
+        $this->expectExceptionMessage('no está en el menú');
 
-        $this->vender($sesion, $producto, (float) $producto->stock_actual + 1);
+        $this->vender($sesion, $producto->fresh(), 1);
     }
 
     /** Si algo falla a media venta, no queda nada a medias (RNF5). */
@@ -250,8 +249,11 @@ class PuntoDeVentaTest extends TestCase
         $bueno = $this->producto('P-0001');
         $malo = $this->producto('P-0006');
 
+        // La segunda línea falla cuando la primera ya se insertó.
+        $malo->forceFill(['activo' => 0])->save();
+
         $ventasAntes = Venta::count();
-        $stockAntes = (float) $bueno->stock_actual;
+        $lineasAntes = VentaDetalle::where('producto_id', $bueno->id)->count();
 
         try {
             Ventas::registrar(
@@ -259,17 +261,17 @@ class PuntoDeVentaTest extends TestCase
                 usuario: $this->cajero(),
                 lineas: [
                     ['producto_id' => $bueno->id, 'cantidad' => 1, 'precio_unitario' => 3.98],
-                    ['producto_id' => $malo->id, 'cantidad' => (float) $malo->stock_actual + 50, 'precio_unitario' => 1.33],
+                    ['producto_id' => $malo->id, 'cantidad' => 1, 'precio_unitario' => 1.33],
                 ],
                 pagos: [['metodo_pago_id' => $this->efectivo()->id, 'monto' => null]],
             );
-            $this->fail('La venta debió fallar por falta de stock.');
+            $this->fail('La venta debió fallar porque ya no está en el menú.');
         } catch (RuntimeException) {
             // esperado
         }
 
         $this->assertSame($ventasAntes, Venta::count());
-        $this->assertSame($stockAntes, (float) $bueno->fresh()->stock_actual);
+        $this->assertSame($lineasAntes, VentaDetalle::where('producto_id', $bueno->id)->count());
     }
 
     public function test_el_pago_sin_importe_toma_el_total(): void
@@ -413,21 +415,19 @@ class PuntoDeVentaTest extends TestCase
 
     // -------------------------------------------------------------- anulación
 
-    public function test_anular_devuelve_el_stock_y_anula_el_documento(): void
+    public function test_anular_marca_la_venta_y_anula_el_documento(): void
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $antes = (float) $producto->stock_actual;
 
         $venta = $this->vender($sesion, $producto, 3);
         $comprobante = $venta->comprobante;
 
-        $this->assertSame($antes - 3, (float) $producto->fresh()->stock_actual);
-
         Ventas::anular($venta, $this->admin(), 'Error en el cobro');
 
-        $this->assertSame($antes, (float) $producto->fresh()->stock_actual);
         $this->assertSame('ANULADA', $venta->fresh()->estado);
+        $this->assertSame($this->admin()->id, (int) $venta->fresh()->anulada_por);
+        $this->assertSame('Error en el cobro', $venta->fresh()->motivo_anulacion);
         $this->assertSame('ANULADO', $comprobante->fresh()->estado);
 
         // El correlativo no se reutiliza: el documento anulado conserva su número.
@@ -436,10 +436,11 @@ class PuntoDeVentaTest extends TestCase
             'numero_completo' => $comprobante->numero_completo,
         ]);
 
-        $this->assertDatabaseHas('movimientos_inventario', [
-            'venta_id' => $venta->id,
-            'origen' => 'ANULACION',
-            'tipo' => 'ENTRADA',
+        // Y la anulación deja su rastro en la bitácora.
+        $this->assertDatabaseHas('auditoria', [
+            'accion' => 'ANULAR_VENTA',
+            'entidad' => 'ventas',
+            'entidad_id' => $venta->id,
         ]);
     }
 
@@ -499,7 +500,6 @@ class PuntoDeVentaTest extends TestCase
         $producto = $this->producto();
         $venta = $this->vender($sesion, $producto, 2);
         Cajas::cerrar($sesion->fresh(), $this->admin(), (float) $sesion->fresh()->efectivoEsperado());
-        $stock = (float) $producto->fresh()->stock_actual;
 
         $this->assertFalse($venta->fresh()->puedeAnularse());
 
@@ -508,7 +508,7 @@ class PuntoDeVentaTest extends TestCase
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'ya cerró'));
 
         $this->assertSame('COMPLETADA', $venta->fresh()->estado);
-        $this->assertSame($stock, (float) $producto->fresh()->stock_actual);
+        $this->assertSame('EMITIDO', $venta->fresh()->comprobante->estado);
 
         $this->actingAs($this->admin())->get("/ventas/{$venta->id}")
             ->assertOk()
@@ -566,28 +566,22 @@ class PuntoDeVentaTest extends TestCase
 
     // ------------------------------------------------------------ mostrador
 
-    // ------------------------------------------------- la unidad en el papel
+    // -------------------------------------------- la cantidad en el papel
 
     /**
-     * Un «2.5» pelado no le dice nada a quien compró dos kilos y medio de
-     * arroz, y comprobar lo que le cobraron es para lo que sirve el papel.
+     * Comprobar lo que le cobraron es justo para lo que sirve el papel: la
+     * cantidad tiene que estar, aunque ya no lleve unidad detrás.
      */
-    public function test_el_ticket_dice_la_unidad_de_lo_que_se_vendio(): void
+    public function test_el_ticket_dice_la_cantidad_de_lo_que_se_vendio(): void
     {
-        $porKilo = Producto::activos()
-            ->whereHas('unidadMedida', fn ($q) => $q->where('codigo', 'KG'))
-            ->firstOrFail();
+        $venta = $this->vender($this->turno(), $this->producto(), 3);
 
-        $venta = $this->vender($this->turno(), $porKilo, 2.5);
-        $linea = $venta->detalle()->firstOrFail();
-
-        $this->assertSame('KG', $linea->unidad);
-        $this->assertSame('2.5 KG', $linea->cantidad_con_unidad);
+        $this->assertSame('3', $venta->detalle()->firstOrFail()->cantidad_visible);
 
         $this->actingAs($this->admin())
             ->get(route('comprobantes.imprimir', $venta->comprobante))
             ->assertOk()
-            ->assertSee('2.5 KG');
+            ->assertSee('3 ×');
     }
 
     /**
@@ -618,38 +612,34 @@ class PuntoDeVentaTest extends TestCase
     }
 
     /**
-     * La unidad se copia, como el nombre y el precio. Si se leyera del catálogo
-     * al imprimir, corregir un producto de unidades a kilos reescribiría todos
-     * los tickets viejos, y un comprobante reimpreso dejaría de coincidir con
-     * el que se entregó en mano.
+     * El nombre se copia. Si se leyera del catálogo al imprimir, corregir el
+     * nombre de un plato reescribiría todos los tickets viejos, y un
+     * comprobante reimpreso dejaría de coincidir con el que se entregó en mano.
      */
-    public function test_cambiar_la_unidad_del_producto_no_reescribe_las_ventas_viejas(): void
+    public function test_cambiar_el_nombre_del_producto_no_reescribe_las_ventas_viejas(): void
     {
-        $producto = Producto::activos()
-            ->whereHas('unidadMedida', fn ($q) => $q->where('codigo', 'UND'))
-            ->firstOrFail();
+        $producto = Producto::activos()->firstOrFail();
+        $nombre = $producto->nombre;
 
         $venta = $this->vender($this->turno(), $producto, 3);
 
-        $producto->forceFill([
-            'unidad_medida_id' => UnidadMedida::where('codigo', 'KG')->firstOrFail()->id,
-        ])->save();
+        $producto->forceFill(['nombre' => $nombre.' de la casa'])->save();
 
-        $this->assertSame('UND', $venta->detalle()->firstOrFail()->unidad);
+        $this->assertSame($nombre, $venta->detalle()->firstOrFail()->descripcion);
     }
 
-    public function test_la_busqueda_del_mostrador_encuentra_por_codigo_de_barras(): void
+    public function test_la_busqueda_del_mostrador_encuentra_por_codigo_interno(): void
     {
         $this->turno();
 
-        $conCodigo = Producto::activos()->whereNotNull('codigo_barras')->firstOrFail();
+        $conCodigo = Producto::activos()->firstOrFail();
 
         $respuesta = $this->actingAs($this->cajero())
-            ->getJson('/pos/productos?q='.$conCodigo->codigo_barras)
+            ->getJson('/pos/productos?q='.$conCodigo->codigo)
             ->assertOk();
 
         $this->assertSame($conCodigo->codigo, $respuesta->json('0.codigo'),
-            'el código escaneado tiene que devolver SU producto, no uno parecido');
+            'el código tecleado tiene que devolver SU plato, no uno parecido');
         $this->assertSame($conCodigo->precio_estante, $respuesta->json('0.precio_estante'));
     }
 
@@ -658,7 +648,6 @@ class PuntoDeVentaTest extends TestCase
     {
         $sesion = $this->turno();
         $producto = $this->producto();
-        $antes = (float) $producto->stock_actual;
 
         $respuesta = $this->actingAs($this->cajero())->post('/pos', [
             'lineas' => [[
@@ -677,7 +666,7 @@ class PuntoDeVentaTest extends TestCase
         $respuesta->assertRedirect(route('ventas.show', $venta));
 
         $this->assertSame('8.99', $venta->total);
-        $this->assertSame($antes - 2, (float) $producto->fresh()->stock_actual);
+        $this->assertSame('2.000', $venta->detalle->first()->cantidad);
         $this->assertNotNull($venta->comprobante);
     }
 
@@ -961,7 +950,8 @@ class PuntoDeVentaTest extends TestCase
      */
     public function test_el_impuesto_con_descuento_es_exacto_en_los_dos_modos(): void
     {
-        $sesion = $this->turno();
+        // Descuentos grandes, para ver el redondeo: los registra quien puede autorizarlos.
+        $sesion = $this->turno($this->admin());
         $leche = $this->producto('P-0004');
         $leche->forceFill(['precio_venta' => 3.96])->save();
 
@@ -1010,9 +1000,9 @@ class PuntoDeVentaTest extends TestCase
     // ================================================================ una línea por producto
 
     /**
-     * Con el mismo producto en dos líneas, anular la venta reponía el stock de
-     * una sola: el UPDATE del procedimiento toca cada fila una vez. Ahora la
-     * venta no se puede registrar así, ni por el servicio ni por la base.
+     * Un producto, una línea: con el mismo producto repetido los recuentos por
+     * producto contaban una sola de las dos. La venta no se puede registrar
+     * así, ni por el servicio ni por la base.
      */
     public function test_una_venta_no_repite_el_mismo_producto_en_dos_lineas(): void
     {
@@ -1035,11 +1025,23 @@ class PuntoDeVentaTest extends TestCase
         }
 
         $this->assertNotNull($rechazo, 'Se registró una venta con el mismo producto repetido.');
-        $this->assertStringContainsString('repite un producto', $rechazo);
+        $this->assertStringContainsString('repite el mismo ítem', $rechazo);
         $this->assertSame(0, Venta::where('sesion_caja_id', $sesion->id)->count());
 
-        // Y la base tampoco lo admite, para los caminos que no pasan por el servicio.
-        $venta = $this->vender($sesion->fresh(), $producto, 2);
+        // Y la base tampoco lo admite, para los caminos que no pasan por el
+        // servicio. En una venta a medio armar: una con comprobante ya no
+        // admite ninguna línea más.
+        $ventaId = DB::table('ventas')->insertGetId([
+            'usuario_id' => $this->cajero()->id, 'sesion_caja_id' => $sesion->id,
+        ]);
+        $venta = (object) ['id' => $ventaId];
+        VentaDetalle::create([
+            'venta_id' => $venta->id,
+            'producto_id' => $producto->id,
+            'descripcion' => $producto->nombre,
+            'cantidad' => 2,
+            'precio_unitario' => $producto->precio_venta,
+        ]);
 
         $this->expectException(UniqueConstraintViolationException::class);
         VentaDetalle::create([
@@ -1108,6 +1110,6 @@ class PuntoDeVentaTest extends TestCase
         $this->actingAs($this->cajero())
             ->getJson(route('pos.precios', ['ids' => $producto->id]))
             ->assertOk()
-            ->assertJsonStructure([['id', 'precio', 'precio_estante', 'stock', 'afecto']]);
+            ->assertJsonStructure([['id', 'precio', 'precio_estante', 'afecto']]);
     }
 }

@@ -10,7 +10,6 @@ use App\Services\Comprobantes;
 use App\Services\Ventas;
 use App\Support\Config;
 use App\Support\Mensaje;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,6 +46,12 @@ class VentaController extends Controller
             'cliente:id,nombre',
             'usuario:id,usuario',
             'comprobante:id,venta_id,numero_completo,estado',
+            // La columna «Pedido»: de qué pedido salió la venta, que es como
+            // se la busca cuando alguien viene a reclamar con su ticket.
+            // `numero_dia` y `jornada` son lo que se imprime en la columna: el
+            // número que se cantó, y su jornada, porque el listado mezcla
+            // fechas y el contador vuelve a 1 en cada jornada.
+            'pedido:id,tipo,numero_dia,jornada,fecha_apertura',
         ]), $orden)
             ->paginate(15)
             ->withQueryString();
@@ -78,25 +83,30 @@ class VentaController extends Controller
             'usuario.empleado:id,nombre_completo',
             'anuladaPor:id,usuario',
             'sesionCaja.caja:id,nombre',
-            'detalle.producto:id,codigo,unidad_medida_id',
-            'detalle.producto.unidadMedida:id,codigo',
+            'detalle.producto:id,codigo',
             'pagos.metodoPago:id,codigo,nombre',
             'comprobantes.serie.tipo',
-            'devoluciones',
+            // De qué pedido era, también si se anuló, y con qué venta se volvió a cobrar.
+            'pedido.venta:id,pedido_id',
+            'pedido.ultimaVenta.cliente:id,nombre',
         ]);
 
         $comprobante = $venta->comprobante;
+
+        // Sustituir es para cambiar un recibo por una factura: sin facturación, no se ofrece.
+        $puedeSustituir = Config::facturacionVisible() && $comprobante && Comprobantes::puedeSustituirse($comprobante);
 
         return view('ventas.show', [
             'title' => 'Venta #'.$venta->id,
             'trail' => ['Ventas' => route('ventas.index')],
             'venta' => $venta,
-            // Sustituir es para cambiar un recibo por una factura: sin facturación, no se ofrece.
-            'puedeSustituir' => Config::facturacionVisible() && $comprobante && Comprobantes::puedeSustituirse($comprobante),
+            'puedeSustituir' => $puedeSustituir,
             'bloqueoSustitucion' => $comprobante ? Comprobantes::motivoBloqueo($comprobante) : null,
             'venceSustitucion' => Comprobantes::venceEl($venta),
-            // Para pasar de recibo a factura hay que asignar una persona jurídica.
-            'clientes' => Cliente::activos()->orderBy('nombre')->get()
+            // Para pasar de recibo a factura hay que asignar una persona
+            // jurídica. Solo si se puede sustituir: si no, era cargar todos los
+            // clientes en cada ficha para nada.
+            'clientes' => ! $puedeSustituir ? collect() : Cliente::activos()->orderBy('nombre')->get()
                 ->map(fn (Cliente $c) => [
                     'id' => $c->id,
                     'etiqueta' => $c->etiqueta,
@@ -119,6 +129,8 @@ class VentaController extends Controller
             'motivo_anulacion' => 'motivo',
         ]);
 
+        $pedido = $venta->pedido;
+
         try {
             Ventas::anular($venta, Auth::user(), $datos['motivo_anulacion']);
         } catch (RuntimeException $e) {
@@ -129,7 +141,14 @@ class VentaController extends Controller
             return back()->with('error', $this->mensajeDeBase($e));
         }
 
-        return back()->with('exito', 'Venta anulada. El stock volvió al inventario y el comprobante quedó anulado.');
+        $mensaje = 'Venta anulada: el comprobante quedó anulado, conservando su correlativo.';
+
+        if ($pedido?->refresh()->estaAbierto()) {
+            $mensaje .= " El {$pedido->numero_visible} queda para volver a cobrar, con su número y sus platos (la cocina los sigue viendo): "
+                .'cóbralo de nuevo desde el punto de venta, en «Volver a cobrar».';
+        }
+
+        return back()->with('exito', $mensaje);
     }
 
     /** Extrae el texto del SIGNAL de MySQL, que llega envuelto en ruido. */
@@ -145,7 +164,7 @@ class VentaController extends Controller
     /**
      * Las ventas que muestra el listado. El listado y sus totales salen de aquí
      * los dos: antes los totales ignoraban el estado y la búsqueda, y con el
-     * filtro «Devuelta» la tabla mostraba 2 ventas y la tarjeta sumaba 10.
+     * filtro «Anulada» la tabla mostraba 2 ventas y la tarjeta sumaba 10.
      */
     private function filtradas(array $filtros): Builder
     {
@@ -160,10 +179,12 @@ class VentaController extends Controller
             })
             ->when($filtros['estado'], fn ($q, $estado) => $q->where('estado', $estado))
             ->when($filtros['usuario'], fn ($q, $id) => $q->where('usuario_id', $id))
-            // Rango explícito y no `whereDate`: envolver la columna en DATE()
+            // Por jornada, como los reportes: el «detalle por jornada» enlaza
+            // aquí, y la venta de la 01:30 es de la noche anterior. Rango
+            // explícito y no `whereDate`: envolver la columna en una función
             // anula el índice de fecha y obliga a recorrer la tabla entera.
-            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Carbon::parse($d)->startOfDay()))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Carbon::parse($h)->endOfDay()));
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Config::momentosDeJornadas($d, $d)[0]))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Config::momentosDeJornadas($h, $h)[1]));
     }
 
     private function resumen(array $filtros): array

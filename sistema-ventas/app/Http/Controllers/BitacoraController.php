@@ -19,28 +19,40 @@ use Illuminate\View\View;
  */
 class BitacoraController extends Controller
 {
-    /** A qué pantalla lleva cada entidad registrada, cuando tiene una. */
+    /**
+     * A qué pantalla lleva cada entidad registrada, cuando tiene una.
+     *
+     * Las mesas ya no existen (se retiraron el 2026-09-18), pero la bitácora de
+     * una instalación vieja conserva sus registros: se leen por su nombre y no
+     * llevan enlace.
+     */
     private const ENLACES = [
         'ventas' => 'ventas.show',
-        'compras' => 'compras.show',
-        'devoluciones' => 'devoluciones.show',
-        'devoluciones_compra' => 'devoluciones-compra.show',
         'empleados' => 'empleados.show',
         'productos' => 'productos.show',
         'usuarios' => 'usuarios.edit',
         'sesiones_caja' => 'caja.show',
         'comprobantes' => 'comprobantes.imprimir',
-        'tomas_inventario' => 'tomas.show',
+        // Un pedido lleva a su comanda: la hoja con su número, su destino y
+        // sus platos, que no toca nada al abrirse.
+        'pedidos' => 'pedidos.comanda',
     ];
 
-    /** El nombre de cada entidad en singular, para leer «Venta #12». */
+    /**
+     * El nombre de cada entidad en singular, para leer «Venta #12».
+     *
+     * Compras, proveedores, tomas y devoluciones ya no existen como módulo,
+     * pero sus nombres se quedan aquí: la bitácora de una instalación vieja
+     * todavía tiene registros suyos y sin esto saldrían con el nombre crudo de
+     * la tabla.
+     */
     private const ENTIDADES = [
         'ventas' => 'Venta',
         'compras' => 'Compra',
         'devoluciones' => 'Devolución',
         'devoluciones_compra' => 'Devolución a proveedor',
         'empleados' => 'Empleado',
-        'productos' => 'Producto',
+        'productos' => 'Ítem del menú',
         'usuarios' => 'Usuario',
         'sesiones_caja' => 'Turno de caja',
         'comprobantes' => 'Comprobante',
@@ -50,10 +62,13 @@ class BitacoraController extends Controller
         'clientes' => 'Cliente',
         'proveedores' => 'Proveedor',
         'roles' => 'Rol',
-        'unidades_medida' => 'Unidad de medida',
         'cobros_qr' => 'Cobro QR',
         'configuracion' => 'Configuración',
         'tomas_inventario' => 'Toma de inventario',
+        'pedidos' => 'Pedido',
+        'pedido_detalle' => 'Plato del pedido',
+        'mesas' => 'Mesa',
+        'movimientos_caja' => 'Movimiento de caja',
     ];
 
     /**
@@ -71,6 +86,19 @@ class BitacoraController extends Controller
         'sustituir comprobante' => 'comprobante sustituido',
         'configuracion' => 'configuración',
         'toma inventario' => 'toma de inventario',
+        // El código guardado sigue diciendo PRODUCTO_*: lo que cambia es cómo
+        // se lee en pantalla, donde el módulo se llama «Menú».
+        'producto descatalogado' => 'ítem retirado del menú',
+        'producto creado' => 'ítem agregado al menú',
+        'producto eliminado' => 'ítem quitado del menú',
+        'producto actualizado' => 'ítem del menú actualizado',
+        // Los PEDIDO_*: el pedido y sus platos. «Quitado» y «no reabierto» ya
+        // no se registran, pero pueden quedar en bitácoras anteriores.
+        'pedido linea agregada' => 'plato agregado al pedido',
+        'pedido linea quitada' => 'plato quitado del pedido',
+        'pedido linea estado' => 'plato movido en la cocina',
+        'pedido no reabierto' => 'cobro anulado: el pedido no se pudo reabrir',
+        'pedido reabierto' => 'cobro anulado: el pedido se vuelve a cobrar',
         'devolucion' => 'devolución',
         'categoria' => 'categoría',
         'fisica' => 'física',
@@ -151,9 +179,18 @@ class BitacoraController extends Controller
         return $id ? "{$nombre} #{$id}" : $nombre;
     }
 
-    /** La pantalla de la entidad, si tiene una y el registro guarda su id. */
-    public static function enlace(?string $entidad, int|string|null $id): ?string
+    /**
+     * La pantalla de la entidad, si tiene una y el registro guarda su id.
+     *
+     * Un plato no tiene pantalla: lleva al pedido donde está, que su
+     * registro guarda en el detalle.
+     */
+    public static function enlace(?string $entidad, int|string|null $id, ?array $detalle = null): ?string
     {
+        if ($entidad === 'pedido_detalle') {
+            [$entidad, $id] = ['pedidos', $detalle['pedido_id'] ?? null];
+        }
+
         $ruta = self::ENLACES[$entidad] ?? null;
 
         return $ruta && $id && Route::has($ruta) ? route($ruta, $id) : null;
@@ -170,7 +207,9 @@ class BitacoraController extends Controller
         $filas = [];
 
         foreach ($detalle ?? [] as $clave => $valor) {
-            $etiqueta = str_replace('_', ' ', (string) $clave);
+            // Los registros viejos guardaron la clave `producto`. En pantalla
+            // el módulo se llama «Menú», así que se lee como el resto.
+            $etiqueta = $clave === 'producto' ? 'plato' : str_replace('_', ' ', (string) $clave);
 
             if (is_array($valor) && array_key_exists('antes', $valor) && array_key_exists('despues', $valor)) {
                 $filas[] = [$etiqueta, self::valor($valor['antes']).' → '.self::valor($valor['despues'])];

@@ -25,7 +25,7 @@ class CategoriaController extends Controller
 
         return view('categorias.index', [
             'title' => 'Categorías',
-            'trail' => ['Catálogo' => route('productos.index')],
+            'trail' => ['Menú' => route('productos.index')],
             'categorias' => $categorias,
             'buscar' => $buscar,
         ]);
@@ -61,7 +61,7 @@ class CategoriaController extends Controller
             ->with('exito', "Categoría «{$categoria->nombre}» actualizada.");
     }
 
-    /** Con productos dentro se desactiva; el catálogo histórico no se rompe. */
+    /** Con algo del menú dentro se desactiva; el histórico no se rompe. */
     public function destroy(Categoria $categoria): RedirectResponse
     {
         if ($categoria->productos()->exists()) {
@@ -70,7 +70,7 @@ class CategoriaController extends Controller
             Auditor::registrar('CATEGORIA_DESACTIVADA', 'categorias', $categoria->id);
 
             return redirect()->route('categorias.index')
-                ->with('exito', "La categoría «{$categoria->nombre}» tiene productos, así que se desactivó en lugar de eliminarse.");
+                ->with('exito', "La categoría «{$categoria->nombre}» tiene ítems del menú, así que se desactivó en lugar de eliminarse.");
         }
 
         $nombre = $categoria->nombre;
@@ -90,9 +90,14 @@ class CategoriaController extends Controller
             ],
             'descripcion' => ['nullable', 'string', 'max:200'],
             'activo' => ['boolean'],
+            // Sin marcar al crear, la base la deja en «sí»: casi todo lo de la
+            // carta se cocina, y olvidarla no puede esconderle un plato a la
+            // cocina.
+            'pasa_por_cocina' => ['boolean'],
         ], [], [
             'nombre' => 'nombre',
             'descripcion' => 'descripción',
+            'pasa_por_cocina' => 'pasa por la cocina',
         ]);
     }
 }

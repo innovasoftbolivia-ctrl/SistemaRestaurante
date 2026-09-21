@@ -62,12 +62,6 @@ class SesionCaja extends Model
         return $this->hasMany(MovimientoCaja::class, 'sesion_caja_id');
     }
 
-    /** Devoluciones pagadas desde este cajón; salen del efectivo esperado. */
-    public function devoluciones(): HasMany
-    {
-        return $this->hasMany(Devolucion::class, 'sesion_caja_id');
-    }
-
     /**
      * Cobros por QR de este turno que el banco dio por pagados y no terminaron
      * en una venta: el cliente pagó y se fue, o la venta falló. Es dinero en el
@@ -115,10 +109,10 @@ class SesionCaja extends Model
 
     /**
      * La cuenta del efectivo esperado, término a término: inicial + ventas en
-     * efectivo + ingresos − egresos − devoluciones en efectivo. Es la que va
-     * impresa en el cierre, para que se pueda cuadrar a mano.
+     * efectivo + ingresos − egresos. Es la que va impresa en el cierre, para
+     * que se pueda cuadrar a mano.
      *
-     * @return array{inicial: float, ventas: float, ingresos: float, egresos: float, devuelto: float, esperado: float}
+     * @return array{inicial: float, ventas: float, ingresos: float, egresos: float, esperado: float}
      */
     public function desgloseDelEfectivo(): array
     {
@@ -132,40 +126,22 @@ class SesionCaja extends Model
         $ingresos = (float) $this->movimientos()->where('tipo', 'INGRESO')->sum('monto');
         $egresos = (float) $this->movimientos()->where('tipo', 'EGRESO')->sum('monto');
 
-        /*
-         * De cada devolución sale del cajón solo la fracción que en su día entró
-         * en efectivo: una venta cobrada con tarjeta se reembolsa por el mismo
-         * medio, y descontarla de aquí dejaría al cajero con un sobrante.
-         *
-         * La fórmula es la misma que la de `sp_cerrar_caja`, y tiene que
-         * seguir siéndolo: esta pantalla enseña el esperado y aquel procedimiento
-         * lo firma al cerrar. Si se separan, el cajero ve un número y el arqueo
-         * registra otro.
-         */
-        $devuelto = (float) $this->devoluciones()
-            ->join('ventas', 'ventas.id', '=', 'devoluciones.venta_id')
-            ->selectRaw(
-                'IFNULL(SUM(IFNULL(devoluciones.efectivo, ROUND(devoluciones.total * IFNULL('.
-                '(SELECT SUM(vp.monto) FROM venta_pagos vp '.
-                'JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id '.
-                'WHERE vp.venta_id = devoluciones.venta_id AND mp.afecta_caja = 1)'.
-                ' / NULLIF(ventas.total, 0), 0), 2))), 0) AS efectivo'
-            )
-            ->value('efectivo');
-
+        // La misma fórmula que `sp_cerrar_caja`, y tiene que seguir siéndolo:
+        // esta pantalla enseña el esperado y aquel procedimiento lo firma al
+        // cerrar. Si se separan, el cajero ve un número y el arqueo registra
+        // otro. Lo cobrado en una venta anulada no cuenta: queda fuera arriba.
         return [
             'inicial' => (float) $this->monto_inicial,
             'ventas' => round($ventas, 2),
             'ingresos' => round($ingresos, 2),
             'egresos' => round($egresos, 2),
-            'devuelto' => round($devuelto, 2),
-            'esperado' => round((float) $this->monto_inicial + $ventas + $ingresos - $egresos - $devuelto, 2),
+            'esperado' => round((float) $this->monto_inicial + $ventas + $ingresos - $egresos, 2),
         ];
     }
 
     /**
      * Una firma del estado del turno en este momento: cambia con cualquier
-     * venta, anulación, movimiento o devolución.
+     * venta, anulación o movimiento de caja.
      *
      * El formulario de cierre la lleva desde que se abre. Si al confirmar ya
      * no coincide, algo entró mientras se contaba y la diferencia que se vio
@@ -179,7 +155,6 @@ class SesionCaja extends Model
             'anuladas_n' => $this->ventas()->where('estado', 'ANULADA')->count(),
             'ultima_venta' => (int) $this->ventas()->max('id'),
             'movimientos_n' => $this->movimientos()->count(),
-            'devoluciones_n' => $this->devoluciones()->count(),
         ];
 
         return hash_hmac('sha256', json_encode($partes), (string) config('app.key'));

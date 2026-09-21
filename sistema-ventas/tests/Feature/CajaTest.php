@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Caja;
 use App\Models\MetodoPago;
+use App\Models\Pedido;
 use App\Models\Producto;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
+use App\Services\Pedidos;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Database\QueryException;
@@ -30,9 +32,9 @@ class CajaTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function turno(?Usuario $usuario = null, float $inicial = 100): SesionCaja
@@ -124,8 +126,8 @@ class CajaTest extends TestCase
             $this->actingAs($usuario)->get(route('caja.imprimir', $sesion))->assertOk();
         }
 
-        // El almacenero no ve las cajas de nadie: eso es del administrador.
-        $this->actingAs($this->almacenero())->get(route('caja.imprimir', $sesion))->assertForbidden();
+        // La cocina no ve las cajas de nadie: eso es del administrador.
+        $this->actingAs($this->cocina())->get(route('caja.imprimir', $sesion))->assertForbidden();
     }
 
     // -------------------------------------------------------------- contenido
@@ -404,7 +406,6 @@ class CajaTest extends TestCase
                 'Ventas en efectivo', Config::importe($cuenta['ventas']),
                 'Ingresos de caja', Config::importe(50),
                 'Egresos de caja', Config::importe(15),
-                'Devoluciones en efectivo', Config::importe(0),
                 'Efectivo esperado', Config::importe($cuenta['esperado']),
             ]);
     }
@@ -505,5 +506,74 @@ class CajaTest extends TestCase
         Cajas::cerrar($sinFondo->fresh(), $this->admin(), 60);
 
         $this->assertSame(60.0, Cajas::fondoDejadoEn($caja));
+    }
+
+    // ================================================================ cuentas abiertas
+
+    /**
+     * Cerrar la caja con pedidos de cobro anulado (su venta se anuló y no se
+     * volvió a cobrar) se puede —el turno siguiente los cobra—, pero no sin enterarse:
+     * la pantalla los lista, el cierre pide confirmarlo y la bitácora guarda
+     * cuáles quedaron.
+     */
+    public function test_el_cierre_lista_las_cuentas_abiertas_y_pide_confirmarlo(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+        $cajero = $this->cajero();
+        $plato = Producto::where('codigo', 'P-0004')->firstOrFail();
+
+        $local = Pedidos::abrir(Pedido::LOCAL, $cajero);
+        Pedidos::agregarLinea($local, $plato, 2, null, $cajero);
+        $llevar = Pedidos::abrir(Pedido::LLEVAR, $cajero, nombreCliente: 'Beto');
+        Pedidos::agregarLinea($llevar, $plato, 1, null, $cajero);
+
+        $this->actingAs($this->admin())->get(route('caja.show', $sesion))->assertOk()
+            ->assertSee('data-cuentas-abiertas', false)
+            ->assertSee($local->fresh()->etiqueta)
+            ->assertSee($llevar->fresh()->etiqueta)
+            ->assertSee(Config::importe(Pedidos::totalDe($local->fresh())))
+            ->assertSee('pedido(s) con el cobro anulado, sin volver a cobrar')
+            ->assertSee('Cierro sin volver a cobrarlos');
+
+        $cerrar = fn (array $extra = []) => $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 100, 'fondo_dejado' => 0, 'huella' => $sesion->fresh()->huella(),
+        ] + $extra);
+
+        // Sin confirmar, no se cierra. Tampoco llamando al servicio directo.
+        $cerrar()->assertSessionHas('error', fn (string $m) => str_contains($m, '2 pedido(s) con el cobro anulado'));
+        $this->assertTrue($sesion->fresh()->estaAbierta());
+        $this->assertThrows(
+            fn () => Cajas::cerrar($sesion->fresh(), $this->admin(), 100, null, 0, $sesion->fresh()->huella()),
+            RuntimeException::class,
+            'pedido(s) con el cobro anulado',
+        );
+
+        $cerrar(['con_cuentas_abiertas' => '1'])->assertRedirect(route('caja.imprimir', $sesion));
+        $this->assertFalse($sesion->fresh()->estaAbierta());
+
+        $detalle = json_decode((string) DB::table('auditoria')
+            ->where('accion', 'CAJA_CERRADA')->where('entidad_id', $sesion->id)->value('detalle'), true);
+        $this->assertEqualsCanonicalizing([$local->id, $llevar->id], array_column($detalle['cuentas_abiertas'], 'pedido_id'));
+
+        // Los pedidos siguen sin volver a cobrarse: el turno siguiente los cobra.
+        $this->assertTrue($local->fresh()->estaAbierto());
+        $this->assertTrue($llevar->fresh()->estaAbierto());
+    }
+
+    /** Sin cuentas abiertas, el cierre no pide nada de más ni muestra el aviso. */
+    public function test_sin_cuentas_abiertas_el_cierre_no_pide_confirmacion(): void
+    {
+        $sesion = $this->turno(inicial: 100);
+
+        $this->actingAs($this->admin())->get(route('caja.show', $sesion))->assertOk()
+            ->assertDontSee('data-cuentas-abiertas', false);
+
+        $this->actingAs($this->admin())->post(route('caja.cerrar', $sesion), [
+            'monto_declarado' => 100, 'fondo_dejado' => 0, 'huella' => $sesion->fresh()->huella(),
+        ])->assertRedirect(route('caja.imprimir', $sesion));
+
+        $detalle = json_decode((string) DB::table('auditoria')
+            ->where('accion', 'CAJA_CERRADA')->where('entidad_id', $sesion->id)->value('detalle'), true);
+        $this->assertArrayNotHasKey('cuentas_abiertas', $detalle);
     }
 }

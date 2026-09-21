@@ -21,6 +21,11 @@
     // El símbolo sale del código congelado en el documento, no de la
     // configuración de hoy: si el negocio cambió de moneda, lo ya emitido no.
     $moneda = Config::simbolo($comprobante->moneda);
+
+    // El pedido que se cobró. Toda venta del mostrador trae uno —el cliente
+    // reclama su plato con este papel—; una venta vieja, de antes de los
+    // pedidos, no, y entonces no se imprime nada: ni la línea, ni un hueco.
+    $pedido = $venta?->pedido;
 @endphp
 
 <!DOCTYPE html>
@@ -68,6 +73,39 @@
         h1 { font-size: {{ $ticket ? '14px' : '20px' }}; margin: 0 0 2px; }
         h2 { font-size: {{ $ticket ? '13px' : '16px' }}; margin: 10px 0 4px; }
 
+        /* El ticket es con lo que el cliente reclama su plato: quien lo lleva
+           canta el número y el cliente lo compara con su papel. Por eso el
+           número del pedido es lo MÁS GRANDE del ticket —más que el total y
+           que el número de documento—, en su recuadro, con «comer aquí» o
+           «para llevar» debajo. */
+        .pedido {
+            margin: 10px 0 4px;
+            padding: {{ $ticket ? '6px 4px 8px' : '8px 10px 10px' }};
+            border: 2px solid #101828;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+
+        .pedido-rotulo {
+            display: block;
+            font-size: {{ $ticket ? '12px' : '13px' }};
+            letter-spacing: 3px;
+        }
+
+        .pedido-numero {
+            display: block;
+            font-size: {{ $ticket ? '46px' : '52px' }};
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .pedido-destino {
+            display: block;
+            margin-top: 2px;
+            font-size: {{ $ticket ? '17px' : '19px' }};
+            letter-spacing: 2px;
+        }
+
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 3px 0; vertical-align: top; }
         thead th { border-bottom: 1px solid #d0d5dd; font-size: 11px; text-align: left; }
@@ -86,7 +124,7 @@
         .lineas th, .lineas td { white-space: nowrap; padding-left: 4px; }
 
         /* La descripción es la única que puede crecer, y por eso es la única
-           que parte. `anywhere` porque un nombre de producto puede traer una
+           que parte. `anywhere` porque el nombre de un plato puede traer una
            palabra más larga que la columna y en fijo no habría dónde ponerla. */
         .lineas .desc {
             width: {{ $ticket ? '68%' : '55%' }};
@@ -150,7 +188,7 @@
             cursor: pointer;
         }
 
-        .acciones .principal { background: #465fff; border-color: #465fff; color: #fff; }
+        .acciones .principal { background: #0a5cff; border-color: #0a5cff; color: #fff; }
 
         /* No se le pone `display`: el atributo `hidden` tiene que poder
            esconderlo solo, y una regla de display acá lo anularía. */
@@ -316,6 +354,20 @@
             <div class="fuerte">{{ mb_strtoupper($comprobante->nombre_tipo) }}</div>
             <div class="fuerte">{{ $comprobante->numero_completo }}</div>
             <div class="tenue">{{ $comprobante->fecha_emision?->format('d/m/Y H:i') }}</div>
+
+            @if ($pedido)
+                {{-- El número de la jornada, no el id: es el que se canta al
+                     entregar. El id se queda en el atributo, que no lo lee
+                     nadie, por si hay que rastrearlo. --}}
+                <div class="pedido" data-pedido="{{ $pedido->id }}" data-numero-pedido="{{ $pedido->numero_dia }}">
+                    <span class="pedido-rotulo">PEDIDO</span>
+                    <span class="pedido-numero">#{{ $pedido->numero_dia }}</span>
+                    <span class="pedido-destino">{{ mb_strtoupper($pedido->destino) }}</span>
+                </div>
+                @if ($pedido->nombre_cliente)
+                    <div class="fuerte">{{ $pedido->nombre_cliente }}</div>
+                @endif
+            @endif
         </div>
 
         <hr class="regla">
@@ -356,13 +408,9 @@
                         <td class="desc">
                             {{ $linea->descripcion }}
 
-                            {{-- La cantidad va con su unidad: un «2.5» pelado no le
-                                 dice nada a quien compró dos kilos y medio de arroz,
-                                 y comprobar lo que le cobraron es justo para lo que
-                                 sirve el papel. --}}
                             @if ($ticket)
                                 <span class="detalle-linea">
-                                    {{ $linea->cantidad_con_unidad }} ×
+                                    {{ $linea->cantidad_visible }} ×
                                     {{ number_format((float) $linea->precio_unitario, 2) }}
                                 </span>
                             @elseif ($llevaImpuesto && ! $linea->afecto_impuesto)
@@ -370,7 +418,7 @@
                             @endif
                         </td>
                         @unless ($ticket)
-                            <td class="cifra derecha">{{ $linea->cantidad_con_unidad }}</td>
+                            <td class="cifra derecha">{{ $linea->cantidad_visible }}</td>
                             <td class="cifra derecha">{{ number_format((float) $linea->precio_unitario, 2) }}</td>
                         @endunless
                         {{-- Con el impuesto incluido, la línea vale lo que pagó el cliente. --}}
@@ -385,7 +433,7 @@
         <table class="totales">
             @if ($incluido)
             <tr>
-                <td class="tenue">Productos</td>
+                <td class="tenue">Subtotal</td>
                 <td class="derecha">{{ $moneda }} {{ number_format($ventaDoc->total_antes_del_descuento, 2) }}</td>
             </tr>
             @if ($ventaDoc->descuento_visible > 0)

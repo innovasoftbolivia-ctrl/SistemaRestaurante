@@ -14,11 +14,16 @@ class Categoria extends Model
 
     const UPDATED_AT = null;
 
-    protected $fillable = ['nombre', 'descripcion', 'activo'];
+    /**
+     * `pasa_por_cocina`: si sus platos se preparan en la cocina. Las bebidas
+     * no: se cobran igual, pero no llenan la pantalla de la cocina ni la
+     * comanda con gaseosas que nadie cocina.
+     */
+    protected $fillable = ['nombre', 'descripcion', 'activo', 'pasa_por_cocina'];
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean'];
+        return ['activo' => 'boolean', 'pasa_por_cocina' => 'boolean'];
     }
 
     public function productos(): HasMany

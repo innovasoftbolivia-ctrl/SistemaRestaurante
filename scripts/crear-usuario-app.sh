@@ -28,12 +28,12 @@ fi
 
 CONTENEDOR="${VENTAS_MYSQL:-}"
 if [ -z "$CONTENEDOR" ]; then
-    for c in ventas_mysql_prod ventas_mysql; do
+    for c in ventas_mysql_prod restaurante_mysql; do
         if docker ps --format '{{.Names}}' | grep -qx "$c"; then CONTENEDOR="$c"; break; fi
     done
 fi
 if [ -z "$CONTENEDOR" ]; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni ventas_mysql)." >&2
+    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
     exit 1
 fi
 

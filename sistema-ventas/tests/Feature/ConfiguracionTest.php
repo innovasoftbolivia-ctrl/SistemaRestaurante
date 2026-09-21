@@ -37,9 +37,9 @@ class ConfiguracionTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function serie(string $tipo): int
@@ -75,10 +75,10 @@ class ConfiguracionTest extends TestCase
             'egreso_max_cajero' => $valor('egreso_max_cajero'),
             'cliente_generico_nombre' => $valor('cliente_generico_nombre'),
             'dias_max_sustitucion' => $valor('dias_max_sustitucion'),
-            'dias_max_devolucion' => $valor('dias_max_devolucion'),
             'exigir_referencia_pago' => $valor('exigir_referencia_pago'),
-            'serie_factura' => $valor('serie_factura'),
-            'serie_recibo' => $valor('serie_recibo'),
+            'hora_corte_jornada' => $valor('hora_corte_jornada'),
+            'serie_factura' => (string) DB::table('tipos_comprobante')->where('codigo', 'FAC')->value('serie_por_omision_id'),
+            'serie_recibo' => (string) DB::table('tipos_comprobante')->where('codigo', 'REC')->value('serie_por_omision_id'),
         ];
     }
 
@@ -111,7 +111,7 @@ class ConfiguracionTest extends TestCase
 
         $nombre = $this->actuales()['negocio_nombre'];
 
-        foreach ([$this->cajero(), $this->almacenero()] as $usuario) {
+        foreach ([$this->cajero(), $this->cocina()] as $usuario) {
             $this->actingAs($usuario)->get(route('configuracion.edit'))->assertForbidden();
             $this->guardar(['negocio_nombre' => 'Negocio pirata'], $usuario)->assertForbidden();
         }
@@ -144,7 +144,6 @@ class ConfiguracionTest extends TestCase
             'tasa_impuesto' => '13',
             'descuento_max_cajero' => '5',
             'dias_max_sustitucion' => '3',
-            'dias_max_devolucion' => '15',
             'exigir_referencia_pago' => '0',
         ])->assertRedirect(route('configuracion.edit'))->assertSessionHas('exito');
 
@@ -156,7 +155,6 @@ class ConfiguracionTest extends TestCase
         $this->assertSame('3 344 5566', $guardado['negocio_telefono']);
         $this->assertSame('5', $guardado['descuento_max_cajero']);
         $this->assertSame('3', $guardado['dias_max_sustitucion']);
-        $this->assertSame('15', $guardado['dias_max_devolucion']);
         $this->assertSame('0', $guardado['exigir_referencia_pago']);
 
         // La tasa se escribe como porcentaje y se guarda como la fracción que
@@ -164,9 +162,10 @@ class ConfiguracionTest extends TestCase
         $this->assertSame('0.1300', $guardado['tasa_impuesto']);
         $this->assertSame(0.13, Config::tasaImpuesto());
 
-        // El símbolo sale del código: no pueden quedar desparejos.
+        // El símbolo sale del código: ya no se guarda, así que no pueden quedar desparejos.
         $this->assertSame('USD', $guardado['moneda_codigo']);
-        $this->assertSame('$', $guardado['moneda_simbolo']);
+        $this->assertArrayNotHasKey('moneda_simbolo', $guardado->all());
+        $this->assertSame('$', Config::moneda());
     }
 
     /** Lo que importa de la pantalla: que el papel cambie. */
@@ -320,11 +319,57 @@ class ConfiguracionTest extends TestCase
         $this->assertEqualsWithDelta($base, (float) Producto::where('codigo', 'P-0004')->value('precio_venta'), 0.01);
     }
 
+    /**
+     * La hora en que empieza la jornada —y con ella el número del pedido— se
+     * cambia desde la pantalla, con su explicación, y solo entre 0 y 12.
+     */
+    public function test_la_hora_de_corte_de_la_jornada_se_edita_desde_la_pantalla(): void
+    {
+        $this->actingAs($this->admin())->get(route('configuracion.edit'))->assertOk()
+            ->assertSee('name="hora_corte_jornada"', false)
+            ->assertSee('La jornada empieza a las');
+
+        $this->guardar(['hora_corte_jornada' => '3'])->assertSessionHasNoErrors();
+        $this->assertSame('3', DB::table('configuracion')->where('clave', 'hora_corte_jornada')->value('valor'));
+        $this->assertSame(3, Config::horaCorteJornada());
+        $this->assertDatabaseHas('auditoria', ['accion' => 'CONFIGURACION_ACTUALIZADA']);
+
+        foreach (['13', '-1', 'tarde'] as $malo) {
+            $this->guardar(['hora_corte_jornada' => $malo])->assertSessionHasErrors('hora_corte_jornada');
+        }
+        $this->assertSame('3', DB::table('configuracion')->where('clave', 'hora_corte_jornada')->value('valor'));
+    }
+
     public function test_la_pantalla_tiene_el_apartado_de_impuesto_y_precios(): void
     {
         $this->actingAs($this->admin())->get(route('configuracion.edit'))->assertOk()
             ->assertSee('data-impuesto-y-precios', false)
             ->assertSee('Ya incluyen el IVA')
             ->assertSee('El negocio cobra IVA en sus ventas');
+    }
+
+    /**
+     * El nombre del cliente sin registrar se cambia en la configuración, y
+     * tiene que cambiar en todas las pantallas que lo muestran, no solo en el
+     * comprobante: tres de ellas lo tenían escrito a mano.
+     */
+    public function test_el_cliente_sin_registrar_se_llama_como_dice_la_configuracion(): void
+    {
+        DB::table('configuracion')->updateOrInsert(['clave' => 'cliente_generico_nombre'], ['valor' => 'Consumidor final']);
+        Config::olvidar();
+
+        $turno = Cajas::abrir(Caja::firstOrFail(), $this->admin(), 100);
+        Ventas::registrar(
+            sesion: $turno->fresh(),
+            usuario: $this->admin(),
+            lineas: [['producto_id' => Producto::where('codigo', 'P-0004')->value('id'), 'cantidad' => 1]],
+            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
+        );
+
+        foreach ([route('ventas.index'), route('caja.show', $turno), route('inicio')] as $url) {
+            $this->actingAs($this->admin())->get($url)->assertOk()
+                ->assertSee('Consumidor final')
+                ->assertDontSee('Cliente varios');
+        }
     }
 }

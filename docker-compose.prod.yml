@@ -65,6 +65,12 @@ services:
       # RESPALDOS_COPIA=/respaldos-copia. Sin montaje, la copia se quedaba
       # dentro del contenedor y se perdía al recrearlo.
       - ${RESPALDOS_COPIA_SERVIDOR:-./respaldos-copia}:/respaldos-copia
+      # La conexión con Google Drive (scripts/conectar-drive.sh). En un volumen
+      # y no en la imagen: rclone la reescribe al renovar el permiso, y
+      # reconstruir la imagen no tiene que desconectar Drive.
+      - ventas_rclone:/var/www/html/storage/app/rclone
+    environment:
+      RCLONE_CONFIG: /var/www/html/storage/app/rclone/rclone.conf
     depends_on:
       mysql:
         condition: service_healthy
@@ -106,6 +112,9 @@ services:
       - ventas_logs:/var/www/html/storage/logs
       - ventas_respaldos:/var/www/html/storage/app/respaldos
       - ${RESPALDOS_COPIA_SERVIDOR:-./respaldos-copia}:/respaldos-copia
+      - ventas_rclone:/var/www/html/storage/app/rclone
+    environment:
+      RCLONE_CONFIG: /var/www/html/storage/app/rclone/rclone.conf
     depends_on:
       app:
         condition: service_healthy
@@ -211,6 +220,7 @@ volumes:
   ventas_storage:
   ventas_logs:
   ventas_respaldos:
+  ventas_rclone:
 
 networks:
   ventas:

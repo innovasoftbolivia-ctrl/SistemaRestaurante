@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * Vive por su cuenta mientras se espera al cliente: `venta_id` queda en NULL
  * hasta que el pago se confirma. Si se registrara la venta antes de cobrar, un
- * cliente que se arrepiente dejaría stock descontado y comprobante emitido por
- * mercadería que nadie se llevó.
+ * cliente que se arrepiente dejaría una venta y un comprobante emitido por una
+ * cuenta que nadie pagó.
  */
 class CobroQr extends Model
 {

@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\Caja;
 use App\Models\CobroQr;
 use App\Models\MovimientoCaja;
+use App\Models\Pedido;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Support\Config;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -146,26 +148,46 @@ class Cajas
      * cajero tiene un tope sin autorización.
      *
      * Sin esto, un faltante se tapaba con un egreso por el monto justo —«Compra
-     * de bolsas, 80»— y el arqueo cerraba en cero. Por encima del tope, el
+     * de hielo, 80»— y el arqueo cerraba en cero. Por encima del tope, el
      * egreso lo registra quien puede cerrar la caja, en el mismo turno.
      */
     private static function validarEgreso(SesionCaja $sesion, Usuario $usuario, float $monto): void
     {
+        // El tope del cajero va primero: si no, un egreso enorme servía para
+        // que el mensaje de abajo le dijera cuánto efectivo esperado hay, la
+        // cifra que se le oculta hasta el arqueo.
+        if (! $usuario->tienePermiso('caja.cerrar')) {
+            self::validarTopeDelCajero($sesion, $usuario, $monto);
+        }
+
         $disponible = round($sesion->efectivoEsperado(), 2);
 
         if (round($monto, 2) > $disponible) {
-            throw new RuntimeException(sprintf(
-                'El egreso (%s) es mayor que el efectivo que debería haber en el cajón (%s).',
-                Config::importe($monto),
-                Config::importe(max(0, $disponible)),
-            ));
+            throw new RuntimeException(self::arquea($usuario)
+                ? sprintf(
+                    'El egreso (%s) es mayor que el efectivo que debería haber en el cajón (%s).',
+                    Config::importe($monto),
+                    Config::importe(max(0, $disponible)),
+                )
+                : sprintf(
+                    'El egreso (%s) es mayor que el efectivo que debería haber en el cajón. Revisa el monto o pide a un administrador que lo registre.',
+                    Config::importe($monto),
+                ));
         }
+    }
 
+    /**
+     * Quién ve el arqueo: el efectivo esperado y la diferencia. El cajero no:
+     * cuenta el cajón sin saber cuánto «debería» haber.
+     */
+    public static function arquea(?Usuario $usuario): bool
+    {
+        return $usuario !== null && ($usuario->tienePermiso('caja.cerrar') || $usuario->tienePermiso('reportes.ver'));
+    }
+
+    private static function validarTopeDelCajero(SesionCaja $sesion, Usuario $usuario, float $monto): void
+    {
         $tope = (float) Config::get('egreso_max_cajero', '0');
-
-        if ($usuario->tienePermiso('caja.cerrar')) {
-            return;
-        }
 
         // Acumulado del turno, no por movimiento: el tope se evadía partiendo
         // el retiro en cuatro egresos «de hasta Bs 200» que el arqueo cuadraba
@@ -210,11 +232,38 @@ class Cajas
     }
 
     /**
+     * Los pedidos con el cobro anulado que falta volver a cobrar, el más
+     * viejo primero.
+     *
+     * En el local todo se cobra al pedirlo; sin cobrar solo queda un pedido
+     * cuya venta se anuló (`Pedidos::reabrirTrasAnular`) y todavía no se volvió
+     * a cobrar ni se canceló. Todos y no solo los de este turno: un pedido no
+     * pertenece a una caja hasta que se cobra, y quien cierra tiene que saber
+     * qué quedó pendiente.
+     *
+     * @return Collection<int, Pedido>
+     */
+    public static function cuentasAbiertas(): Collection
+    {
+        return Pedido::abiertos()
+            ->with(['ultimaVenta.cliente:id,nombre', 'detalle'])
+            ->orderBy('fecha_apertura')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
      * Cierra el turno con el efectivo contado. El procedimiento calcula el
      * esperado y la base deriva la diferencia.
      *
+     * Con pedidos de cobro anulado sin volver a cobrar no se cierra a ciegas:
+     * hay que confirmarlo. No se prohíbe —el turno siguiente puede cobrarlos—,
+     * pero antes se podía cerrar con ellos sin que nadie se enterara, y el
+     * turno siguiente no sabía que tenía que cobrarlos.
+     *
      * @param  ?float  $fondo  lo que queda en el cajón para el siguiente turno
      * @param  ?string  $huella  `SesionCaja::huella()` de cuando se empezó a contar
+     * @param  bool  $conCuentasAbiertas  quien cierra vio los pedidos de cobro anulado y cierra igual
      */
     public static function cerrar(
         SesionCaja $sesion,
@@ -223,6 +272,7 @@ class Cajas
         ?string $observacion = null,
         ?float $fondo = null,
         ?string $huella = null,
+        bool $conCuentasAbiertas = false,
     ): SesionCaja {
         if (! $sesion->estaAbierta()) {
             throw new RuntimeException('Esta caja ya fue cerrada.');
@@ -251,9 +301,11 @@ class Cajas
         // `DB::select` y no `DB::statement`: el procedimiento termina con un
         // SELECT del arqueo, y ese resultado hay que consumirlo o la siguiente
         // consulta de la conexión falla.
-        DB::transaction(function () use ($sesion, $usuario, $declarado, $observacion, $fondo, $huella) {
+        $abiertas = [];
+
+        DB::transaction(function () use ($sesion, $usuario, $declarado, $observacion, $fondo, $huella, $conCuentasAbiertas, &$abiertas) {
             // Primero el turno bloqueado: una venta, un movimiento o una
-            // devolución que llegue ahora espera a que el cierre termine y lo
+            // anulación que llegue ahora espera a que el cierre termine y lo
             // encuentra cerrado. Lo que se compara con el conteo es lo que hay
             // en este instante, no lo que había cuando se abrió la pantalla.
             $bloqueada = SesionCaja::whereKey($sesion->id)->lockForUpdate()->first();
@@ -267,6 +319,22 @@ class Cajas
                     'Mientras contabas se registraron ventas o movimientos en este turno y el efectivo esperado cambió. '
                     .'Revisa el nuevo esperado y vuelve a confirmar el cierre.'
                 );
+            }
+
+            // Revisado aquí y no solo en la pantalla: una venta puede anularse
+            // mientras se cuenta el cajón, y ese pedido también tiene que verse.
+            $abiertas = self::cuentasAbiertas()->map(fn (Pedido $p) => [
+                'pedido_id' => $p->id,
+                'cuenta' => $p->etiqueta,
+                'total' => Pedidos::totalDe($p),
+            ])->all();
+
+            if ($abiertas !== [] && ! $conCuentasAbiertas) {
+                throw new RuntimeException(sprintf(
+                    'Hay %d pedido(s) con el cobro anulado, sin volver a cobrar: %s. Cóbralos o cancélalos antes de cerrar, o marca que cierras sin volver a cobrarlos.',
+                    count($abiertas),
+                    implode(', ', array_column($abiertas, 'cuenta')),
+                ));
             }
 
             // Una diferencia sin explicación no le sirve a nadie. Se calcula
@@ -320,7 +388,7 @@ class Cajas
             'declarado' => $sesion->monto_declarado,
             'diferencia' => $sesion->diferencia,
             'fondo_dejado' => $sesion->fondo_dejado,
-        ], $usuario->id);
+        ] + ($abiertas !== [] ? ['cuentas_abiertas' => $abiertas] : []), $usuario->id);
 
         return $sesion;
     }

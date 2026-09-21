@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Services\Pedidos;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,9 @@ abstract class TestCase extends BaseTestCase
         // cambia por pantalla, una prueba que guarda un nombre dejaría ese
         // nombre para la siguiente, aunque su transacción ya se haya revertido.
         Config::olvidar();
+        // Lo mismo con qué platos llevan impuesto, que el cobro de pedidos
+        // guarda en memoria.
+        Pedidos::olvidar();
 
         $base = DB::connection()->getDatabaseName();
 

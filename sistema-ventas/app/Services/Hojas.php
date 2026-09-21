@@ -52,7 +52,7 @@ class Hojas
             ->setCompany($doc['negocio']['nombre'])
             ->setTitle($doc['titulo'])
             ->setSubject($doc['periodo'])
-            ->setDescription('Generado por el Sistema de Ventas el '.$doc['generado']);
+            ->setDescription('Generado por el Sistema de Restaurante el '.$doc['generado']);
 
         $this->portada();
 

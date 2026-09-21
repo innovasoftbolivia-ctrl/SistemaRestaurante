@@ -10,29 +10,12 @@
     $separa = $tasa > 0 && ! $incluido;
     $moneda = Config::moneda();
 
-    // Los campos que quedan detrás de «Más datos». Son los que un comerciante
-    // no tiene en la cabeza cuando llega mercadería nueva: el código lo propone
-    // el sistema, el de barras lo lee el lector, y proveedor, descripción y
-    // foto se pueden completar después sin que el producto deje de venderse.
+    // Los campos que quedan detrás de «Más datos». Son los que no se tienen en
+    // la cabeza al dar de alta un plato: el código lo propone el sistema, y
+    // descripción y foto se pueden completar después sin que deje de venderse.
     // Si alguno vuelve con error, la sección se abre sola: un error escondido
     // detrás de un botón plegado es un formulario que no se puede terminar.
-    $opcionales = ['codigo', 'codigo_barras', 'proveedor_id', 'descripcion', 'imagen'];
-
-    // Nombre => plural, calculado en el servidor (ver ProductoController).
-    $pluralesEmpaque = App\Http\Controllers\ProductoController::empaquesUsuales();
-    $empaquesUsuales = array_keys($pluralesEmpaque);
-
-    // Un empaque escrito a mano —«Jaba», «Ristra»— sigue siendo válido: se
-    // reconoce porque no está en la lista, y la casilla «Otro» se abre sola
-    // con ese texto dentro en vez de perderlo.
-    $empaqueActual = old('nombre_empaque', $producto->nombre_empaque);
-    $empaqueEnLista = filled($empaqueActual) && in_array($empaqueActual, $empaquesUsuales, true);
-
-    // «Suelto» va primero porque es el valor por defecto y porque es la
-    // respuesta de la mitad del catálogo. «Otro…» se agrega en el slot, después
-    // de la lista, que es donde se espera encontrar un cajón de sastre.
-    $opcionesEmpaque = ['__suelto' => 'Suelto — igual que lo vendo']
-        + array_combine($empaquesUsuales, $empaquesUsuales);
+    $opcionales = ['codigo', 'descripcion', 'imagen'];
 @endphp
 
 @section('content')
@@ -41,88 +24,11 @@
         x-data="{
             tasa: {{ $tasa }},
             incluido: @js($incluido),
-            compra: Number(@js(old('precio_compra', $producto->precio_compra ?? 0))),
             venta: Number(@js(old('precio_venta', $producto->precio_venta ?? 0))),
             afecto: @js((bool) old('afecto_impuesto', $producto->afecto_impuesto ?? true)),
 
-            unidades: @js($unidadesInfo),
-            unidad: Number(@js(old('unidad_medida_id', $producto->unidad_medida_id ?? ''))) || null,
-
-            /* El empaque se elige de una lista y ya no viene con «Caja» puesto:
-               un valor por defecto que nadie eligió terminaba guardado tal cual,
-               y después la pantalla de ingreso hablaba de cajas donde había
-               sacos. Lo que se elija es lo que sale en todas las etiquetas.
-
-               `__suelto` es una opción más de la misma lista y no una casilla
-               aparte: la casilla hacía parecer opcional la mitad más importante
-               del formulario, y quien se la saltaba terminaba eligiendo «Caja»
-               como unidad de VENTA para no perder la cuenta de las cajas. Las
-               dos preguntas —cómo lo compro, cómo lo vendo— tienen que estar a
-               la vista al mismo tiempo, porque es un solo pensamiento. */
-            empaqueElegido: @js($empaqueEnLista ? $empaqueActual : (filled($empaqueActual) ? '__otro' : '__suelto')),
-            empaqueLibre: @js($empaqueEnLista ? '' : ($empaqueActual ?? '')),
-            /* El plural llega resuelto del servidor. Para un empaque escrito a
-               mano no hay entrada en el mapa y se cae a la «s», que es lo que
-               acierta en casi todo y lo escribió la propia persona. */
-            plurales: @js(array_change_key_case($pluralesEmpaque, CASE_LOWER)),
-            get vieneEnEmpaque() {
-                return this.empaqueElegido !== '__suelto';
-            },
-            get nombreEmpaque() {
-                if (!this.vieneEnEmpaque) return '';
-
-                return (this.empaqueElegido === '__otro' ? this.empaqueLibre : this.empaqueElegido) || '';
-            },
-            /* Vacío y no 0: con un 0 puesto hay que borrarlo antes de poder
-               escribir 24, y esa es justo la fricción que se vino a quitar. */
-            contenidoEmpaque: @js((string) old('contenido_empaque', $producto->contenido_empaque ?? '')),
-
-            controlaVencimiento: @js((bool) old('controla_vencimiento', $producto->controla_vencimiento ?? false)),
 
             masDatos: @js($errors->hasAny($opcionales)),
-
-            get unidadCodigo() {
-                return this.unidades[this.unidad]?.codigo ?? '';
-            },
-            get unidadNombre() {
-                return this.unidades[this.unidad]?.nombre ?? 'unidad';
-            },
-            get pasoUnidad() {
-                return this.unidades[this.unidad]?.decimal ? 0.001 : 1;
-            },
-            /* El empaque solo cuenta cuando está completo: sin contenido no hay
-               ninguna cuenta que hacer y la pantalla no debe prometerla. */
-            get contenido() {
-                return Number(this.contenidoEmpaque) || 0;
-            },
-            get hayEmpaque() {
-                return this.vieneEnEmpaque && this.contenido > 1;
-            },
-            get empaque() {
-                return (this.nombreEmpaque || 'empaque').trim().toLowerCase();
-            },
-            get empaquePlural() {
-                return this.plurales[this.empaque] ?? this.empaque + 's';
-            },
-            /* «Compras cajas de 12 CAJA»: el empaque y la unidad de venta son
-               la misma palabra. Casi siempre significa que se quiso decir una
-               de las dos cosas, no las dos. No se bloquea —vender la caja y
-               comprarla en fardos de cajas es legítimo— pero se avisa, porque
-               tal como queda el mostrador vendería cajas de doce cajas. */
-            get empaqueRepiteLaUnidad() {
-                return this.hayEmpaque && this.empaque === this.unidadNombre;
-            },
-
-            /* El costo se puede escribir por caja, pero todo lo que se calcula
-               —margen, ganancia, comparación con el precio de venta— trabaja
-               con el de UNA unidad, que es lo que se guarda. */
-            compraPor: @js(old('precio_compra_por', 'UNIDAD')),
-            get compraPorCaja() {
-                return this.compraPor === 'EMPAQUE' && this.hayEmpaque;
-            },
-            get compraUnidad() {
-                return this.compraPorCaja ? this.compra / this.contenido : this.compra;
-            },
 
             get estante() {
                 const base = this.afecto ? this.venta * (1 + this.tasa) : this.venta;
@@ -133,16 +39,6 @@
                 if (!this.incluido || !this.afecto) return 0;
                 const c = Math.round(this.venta * 100), t = Math.round(this.tasa * 10000), d = 10000 + t;
                 return Math.floor((2 * c * t + d) / (2 * d)) / 100;
-            },
-            /* La ganancia se mide sin impuesto: el IVA no es del negocio. */
-            get ventaSinIva() {
-                return this.venta - this.ivaDentro;
-            },
-            get margen() {
-                return (this.ventaSinIva - this.compraUnidad).toFixed(2);
-            },
-            get margenPorcentaje() {
-                return this.ventaSinIva > 0 ? ((this.ventaSinIva - this.compraUnidad) / this.ventaSinIva * 100).toFixed(1) : '0.0';
             },
             /* Al revés: se escribe el precio de estante deseado y sale la base. */
             desdeEstante(valor) {
@@ -157,157 +53,19 @@
             @method('PUT')
         @endif
 
-        {{-- El código chocó con un producto que ya existe. El error del campo
-             lo dice, pero ahí termina: casi siempre lo que se quería era
-             sumarle stock a ese mismo producto, así que el atajo va aquí,
-             a un clic, en vez de obligar a buscarlo de nuevo a mano. --}}
-        @if (session('producto_duplicado'))
-            @php($duplicado = session('producto_duplicado'))
-            <div class="lg:col-span-3">
-                <x-ui.alert variant="warning" title="Ese producto ya está en el catálogo"
-                    :message="'«'.$duplicado['nombre'].'» ('.$duplicado['codigo'].') ya usa ese código. Si solo necesitas sumarle stock, no lo cargues de nuevo: hazlo desde el inventario y quedará en el kardex con su motivo y su responsable.'"
-                    :showLink="true" :linkHref="route('inventario.index', ['buscar' => $duplicado['codigo']])"
-                    linkText="Ir a cargarle stock" />
-            </div>
-        @endif
-
         <div class="space-y-6 lg:col-span-2">
-            <x-common.component-card title="Qué producto es"
+            <x-common.component-card title="Qué se ofrece"
                 desc="El nombre con el que lo busca quien atiende el mostrador.">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <x-form.campo label="Nombre" for="nombre" name="nombre" required>
                         <x-form.input id="nombre" name="nombre" :value="$producto->nombre"
-                            placeholder="Arroz extra 1 kg" required autofocus />
+                            placeholder="Pique macho para dos" required autofocus />
                     </x-form.campo>
 
                     <x-form.campo label="Categoría" for="categoria_id" name="categoria_id" required>
                         <x-form.select id="categoria_id" name="categoria_id" :value="$producto->categoria_id"
                             placeholder="Selecciona una categoría" :opciones="$categorias" required />
                     </x-form.campo>
-                </div>
-            </x-common.component-card>
-
-            {{-- El corazón del formulario, y lo que antes no existía: comprar y
-                 vender no tienen por qué usar la misma unidad.
-
-                 Las dos preguntas van juntas y en ese orden —primero cómo llega,
-                 después cómo sale— porque así es como lo cuenta el comerciante:
-                 «compro cajas de 24 y vendo de a uno». Presentarlas por separado,
-                 con la compra escondida detrás de una casilla, llevaba a buscar
-                 la caja en la lista de unidades de venta, que es la pregunta
-                 equivocada: esa lista decide lo que se despacha en el mostrador. --}}
-            <x-common.component-card title="Cómo lo compras y cómo lo vendes"
-                desc="No tienen por qué ser lo mismo: se compra por caja y se vende de a uno. El stock se cuenta siempre en la unidad de venta.">
-                {{-- `viene_en_empaque` ya no es una casilla que se marca, sino
-                     lo que se deduce de haber elegido un envase. El servidor
-                     sigue recibiendo el mismo campo. --}}
-                <input type="hidden" name="viene_en_empaque" :value="vieneEnEmpaque ? '1' : '0'" />
-                <input type="hidden" name="nombre_empaque" :value="nombreEmpaque" />
-
-                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <x-form.campo label="¿Cómo te lo entrega el proveedor?" for="empaque_elegido" name="nombre_empaque"
-                        help="Lo que recibes: una caja, un saco, un bidón. Sirve igual para lo que se cuenta, lo que se pesa y lo que se mide.">
-                        <x-form.select id="empaque_elegido" name="empaque_elegido" x-model="empaqueElegido"
-                            :opciones="$opcionesEmpaque">
-                            <option value="__otro">Otro…</option>
-                        </x-form.select>
-
-                        <x-form.input x-show="empaqueElegido === '__otro'" x-cloak x-model="empaqueLibre"
-                            class="mt-2" placeholder="Jaba, ristra, atado…" maxlength="20" />
-                    </x-form.campo>
-
-                    {{-- La unidad de venta es la pregunta de al lado, no una que
-                         viene después: verlas juntas es lo que impide confundir
-                         «lo que compro» con «lo que despacho». --}}
-                    <x-form.campo label="¿Cómo lo vendes en el mostrador?" for="unidad_medida_id"
-                        name="unidad_medida_id" required
-                        help="En esta unidad se cuenta el stock y se cobra. Si abres la caja para vender lo de adentro, aquí va lo de adentro.">
-                        <x-form.select id="unidad_medida_id" name="unidad_medida_id"
-                            :value="$producto->unidad_medida_id" placeholder="Selecciona una unidad"
-                            :opciones="$unidades" x-model.number="unidad" required />
-                    </x-form.campo>
-
-                    <div x-show="vieneEnEmpaque" x-cloak class="sm:col-span-2">
-                        <x-form.campo label="¿Cuánto trae cada uno?" for="contenido_empaque"
-                            name="contenido_empaque">
-                            {{-- El paso lo manda la unidad de venta: 24 gaseosas son
-                                 enteras, pero un galón son 3.785 litros y redondear
-                                 ahí se le iría derecho al stock. --}}
-                            <div class="flex items-center gap-3">
-                                <div class="w-40 shrink-0">
-                                    <x-form.input id="contenido_empaque" name="contenido_empaque" type="number"
-                                        x-bind:step="pasoUnidad" min="0" :value="$producto->contenido_empaque"
-                                        x-model.number="contenidoEmpaque"
-                                        x-bind:placeholder="pasoUnidad === 1 ? '24' : '46'" />
-                                </div>
-                                {{-- El código y no el nombre: «UND por caja» no necesita
-                                     plural, y «unidads» es lo que salía al pegarle una
-                                     «s» a «unidad». Las reglas del plural ya viven en
-                                     el servidor y no hace falta una segunda copia aquí. --}}
-                                <span class="text-theme-sm text-gray-500 dark:text-gray-400">
-                                    <span x-text="unidadCodigo || 'unidades'"></span>
-                                    por <span x-text="empaque"></span>
-                                </span>
-                            </div>
-                        </x-form.campo>
-                    </div>
-
-                    <div x-show="empaqueRepiteLaUnidad" x-cloak class="sm:col-span-2">
-                        <x-ui.alert variant="warning" title="El empaque se llama igual que la unidad de venta"
-                            message="Tal como está, compras envases llenos de ese mismo envase. Si lo que despachas
-                                en el mostrador es el envase entero, ponlo como «Suelto»; si lo despachas por
-                                unidad, cambia la unidad de venta." />
-                    </div>
-
-                    {{-- El vencimiento se enciende producto por producto: el
-                         detergente no vence, y pedirle una fecha cada vez que
-                         llega es la forma más rápida de que alguien escriba
-                         cualquier cosa con tal de seguir. --}}
-                    <div class="rounded-xl border border-gray-200 p-4 sm:col-span-2 dark:border-gray-800">
-                        <x-form.check name="controla_vencimiento" model="controlaVencimiento"
-                            label="Este producto vence" />
-                        <p class="mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
-                            Con esto encendido, cada entrada de mercadería anota su fecha y el sistema avisa cuando
-                            algo está por vencerse. El mostrador despacha siempre lo que vence antes.
-                            @if ($esEdicion && ! $producto->controla_vencimiento && (float) $producto->stock_actual > 0)
-                                <span class="block mt-1">
-                                    Las {{ Config::cantidad($producto->stock_actual) }} unidades que ya tienes
-                                    quedarán como «sin fecha registrada»: nadie sabe de cuándo son, y el sistema no
-                                    va a inventarlo.
-                                </span>
-                            @endif
-                        </p>
-                    </div>
-
-                    {{-- La frase completa, para que la regla no haya que
-                         deducirla del formulario. --}}
-                    <div class="rounded-xl bg-gray-50 p-4 text-theme-sm sm:col-span-2 dark:bg-white/[0.03]">
-                        <template x-if="hayEmpaque && unidad">
-                            <p class="text-gray-700 dark:text-gray-300">
-                                Compras de a <b><span x-text="empaque"></span> de
-                                    <span x-text="contenido"></span>
-                                    <span x-text="unidadCodigo"></span></b>
-                                y vendes de a <b><span x-text="unidadNombre"></span></b>.
-                                {{-- «el número de» y no «cuántas»: en castellano el
-                                     artículo depende del género y esto vale igual para
-                                     las cajas que para los sacos. --}}
-                                Al ingresar mercadería pondrás el número de
-                                <span x-text="empaquePlural"></span> y el de unidades
-                                sueltas, y el sistema hace la multiplicación.
-                            </p>
-                        </template>
-                        <template x-if="!hayEmpaque && unidad">
-                            <p class="text-gray-700 dark:text-gray-300">
-                                Compras y vendes de a <b><span x-text="unidadNombre"></span></b>: no hay ninguna
-                                cuenta que hacer al cargar mercadería.
-                            </p>
-                        </template>
-                        <template x-if="!unidad">
-                            <p class="text-gray-500 dark:text-gray-400">
-                                Di cómo lo vendes y, si viene en envase, cuántas unidades trae.
-                            </p>
-                        </template>
-                    </div>
                 </div>
             </x-common.component-card>
 
@@ -318,40 +76,11 @@
                         ? 'El precio de venta es el que paga el cliente e incluye el IVA: el sistema lo separa por dentro.'
                         : 'El precio de venta es el que paga el cliente: el sistema no le agrega nada encima.')">
                 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <x-form.campo label="Precio de compra" for="precio_compra" name="precio_compra" required
-                        help="Sin impuesto. Se guarda siempre por unidad de venta.">
-                        {{-- El ancho va en un envoltorio y no en el propio control:
-                             los componentes traen `w-full` y una clase de ancho
-                             puesta encima pierde por orden de la hoja de estilos. --}}
-                        <div class="flex gap-2">
-                            <div class="min-w-0 flex-1">
-                                <x-form.input id="precio_compra" name="precio_compra" type="number" step="0.01"
-                                    min="0" :value="$producto->precio_compra ?? '0.00'" x-model.number="compra"
-                                    required />
-                            </div>
-
-                            {{-- La factura del proveedor viene por caja. Se
-                                 escribe como viene y el sistema divide. --}}
-                            <div class="w-32 shrink-0" x-show="hayEmpaque" x-cloak>
-                                <x-form.select name="precio_compra_por" x-model="compraPor">
-                                    <option value="UNIDAD" x-text="'por ' + unidadNombre"></option>
-                                    <option value="EMPAQUE" x-text="'por ' + empaque"></option>
-                                </x-form.select>
-                            </div>
-                        </div>
-
-                        <p x-show="compraPorCaja && compra > 0" x-cloak
-                            class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-                            = {{ $moneda }} <b x-text="compraUnidad.toFixed(2)"></b> por
-                            <span x-text="unidadCodigo"></span>, que es lo que se guarda
-                        </p>
-                    </x-form.campo>
-
                     <x-form.campo :label="$separa ? 'Precio de venta (base)' : 'Precio de venta'"
                         for="precio_venta" name="precio_venta" required
                         :help="$separa
                             ? 'Base imponible: es lo que se guarda en la base de datos.'
-                            : ($tasa > 0 ? 'Lo que paga el cliente por una unidad, con el IVA incluido.' : 'Lo que paga el cliente por una unidad.')">
+                            : ($tasa > 0 ? 'Lo que paga el cliente por una porción, con el IVA incluido.' : 'Lo que paga el cliente por una porción.')">
                         <x-form.input id="precio_venta" name="precio_venta" type="number" step="0.01" min="0"
                             :value="$producto->precio_venta ?? '0.00'" x-model.number="venta" required />
                     </x-form.campo>
@@ -388,58 +117,24 @@
                     @endif
                 </div>
 
-                {{-- Resumen en vivo, para no tener que sacar la calculadora --}}
-                <div
-                    class="grid @if ($tasa > 0) grid-cols-3 @else grid-cols-2 @endif gap-4 rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
-                    @if ($separa)
-                        <div>
+                {{-- Resumen en vivo, para no tener que sacar la calculadora. Sin
+                     impuesto no hay nada que resumir: el precio escrito es el
+                     único, y repetirlo en un recuadro no aporta nada. --}}
+                @if ($tasa > 0)
+                    <div class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
+                        @if ($separa)
                             <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Estante</p>
                             <p class="text-lg font-semibold text-gray-800 dark:text-white/90">
                                 {{ $moneda }} <span x-text="estante"></span>
                             </p>
-                        </div>
-                    @elseif ($tasa > 0)
-                        <div>
+                        @else
                             <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">IVA incluido</p>
                             <p class="text-lg font-semibold text-gray-800 dark:text-white/90">
                                 {{ $moneda }} <span x-text="ivaDentro.toFixed(2)"></span>
                             </p>
-                        </div>
-                    @endif
-                    <div>
-                        <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Ganancia</p>
-                        <p class="text-lg font-semibold"
-                            :class="margen >= 0 ? 'text-success-700 dark:text-success-500' : 'text-error-600 dark:text-error-400'">
-                            {{ $moneda }} <span x-text="margen"></span>
-                        </p>
+                        @endif
                     </div>
-                    <div>
-                        <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Margen</p>
-                        <p class="text-lg font-semibold"
-                            :class="margen >= 0 ? 'text-success-700 dark:text-success-500' : 'text-error-600 dark:text-error-400'">
-                            <span x-text="margenPorcentaje"></span>%
-                        </p>
-                    </div>
-                </div>
-
-                {{-- Lo que cuesta la caja entera: es la cifra que aparece en la
-                     factura del proveedor, y sirve para comprobar de un vistazo
-                     que el costo por unidad se escribió bien. --}}
-                <div x-show="hayEmpaque && compra > 0 && !compraPorCaja" x-cloak
-                    class="rounded-xl border border-gray-200 px-4 py-3 text-theme-sm dark:border-gray-800">
-                    <span class="text-gray-500 dark:text-gray-400">Una
-                        <span x-text="empaque"></span> de <span x-text="contenido"></span>
-                        te cuesta</span>
-                    <b class="text-gray-800 dark:text-white/90">{{ $moneda }}
-                        <span x-text="(compraUnidad * contenido).toFixed(2)"></span></b>
-                    <span class="text-gray-500 dark:text-gray-400">— si no es lo que dice tu factura,
-                        cámbialo a «por <span x-text="empaque"></span>»</span>
-                </div>
-
-                <template x-if="venta > 0 && compraUnidad > venta">
-                    <x-ui.alert variant="warning" title="El precio de venta está por debajo del costo"
-                        message="Tal como está, cada unidad vendida deja pérdida." />
-                </template>
+                @endif
             </x-common.component-card>
         </div>
 
@@ -447,73 +142,26 @@
             <x-common.component-card title="Guardar">
                 <div class="flex flex-col gap-3">
                     <x-ui.button type="submit">
-                        {{ $esEdicion ? 'Guardar cambios' : 'Registrar producto' }}
+                        {{ $esEdicion ? 'Guardar cambios' : 'Agregar al menú' }}
                     </x-ui.button>
                     <x-ui.button variant="outline" :href="route('productos.index')">Cancelar</x-ui.button>
                 </div>
             </x-common.component-card>
 
-            <x-common.component-card title="Inventario">
-                @if ($esEdicion)
-                    <div class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
-                        <p class="text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Stock actual</p>
-                        <p class="text-lg font-semibold {{ $producto->bajo_minimo ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">
-                            {{ Config::cantidad($producto->stock_actual) }} {{ $producto->unidadMedida?->codigo }}
-                        </p>
-                        @if ($producto->stock_desglosado)
-                            <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-                                {{ $producto->stock_desglosado }}
-                            </p>
-                        @endif
-                        <p class="mt-2 text-theme-xs text-gray-500 dark:text-gray-400">
-                            El stock no se edita desde aquí: cambia con un ingreso de mercadería o un ajuste, y cada
-                            cambio queda en el kardex.
-                        </p>
-                        <a href="{{ route('productos.show', $producto) }}"
-                            class="mt-2 inline-block text-theme-xs text-brand-500 dark:text-brand-400 hover:text-brand-600">
-                            Ver ficha y kardex →
-                        </a>
-                    </div>
-                @else
-                    {{-- Mismo contador que el ingreso de mercadería, porque es lo
-                         mismo: lo que hay físicamente el día que se da de alta.
-                         Las expresiones apuntan a los campos de arriba, así que
-                         la casilla de cajas aparece en cuanto se dice que el
-                         producto viene en caja. --}}
-                    <div x-show="controlaVencimiento" x-cloak>
-                        <x-form.campo label="¿Cuándo vence lo que tienes?" for="vence" name="vence"
-                            help="La fecha de lo que estás cargando ahora. Se puede dejar vacía si no la sabes.">
-                            <x-form.input id="vence" name="vence" type="date" :value="old('vence')" />
-                        </x-form.campo>
-                    </div>
-
-                    <x-form.cantidad-empaque campo="stock_inicial" prefijo="ini_" label="Stock inicial"
-                        help="Las unidades contadas físicamente. Queda registrado como carga inicial en el kardex."
-                        valor="0" :requerido="false" hay-empaque="hayEmpaque" contenido="contenido"
-                        empaque="empaque" unidad="unidadCodigo" paso="pasoUnidad" />
-                @endif
-
-                <x-form.campo label="Stock mínimo" for="stock_minimo" name="stock_minimo" required
-                    help="Cuando el stock llega a este nivel, el producto aparece en la alerta de reposición.">
-                    <x-form.input id="stock_minimo" name="stock_minimo" type="number" step="0.001" min="0"
-                        :value="$producto->stock_minimo ?? '0'" required />
-                </x-form.campo>
-            </x-common.component-card>
-
             @puede('registros.eliminar')
             <x-common.component-card title="Disponibilidad">
                 <x-form.check name="activo" :checked="$producto->activo ?? true"
-                    label="Producto disponible para la venta" />
+                    label="Disponible en el menú" />
                 <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-                    Un producto descatalogado deja de ofrecerse en el mostrador, pero sigue siendo legible en las
+                    Lo que sale del menú deja de ofrecerse en el mostrador, pero sigue siendo legible en las
                     ventas ya emitidas.
                 </p>
             </x-common.component-card>
             @endpuede
 
             {{-- Todo lo que se puede completar después. Plegado por defecto:
-                 es lo que hacía que dar de alta un producto pareciera un
-                 trámite en vez de anotar lo que llegó. --}}
+                 es lo que hacía que sumar un plato al menú pareciera un
+                 trámite en vez de anotar lo que se cocina. --}}
             <div class="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
                 <button type="button" @click="masDatos = !masDatos"
                     class="flex w-full items-center justify-between px-6 py-5 text-left"
@@ -521,7 +169,7 @@
                     <span>
                         <span class="block text-base font-medium text-gray-800 dark:text-white/90">Más datos</span>
                         <span class="mt-1 block text-sm text-gray-500 dark:text-gray-400">
-                            Código, barras, proveedor y foto. Todo opcional.
+                            Código, descripción y foto. Todo opcional.
                         </span>
                     </span>
                     <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -537,18 +185,6 @@
                         :help="$siguienteCodigo ? 'Lo propone el sistema: '.$siguienteCodigo : 'El que se usa en el mostrador.'">
                         <x-form.input id="codigo" name="codigo" :value="$producto->codigo ?? $siguienteCodigo"
                             placeholder="P-0013" required />
-                    </x-form.campo>
-
-                    <x-form.campo label="Código de barras" for="codigo_barras" name="codigo_barras"
-                        help="Pásale el lector estando en este campo. Solo dígitos.">
-                        <x-form.input id="codigo_barras" name="codigo_barras" :value="$producto->codigo_barras"
-                            inputmode="numeric" placeholder="7790001000019" autocomplete="off" />
-                    </x-form.campo>
-
-                    <x-form.campo label="Proveedor" for="proveedor_id" name="proveedor_id"
-                        help="Quién abastece habitualmente este producto.">
-                        <x-form.select id="proveedor_id" name="proveedor_id" :value="$producto->proveedor_id"
-                            placeholder="Sin proveedor asignado" :opciones="$proveedores" />
                     </x-form.campo>
 
                     <x-form.campo label="Descripción" for="descripcion" name="descripcion">
@@ -576,14 +212,14 @@
                     }" class="space-y-3">
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-400">Foto</p>
                         <p class="text-theme-xs text-gray-500 dark:text-gray-400">
-                            Se ve en el mostrador y en el catálogo. JPG, PNG o WEBP, hasta 2 MB.
+                            Se ve en el mostrador y en el menú. JPG, PNG o WEBP, hasta 2 MB.
                         </p>
 
                         <input type="hidden" name="quitar_imagen" :value="quitar ? '1' : '0'" />
 
                         <div class="flex items-start gap-4">
                             {{-- La vista previa muestra la foto tal cual entrará al
-                                 catálogo: entera y sin recortar. --}}
+                                 menú: entera y sin recortar. --}}
                             <template x-if="previa">
                                 <span class="flex h-28 w-28 flex-none items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-700">
                                     <img :src="previa" alt="Vista previa"

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Cargo;
 use App\Models\Empleado;
+use App\Models\TipoDocumento;
 use App\Services\Auditor;
 use App\Support\Administracion;
 use Illuminate\Http\RedirectResponse;
@@ -175,7 +176,7 @@ class EmpleadoController extends Controller
     {
         return [
             'cargos' => Cargo::activos()->orderBy('nombre')->pluck('nombre', 'id'),
-            'tiposDocumento' => array_combine(Empleado::TIPOS_DOCUMENTO, Empleado::TIPOS_DOCUMENTO),
+            'tiposDocumento' => TipoDocumento::opciones('EMPLEADO'),
             'tiposContrato' => [
                 'INDEFINIDO' => 'Indefinido',
                 'PLAZO_FIJO' => 'Plazo fijo',
@@ -194,7 +195,7 @@ class EmpleadoController extends Controller
     {
         $datos = $request->validate([
             'cargo_id' => ['required', Rule::exists('cargos', 'id')],
-            'tipo_documento' => ['required', Rule::in(Empleado::TIPOS_DOCUMENTO)],
+            'tipo_documento' => ['required', TipoDocumento::regla('EMPLEADO')],
             'documento' => [
                 'required', 'string', 'max:20', 'regex:/^[A-Za-z0-9-]+$/',
                 Rule::unique('empleados', 'documento')

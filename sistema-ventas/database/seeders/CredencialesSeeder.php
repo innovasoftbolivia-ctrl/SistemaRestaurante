@@ -28,7 +28,7 @@ class CredencialesSeeder extends Seeder
     private const CLAVES = [
         'admin' => 'admin123',
         'cajero1' => 'cajero123',
-        'almacen' => 'almacen123',
+        'cocina1' => 'cocina123',
     ];
 
     public function run(): void
@@ -102,7 +102,7 @@ class CredencialesSeeder extends Seeder
         $ruta = $carpeta.DIRECTORY_SEPARATOR.'PRIMER-ACCESO.txt';
 
         $escrito = @file_put_contents($ruta, implode(PHP_EOL, [
-            'PRIMER ACCESO al Sistema de Ventas',
+            'PRIMER ACCESO al Sistema de Restaurante',
             '',
             '  usuario:    admin',
             '  contraseña: '.$clave,

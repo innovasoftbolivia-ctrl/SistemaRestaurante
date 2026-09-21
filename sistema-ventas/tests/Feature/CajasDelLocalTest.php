@@ -28,23 +28,23 @@ class CajasDelLocalTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     // -------------------------------------------------------------- permisos
 
     /**
      * Dar de alta un puesto de cobro es administrar el local, no la operación
-     * diaria: el cajero abre turno todos los días pero no crea cajas, y el
-     * almacenero gestiona el catálogo pero tampoco.
+     * diaria: el cajero abre turno todos los días pero no crea cajas, y la
+     * cocina tampoco.
      */
     public function test_solo_el_administrador_entra_a_las_cajas_del_local(): void
     {
         $this->actingAs($this->admin())->get(route('cajas.index'))->assertOk();
 
-        foreach ([$this->cajero(), $this->almacenero()] as $usuario) {
+        foreach ([$this->cajero(), $this->cocina()] as $usuario) {
             $this->actingAs($usuario)->get(route('cajas.index'))->assertForbidden();
             $this->actingAs($usuario)
                 ->post(route('cajas.store'), ['nombre' => 'Caja pirata'])

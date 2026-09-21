@@ -3,18 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
-use App\Models\Devolucion;
 use App\Models\MetodoPago;
+use App\Models\Pedido;
 use App\Models\Producto;
-use App\Models\Proveedor;
-use App\Models\TomaInventarioDetalle;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Compras;
-use App\Services\Devoluciones;
-use App\Services\DevolucionesCompra;
-use App\Services\TomasInventario;
+use App\Services\Pedidos;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -44,20 +39,10 @@ class RecorridoDePantallasTest extends TestCase
 
         $admin = Usuario::where('usuario', 'admin')->firstOrFail();
         $cajero = Usuario::where('usuario', 'cajero1')->firstOrFail();
-        $almacen = Usuario::where('usuario', 'almacen')->firstOrFail();
+        $cocina = Usuario::where('usuario', 'cocina1')->firstOrFail();
 
         // ---- datos detrás de cada parámetro
-        $this->actingAs($almacen);
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
-        $producto->forceFill(['stock_actual' => 100])->save();
-        $compra = Compras::registrar($almacen, Proveedor::firstOrFail(), [
-            ['producto_id' => $producto->id, 'cantidad' => 10, 'costo_unitario' => 2],
-        ], 'F-RECORRIDO');
-        $devCompra = DevolucionesCompra::registrar($almacen, $compra, [
-            ['compra_detalle_id' => $compra->detalle()->firstOrFail()->id, 'cantidad' => 1],
-        ], 'DEFECTO', 'NOTA_CREDITO');
-        $toma = TomasInventario::abrir($almacen);
-        TomasInventario::contar(TomaInventarioDetalle::where('toma_id', $toma->id)->firstOrFail(), $almacen, 1);
 
         $turno = Cajas::abrir(Caja::firstOrFail(), $cajero, 100);
         $venta = Ventas::registrar(
@@ -65,25 +50,35 @@ class RecorridoDePantallasTest extends TestCase
             lineas: [['producto_id' => $producto->id, 'cantidad' => 3]],
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
         );
-        $devolucion = Devoluciones::registrar($venta->fresh(), $admin, $turno->fresh(), [
-            ['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1, 'reingresa_stock' => true],
-        ], 'Recorrido de pantallas', Devolucion::EFECTIVO);
         $cobro = CobrosQr::generar($turno->fresh(), $cajero, 5);
+
+        // Un pedido con el cobro anulado y un plato dentro: es lo que necesita la
+        // pantalla de cobro para tener algo que mostrar.
+        $pedido = Pedidos::abrir(Pedido::LOCAL, $cajero);
+        Pedidos::agregarLinea($pedido, $producto, 2, 'sin cebolla', $cajero);
+
+        // Y uno para llevar ya cobrado con el plato por hacer: la cocina lo
+        // sigue mostrando, marcado como cobrado.
+        $llevar = Pedidos::abrir(Pedido::LLEVAR, $cajero, nombreCliente: 'Ana');
+        Pedidos::agregarLinea($llevar, $producto, 1, null, $cajero);
+        Pedidos::cobrar($llevar, $turno->fresh(), $cajero, [
+            ['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null],
+        ]);
+
+        // Con el pedido de arriba todavía sin volver a cobrar: se cierra sabiéndolo.
         $cerrado = Cajas::abrir(Caja::create(['nombre' => 'Caja recorrido', 'activo' => 1]), $admin, 50);
-        Cajas::cerrar($cerrado->fresh(), $admin, 50, null, 0, $cerrado->fresh()->huella());
+        Cajas::cerrar($cerrado->fresh(), $admin, 50, null, 0, $cerrado->fresh()->huella(), conCuentasAbiertas: true);
 
         $valores = [
             'sesion' => $turno->id,
-            'compra' => $compra->id,
             'comprobante' => $venta->comprobante->id,
-            'devolucion' => $devolucion->id,
-            'devolucionCompra' => $devCompra->id,
             'empleado' => DB::table('empleados')->value('id'),
             'producto' => $producto->id,
-            'toma' => $toma->id,
             'usuario' => $cajero->id,
             'venta' => $venta->id,
             'cobro' => $cobro->id,
+            'pedido' => $pedido->id,
+            'linea' => $pedido->detalle()->value('id'),
         ];
 
         $fallas = [];
@@ -97,7 +92,7 @@ class RecorridoDePantallasTest extends TestCase
             $uri = $ruta->uri();
 
             // Fuera del recorrido: los que no son pantallas del sistema.
-            if (in_array($uri, ['up', 'login', 'storage/{path}', 'respaldos/{nombre}/descargar'], true) || str_starts_with($uri, '_')) {
+            if (in_array($uri, ['up', 'login', 'storage/{path}'], true) || str_starts_with($uri, '_')) {
                 continue;
             }
 
@@ -118,7 +113,7 @@ class RecorridoDePantallasTest extends TestCase
                 continue;
             }
 
-            foreach (['admin' => $admin, 'cajero1' => $cajero, 'almacen' => $almacen] as $nombre => $usuario) {
+            foreach (['admin' => $admin, 'cajero1' => $cajero, 'cocina1' => $cocina] as $nombre => $usuario) {
                 $this->flushSession();
                 app('auth')->forgetGuards();
                 DB::table('sesiones_caja')->where('id', $cerrado->id)->exists();
@@ -134,7 +129,7 @@ class RecorridoDePantallasTest extends TestCase
 
             // La del turno cerrado también, para el resumen imprimible.
             if ($uri === 'caja/{sesion}/imprimir') {
-                foreach (['admin' => $admin, 'cajero1' => $cajero, 'almacen' => $almacen] as $nombre => $usuario) {
+                foreach (['admin' => $admin, 'cajero1' => $cajero, 'cocina1' => $cocina] as $nombre => $usuario) {
                     $this->flushSession();
                     app('auth')->forgetGuards();
                     $respuesta = $this->actingAs($usuario)->get("/caja/{$cerrado->id}/imprimir");
@@ -147,7 +142,8 @@ class RecorridoDePantallasTest extends TestCase
             }
         }
 
-        $this->assertGreaterThan(150, $visitadas, 'el recorrido no llegó a las pantallas');
+        // Unas cuarenta pantallas por tres roles (admin, cajero y cocina).
+        $this->assertGreaterThan(110, $visitadas, 'el recorrido no llegó a las pantallas');
         $this->assertSame([], $fallas, implode("\n", $fallas));
     }
 }

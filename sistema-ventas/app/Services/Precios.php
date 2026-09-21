@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Los precios del catálogo cuando el negocio cambia cómo trabaja el impuesto.
+ * Los precios del menú cuando el negocio cambia cómo trabaja el impuesto.
  *
  * `productos.precio_venta` significa cosas distintas en cada modo: con el
  * impuesto encima es la base y el cliente paga la base más la tasa; con el
@@ -18,11 +18,11 @@ use RuntimeException;
  * o 13 % más barato. Por eso, al cambiar de modo, se ajustan para que el
  * cliente siga pagando lo mismo.
  *
- * Solo los productos afectos: un producto exonerado cuesta lo mismo en los
+ * Solo lo afecto: un ítem exonerado cuesta lo mismo en los
  * dos modos. Las ventas ya hechas no se tocan: cada una guarda su modo.
  *
  * La conversión redondea al centavo, así que ida y vuelta no siempre deja el
- * precio de antes, y marcar mal la casilla dos veces desviaba el catálogo sin
+ * precio de antes, y marcar mal la casilla dos veces desviaba el menú sin
  * forma de volver atrás. Por eso cada conversión deja en la bitácora el precio
  * anterior de cada producto, y la última se puede deshacer.
  */
@@ -93,7 +93,7 @@ class Precios
     }
 
     /**
-     * Vuelve el catálogo y el modo a como estaban antes de la última conversión.
+     * Vuelve el menú y el modo a como estaban antes de la última conversión.
      *
      * Solo se restaura el precio de los productos que nadie tocó después: si
      * alguien ya corrigió uno a mano, su precio nuevo vale más que el de antes.

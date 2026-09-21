@@ -29,9 +29,9 @@ class BitacoraTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     /** @param  array<string, mixed>  $datos */
@@ -60,7 +60,7 @@ class BitacoraTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('bitacora.index'))->assertOk();
 
-        foreach ([$this->cajero(), $this->almacenero()] as $usuario) {
+        foreach ([$this->cajero(), $this->cocina()] as $usuario) {
             $this->assertFalse($usuario->tienePermiso('bitacora.ver'));
             $this->actingAs($usuario)->get(route('bitacora.index'))->assertForbidden();
         }
@@ -71,7 +71,7 @@ class BitacoraTest extends TestCase
     public function test_muestra_quien_que_y_el_cambio_con_su_valor_anterior(): void
     {
         $this->registro([
-            'usuario_id' => $this->almacenero()->id,
+            'usuario_id' => $this->cocina()->id,
             'detalle' => ['precio_venta' => ['antes' => '3.98', 'despues' => '4.20']],
             'ip' => '192.168.1.40',
         ]);
@@ -79,8 +79,8 @@ class BitacoraTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('bitacora.index'))
             ->assertOk()
-            ->assertSee('almacen')
-            ->assertSee('Producto actualizado')
+            ->assertSee('cocina1')
+            ->assertSee('Ítem del menú actualizado')
             ->assertSee('3.98 → 4.20')
             ->assertSee('192.168.1.40');
     }
@@ -95,6 +95,29 @@ class BitacoraTest extends TestCase
             ->assertSee('Venta anulada')
             ->assertSee('Venta #987654')
             ->assertSee(route('ventas.show', 987654), false);
+    }
+
+    /**
+     * Los pedidos y sus platos se leen por su nombre y llevan a la comanda del
+     * pedido (también desde un plato). Las mesas ya no existen,
+     * pero la bitácora de una instalación vieja todavía tiene registros suyos:
+     * se siguen leyendo como «Mesa», sin enlace.
+     */
+    public function test_los_pedidos_sus_platos_y_las_mesas_viejas_se_leen_por_su_nombre(): void
+    {
+        $this->registro(['accion' => 'PEDIDO_CANCELADO', 'entidad' => 'pedidos', 'entidad_id' => 876543]);
+        $this->registro(['accion' => 'PEDIDO_LINEA_AGREGADA', 'entidad' => 'pedido_detalle', 'entidad_id' => 765432, 'detalle' => ['pedido_id' => 876544]]);
+        $this->registro(['accion' => 'MESA_CREADA', 'entidad' => 'mesas', 'entidad_id' => 654321]);
+
+        $this->actingAs($this->admin())
+            ->get(route('bitacora.index'))
+            ->assertSee('Pedido #876543')
+            ->assertSee(route('pedidos.comanda', 876543), false)
+            ->assertSee('Plato del pedido #765432')
+            ->assertSee(route('pedidos.comanda', 876544), false)
+            ->assertSee('Mesa #654321')
+            ->assertDontSee('Pedido detalle')
+            ->assertDontSee('Mesas #654321');
     }
 
     /**
@@ -136,7 +159,7 @@ class BitacoraTest extends TestCase
     {
         $this->registro(['accion' => 'CLIENTE_CREADO', 'usuario_id' => $this->cajero()->id,
             'detalle' => ['marca' => 'hecho-por-cajero']]);
-        $this->registro(['accion' => 'PROVEEDOR_CREADO', 'usuario_id' => $this->almacenero()->id,
+        $this->registro(['accion' => 'PROVEEDOR_CREADO', 'usuario_id' => $this->cocina()->id,
             'detalle' => ['marca' => 'hecho-por-almacen']]);
 
         $this->actingAs($this->admin())
@@ -145,7 +168,7 @@ class BitacoraTest extends TestCase
             ->assertDontSee('hecho-por-almacen');
 
         $this->actingAs($this->admin())
-            ->get(route('bitacora.index', ['usuario' => $this->almacenero()->id]))
+            ->get(route('bitacora.index', ['usuario' => $this->cocina()->id]))
             ->assertSee('hecho-por-almacen')
             ->assertDontSee('hecho-por-cajero');
     }
@@ -180,8 +203,14 @@ class BitacoraTest extends TestCase
         $this->assertSame('Configuración actualizada', BitacoraController::accion('CONFIGURACION_ACTUALIZADA'));
         $this->assertSame('Ingreso fallido', BitacoraController::accion('LOGIN_FALLIDO'));
         $this->assertSame('Ingreso', BitacoraController::accion('LOGIN'));
-        $this->assertSame('Devolución compra registrada', BitacoraController::accion('DEVOLUCION_COMPRA_REGISTRADA'));
+        $this->assertSame('Venta anulada', BitacoraController::accion('ANULAR_VENTA'));
         $this->assertSame('QR pagado', BitacoraController::accion('QR_PAGADO'));
+        $this->assertSame('Pedido abierto', BitacoraController::accion('PEDIDO_ABIERTO'));
+        $this->assertSame('Plato agregado al pedido', BitacoraController::accion('PEDIDO_LINEA_AGREGADA'));
+        $this->assertSame('Plato movido en la cocina', BitacoraController::accion('PEDIDO_LINEA_ESTADO'));
+        $this->assertSame('Cobro anulado: el pedido se vuelve a cobrar', BitacoraController::accion('PEDIDO_REABIERTO'));
+        $this->assertSame('Cobro anulado: el pedido no se pudo reabrir', BitacoraController::accion('PEDIDO_NO_REABIERTO'));
+        $this->assertSame('Pedido cobrado', BitacoraController::accion('PEDIDO_COBRADO'));
         // Una acción nueva que nadie tradujo se lee igual, sin guiones bajos.
         $this->assertSame('Algo nuevo hecho', BitacoraController::accion('ALGO_NUEVO_HECHO'));
     }

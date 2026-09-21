@@ -42,8 +42,6 @@ class Empleado extends Model
 
     const UPDATED_AT = 'actualizado_en';
 
-    public const TIPOS_DOCUMENTO = ['CI', 'CE', 'PAS'];
-
     public const TIPOS_CONTRATO = ['INDEFINIDO', 'PLAZO_FIJO', 'PARCIAL', 'PRACTICAS'];
 
     public const ESTADOS = ['ACTIVO', 'SUSPENDIDO', 'CESADO'];

@@ -1,9 +1,15 @@
 # 3. Diseño de la Base de Datos (MySQL 8)
 
-**Proyecto:** Sistema de Venta de Productos
+**Proyecto:** Sistema de Restaurante
 **Documento:** 03 — Modelo de datos
 **Motor:** MySQL 8.0+ · InnoDB · `utf8mb4_0900_ai_ci`
-**Scripts:** [`sql/01_schema_mysql.sql`](sql/01_schema_mysql.sql) · [`sql/02_datos_iniciales.sql`](sql/02_datos_iniciales.sql)
+**Scripts:** [`sql/01_schema_mysql.sql`](sql/01_schema_mysql.sql) · [`sql/02_datos_iniciales.sql`](sql/02_datos_iniciales.sql) · [`sql/parches/`](sql/parches/)
+
+> La fuente de verdad es `01_schema_mysql.sql`. Este documento lo explica; si alguna vez se
+> contradicen, manda el script.
+>
+> La base se sigue llamando **`ventas_db`**, igual que en el sistema anterior: es el nombre
+> que usan los scripts, los parches y las pruebas, y cambiarlo no ganaba nada.
 
 ---
 
@@ -11,106 +17,147 @@
 
 | # | Criterio | Aplicación |
 |---|----------|------------|
-| 1 | Normalización hasta 3FN | Catálogos separados (categorías, unidades, métodos de pago, tipos de comprobante). Todo valor derivable dentro de la misma fila es **columna generada**, no una columna que alguien deba mantener. Auditoría completa en §3.4. |
-| 2 | Desnormalización controlada | `venta_detalle` copia `descripcion` y `precio_unitario`, y `productos.stock_actual` guarda el saldo. Un cambio de precio o de nombre no altera las ventas ya emitidas, y el POS no recalcula el stock sumando el kardex en cada consulta. |
-| 3 | Integridad referencial | **Todas** las relaciones con `FOREIGN KEY`, incluida la del kardex a su documento de origen (una FK por origen, con `CHECK` de exclusividad). Ninguna referencia polimórfica. `RESTRICT` por defecto; `CASCADE` solo en detalles que no existen sin su cabecera. |
-| 4 | Sin borrado físico | Catálogos con bandera `activo`; las ventas se anulan, no se eliminan (un trigger bloquea el `DELETE`). |
-| 5 | Trazabilidad total | `movimientos_inventario` es una tabla append-only que registra todo cambio de stock con su documento de origen. `auditoria` registra las operaciones sensibles. |
-| 6 | Atomicidad | Venta, detalle, pagos y movimientos de stock se escriben en una sola transacción InnoDB. |
+| 1 | Normalización hasta 3FN | Catálogos separados (categorías, métodos de pago, tipos de comprobante, tipos de documento). Todo valor derivable dentro de la misma fila es **columna generada**, no una columna que alguien deba mantener. Auditoría completa en §3.4. |
+| 2 | Desnormalización controlada | `venta_detalle` y `pedido_detalle` copian el nombre y el precio del plato. Un cambio de carta no altera ni las ventas emitidas ni los pedidos ya tomados. |
+| 3 | Integridad referencial | Todas las relaciones entre entidades con `FOREIGN KEY`. `RESTRICT` por defecto, también del detalle a su cabecera (ventas y pedidos no se borran, y sin triggers nada impediría que un `DELETE` se llevara el detalle); `CASCADE` solo en la tabla puente `rol_permiso`. |
+| 4 | Sin borrado físico | Catálogos con bandera `activo`; las ventas se anulan y los pedidos se cancelan, no se eliminan (dos triggers bloquean el `DELETE`). |
+| 5 | Trazabilidad | Cada venta, pedido y línea de pedido guarda quién la registró; `auditoria` registra las operaciones sensibles. |
+| 6 | Atomicidad | Venta, detalle, pagos y comprobante se escriben en una sola transacción InnoDB. La venta de mostrador abre el pedido, le carga los platos y lo cobra en esa misma transacción. |
 | 7 | Precisión monetaria | `DECIMAL(12,2)` para dinero y `DECIMAL(12,3)` para cantidades. Nunca `FLOAT`. |
-| 8 | Concurrencia | Correlativos y stock se toman con `SELECT ... FOR UPDATE` para evitar duplicados y sobreventa. |
+| 8 | Concurrencia | Las invariantes que dos personas podrían romper a la vez (dos turnos abiertos, dos ventas vigentes de un pedido, dos "pedido 7" en la misma jornada, dos comprobantes con el mismo número) las garantiza un **índice único**, no un `SELECT` previo de la aplicación. |
 
 ## 3.2 Diagrama Entidad-Relación
 
-Las 26 tablas del modelo. El diagrama dibuja 37 líneas para 40 claves foráneas: tres pares
+Las 26 tablas del modelo. El diagrama dibuja 34 líneas para 41 claves foráneas: siete pares
 de FK unen el mismo par de tablas y se solapan (quién registra y quién anula una venta, quién
-abre y quién cierra la caja, quién registra y quién autoriza una devolución). `configuracion`
-aparece suelta a propósito: es la tabla de parámetros del negocio y no se relaciona con
-ninguna otra.
+abre y quién cierra la caja, quién genera y quién confirma un cobro por QR, quién abre y
+quién cierra un pedido, quién agrega una línea y quién mueve su estado en cocina, el
+documento del cliente contra `tipos_documento` —una FK por tipo de persona— y la serie que
+define su tipo frente a la serie por omisión de ese tipo).
+`configuracion` y `parches_aplicados` aparecen sueltas a propósito: son parámetros del
+negocio y registro técnico, y no se relacionan con ninguna otra.
 
 ```mermaid
 erDiagram
     CARGOS    ||--o{ EMPLEADOS : "desempeña"
+    TIPOS_DOCUMENTO ||--o{ EMPLEADOS : "identifica"
+    TIPOS_DOCUMENTO ||--o{ CLIENTES  : "identifica"
     EMPLEADOS ||--o| USUARIOS  : "puede tener cuenta"
     ROLES     ||--o{ USUARIOS  : "otorga acceso"
     ROLES     ||--o{ ROL_PERMISO : ""
     PERMISOS  ||--o{ ROL_PERMISO : ""
     USUARIOS  ||--o{ AUDITORIA : "deja rastro"
 
-    CATEGORIAS      ||--o{ PRODUCTOS : "clasifica"
-    UNIDADES_MEDIDA ||--o{ PRODUCTOS : "mide"
-    PROVEEDORES     ||--o{ PRODUCTOS : "provee"
+    CATEGORIAS ||--o{ PRODUCTOS : "agrupa en la carta"
 
     CAJAS         ||--o{ SESIONES_CAJA    : "se abre en"
-    USUARIOS      ||--o{ SESIONES_CAJA    : "opera"
+    USUARIOS      ||--o{ SESIONES_CAJA    : "abre y cierra"
     SESIONES_CAJA ||--o{ MOVIMIENTOS_CAJA : "registra"
     USUARIOS      ||--o{ MOVIMIENTOS_CAJA : "ejecuta"
     SESIONES_CAJA ||--o{ VENTAS           : "contiene"
 
-    CLIENTES     ||--o{ VENTAS        : "compra"
-    USUARIOS     ||--o{ VENTAS        : "registra"
+    CLIENTES     ||--o{ VENTAS        : "consume"
+    USUARIOS     ||--o{ VENTAS        : "registra y anula"
     VENTAS       ||--|{ VENTA_DETALLE : "contiene"
     PRODUCTOS    ||--o{ VENTA_DETALLE : "se vende en"
     VENTAS       ||--|{ VENTA_PAGOS   : "se cobra con"
     METODOS_PAGO ||--o{ VENTA_PAGOS   : "forma de pago"
 
-    TIPOS_COMPROBANTE  ||--o{ SERIES_COMPROBANTE : "define el tipo de"
+    SESIONES_CAJA ||--o{ COBROS_QR : "genera"
+    USUARIOS      ||--o{ COBROS_QR : "pide y confirma"
+    VENTAS        ||--o{ COBROS_QR : "queda pagada por"
+
+    TIPOS_COMPROBANTE  ||--o{ SERIES_COMPROBANTE : "define el tipo de; toma una por omisión"
     SERIES_COMPROBANTE ||--o{ COMPROBANTES : "numera"
     VENTAS       ||--o{ COMPROBANTES : "documenta"
     CLIENTES     ||--o{ COMPROBANTES : "recibe"
     USUARIOS     ||--o{ COMPROBANTES : "emite"
     COMPROBANTES ||--o| COMPROBANTES : "sustituye a"
 
-    VENTAS        ||--o{ DEVOLUCIONES : "origina"
-    USUARIOS      ||--o{ DEVOLUCIONES : "autoriza"
-    SESIONES_CAJA ||--o{ DEVOLUCIONES : "paga"
-    DEVOLUCIONES  ||--|{ DEVOLUCION_DETALLE : "contiene"
-    VENTA_DETALLE ||--o{ DEVOLUCION_DETALLE : "se devuelve en"
-    PRODUCTOS     ||--o{ DEVOLUCION_DETALLE : "reingresa"
-
-    PRODUCTOS    ||--o{ MOVIMIENTOS_INVENTARIO : "lleva kardex"
-    USUARIOS     ||--o{ MOVIMIENTOS_INVENTARIO : "ejecuta"
-    VENTAS       ||--o{ MOVIMIENTOS_INVENTARIO : "origen VENTA"
-    DEVOLUCIONES ||--o{ MOVIMIENTOS_INVENTARIO : "origen DEVOLUCION"
-    PROVEEDORES  ||--o{ MOVIMIENTOS_INVENTARIO : "origen COMPRA"
+    USUARIOS  ||--o{ PEDIDOS        : "abre y cierra"
+    PEDIDOS   ||--o{ VENTAS         : "se cobra con"
+    PEDIDOS   ||--o{ PEDIDO_DETALLE : "contiene"
+    PRODUCTOS ||--o{ PEDIDO_DETALLE : "se pide en"
+    USUARIOS  ||--o{ PEDIDO_DETALLE : "agrega y avanza"
 
     CONFIGURACION {
         varchar clave PK
         varchar valor
     }
+    PARCHES_APLICADOS {
+        varchar archivo PK
+        datetime aplicado_en
+    }
 ```
 
 **Cómo leer la cardinalidad:** `||--o{` uno a muchos (el hijo puede tener cero filas) ·
 `||--|{` uno a muchos con al menos una fila (una venta sin detalle no existe) ·
-`||--o|` uno a uno opcional (un empleado puede no tener cuenta).
+`||--o|` uno a uno opcional (un empleado puede no tener cuenta; un comprobante sustituye como
+mucho a otro).
 
-Los diagramas por módulo, con los atributos y las claves de cada tabla, están en la versión
-publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-4243-9eee-4d431aaacecf**
+> Un pedido puede tener **varias** ventas (`PEDIDOS ||--o{ VENTAS`): la que se anuló y la que
+> lo volvió a cobrar. Vigente, una sola: lo garantiza `uq_venta_pedido_cobrado` (§3.5,
+> `ventas`). Las ventas de antes de los pedidos no tienen pedido.
+
+> Un pedido **sí** puede quedar sin líneas (`PEDIDOS ||--o{ PEDIDO_DETALLE`): dentro de la
+> transacción de la venta de mostrador existe un instante entre abrirlo y cargarle el primer
+> plato. Lo que no se puede es **cobrarlo** vacío, o con todo cancelado; eso lo controla la
+> aplicación (HU-49).
 
 ## 3.3 Módulos y tablas
 
 | Módulo | Tablas |
 |--------|--------|
 | Personal y seguridad | `cargos`, `empleados`, `roles`, `permisos`, `rol_permiso`, `usuarios` |
-| Catálogo | `categorias`, `unidades_medida`, `proveedores`, `productos` |
-| Clientes | `clientes` (persona natural / jurídica) |
+| Menú | `categorias`, `productos` |
+| Clientes | `clientes` (persona natural / jurídica), `tipos_documento` (CI, NIT, CE, pasaporte, sin documento; también la usan `empleados`) |
 | Caja | `cajas`, `sesiones_caja`, `movimientos_caja` |
 | Comprobantes | `tipos_comprobante`, `series_comprobante`, **`comprobantes`**, `metodos_pago` |
-| Ventas | `ventas`, `venta_detalle`, `venta_pagos` |
-| Devoluciones | `devoluciones`, `devolucion_detalle` |
-| Compras | `compras`, `compra_detalle` |
-| Devoluciones a proveedor | `devoluciones_compra`, `devolucion_compra_detalle` |
-| Vencimiento | `lotes` |
-| Inventario | `movimientos_inventario` |
-| Sistema | `configuracion`, `auditoria` |
+| Ventas | `ventas`, `venta_detalle`, `venta_pagos`, `cobros_qr` |
+| **Pedidos** | **`pedidos`**, **`pedido_detalle`** |
+| Sistema | `configuracion`, `auditoria`, `parches_aplicados` |
 
-**Total: 32 tablas, 9 vistas, 7 triggers y 6 procedimientos almacenados.**
+**Total: 26 tablas, 3 vistas, 14 triggers y 6 procedimientos almacenados**, con 41 claves
+foráneas, 44 restricciones `CHECK` y 17 columnas generadas.
+
+> **"Menú" es el nombre de la pantalla, no de la tabla.** La interfaz dice *Menú* y la URL es
+> `/menu`, pero por dentro siguen siendo la tabla `productos`, el modelo `Producto`, las rutas
+> `productos.*` y el permiso `productos.gestionar`. Se cambió la etiqueta, no el esquema.
+
+### Qué se retiró respecto del sistema anterior
+
+El sistema nació como punto de venta de un minimarket. Al pasar a restaurante, los parches
+del 17/09/2026 (§3.11) retiraron del esquema lo del minimarket:
+
+| Retirado | Tablas y columnas | Por qué |
+|----------|-------------------|---------|
+| Inventario | `movimientos_inventario`, `compras`, `compra_detalle`, `lotes`, `lote_salidas`, `devoluciones_compra`, `devolucion_compra_detalle`, `tomas_inventario`, `toma_inventario_detalle`, `proveedores`; `productos.stock_actual`, `stock_minimo`, `proveedor_id`, `contenido_empaque`, `nombre_empaque`, `controla_vencimiento` | Un restaurante de este tamaño no lleva kardex de insumos. Queda **fuera de alcance**. |
+| Devoluciones de cliente | `devoluciones`, `devolucion_detalle`; `ventas.total_devuelto`, `venta_detalle.cantidad_devuelta`, estados `DEVUELTA` / `DEVUELTA_PARCIAL` | Lo que se sirvió no vuelve a la carta: una venta equivocada se **anula** entera. |
+| Unidades de medida | `unidades_medida`; `productos.unidad_medida_id`, `venta_detalle.unidad` | Todo se despacha por porción. |
+| Precio de compra | `productos.precio_compra`, `venta_detalle.costo_unitario` | El plato se hace en la casa: no hay costo que registrar ni margen que calcular. |
+| Código de barras | `productos.codigo_barras` y `uq_productos_barras` | Nadie escanea un plato. El código interno (`productos.codigo`) se queda. |
+
+Con ellos se fueron los triggers `trg_venta_detalle_after_insert` (descontaba stock),
+`trg_movimientos_inventario_before_insert` y `trg_devolucion_detalle_after_insert`, las
+vistas `v_alertas_stock` y `v_kardex`, y los permisos `inventario.ingresar` /
+`inventario.ajustar`. El rol Almacenero dejó de existir: el parche pasa sus cuentas a
+Cajero en lugar de desactivarlas, y un administrador les ajusta el rol después.
+
+Los parches del 19/09 retiraron además lo que nadie usaba o repetía otro dato:
+`pedidos.venta_id` y `pedidos.cliente_id` (ahora la venta apunta a su pedido y el cliente es
+de la venta), `pedidos.telefono_cliente`, `comprobantes.archivo_pdf`,
+`venta_detalle.descuento` (valía siempre 0), las claves de configuración de las series y del
+símbolo de la moneda, cuatro vistas que ninguna pantalla leía y un índice redundante
+(§3.11).
+
+En el restaurante se cobra al pedir. Un pedido solo queda `ABIERTO` a la vista cuando se
+anula su venta, para **volver a cobrarlo** con el mismo número (§3.6).
 
 ## 3.4 Auditoría de normalización (1FN → 3FN)
 
-### Inventario de tablas
+### Listado de tablas
 
-| # | Tabla | Clave primaria | Verdicto |
+| # | Tabla | Clave primaria | Veredicto |
 |:-:|-------|----------------|----------|
 | 1 | `cargos` | `id` | 3FN |
 | 2 | `empleados` | `id` | 3FN — la persona y su vínculo laboral |
@@ -119,33 +166,27 @@ publicada de este documento: **https://claude.ai/code/artifact/9507f236-7d41-424
 | 5 | `rol_permiso` | `(rol_id, permiso_id)` | 3FN — tabla puente de N:M |
 | 6 | `usuarios` | `id` | 3FN — solo credenciales y rol; 1:1 opcional con `empleados` |
 | 7 | `categorias` | `id` | 3FN |
-| 8 | `unidades_medida` | `id` | 3FN |
-| 9 | `proveedores` | `id` | 3FN |
-| 10 | `productos` | `id` | 3FN + `stock_actual` derivado (justificado) |
-| 11 | `clientes` | `id` | 3FN — subtipos natural/jurídica en una tabla con `CHECK` |
-| 12 | `cajas` | `id` | 3FN |
-| 13 | `sesiones_caja` | `id` | 3FN — `diferencia` corregida a columna generada |
-| 14 | `movimientos_caja` | `id` | 3FN |
-| 15 | `tipos_comprobante` | `id` | 3FN |
-| 16 | `series_comprobante` | `id` | 3FN |
-| 17 | `metodos_pago` | `id` | 3FN |
-| 18 | `ventas` | `id` | 3FN — `total` corregido a columna generada |
-| 19 | `venta_detalle` | `id` | 3FN + copias históricas (justificadas) |
-| 20 | `venta_pagos` | `id` | 3FN — `vuelto` corregido a columna generada |
-| 21 | `cobros_qr` | `id` | 3FN — el cobro pendiente, con su propio ciclo de vida |
-| 22 | `comprobantes` | `id` | 3FN — se eliminó `tipo_comprobante_id` |
-| 23 | `devoluciones` | `id` | 3FN + `total` agregado (justificado) |
-| 24 | `devolucion_detalle` | `id` | 3FN |
-| 25 | `compras` | `id` | 3FN — la cabecera del documento del proveedor |
-| 26 | `compra_detalle` | `id` | 3FN + `cantidad_devuelta` acumulado (justificado) |
-| 27 | `lotes` | `id` | 3FN — el stock partido por fecha de vencimiento |
-| 28 | `devoluciones_compra` | `id` | 3FN — la mercadería que vuelve al proveedor |
-| 29 | `devolucion_compra_detalle` | `id` | 3FN + `cantidad_repuesta` acumulado (justificado) |
-| 30 | `movimientos_inventario` | `id` | 3FN — referencia polimórfica reemplazada por FK por origen |
-| 31 | `configuracion` | `clave` | 3FN — tabla de parámetros clave/valor |
-| 32 | `auditoria` | `id` | 3FN — bitácora, solo inserción |
+| 8 | `productos` | `id` | 3FN — el plato y su único precio |
+| 9 | `clientes` | `id` | 3FN — subtipos natural/jurídica en una tabla con `CHECK` |
+| 10 | `tipos_documento` | `codigo` | 3FN — catálogo de documentos de identidad; reemplaza tres `ENUM` repetidos |
+| 11 | `cajas` | `id` | 3FN |
+| 12 | `sesiones_caja` | `id` | 3FN — `diferencia` corregida a columna generada |
+| 13 | `movimientos_caja` | `id` | 3FN |
+| 14 | `tipos_comprobante` | `id` | 3FN — la serie por omisión pasó de `configuracion` a una FK |
+| 15 | `series_comprobante` | `id` | 3FN |
+| 16 | `metodos_pago` | `id` | 3FN |
+| 17 | `ventas` | `id` | 3FN — `total` corregido a columna generada |
+| 18 | `venta_detalle` | `id` | 3FN + copias históricas (justificadas) |
+| 19 | `venta_pagos` | `id` | 3FN — `vuelto` corregido a columna generada |
+| 20 | `cobros_qr` | `id` | 3FN — el cobro pendiente, con su propio ciclo de vida |
+| 21 | `comprobantes` | `id` | 3FN — se eliminó `tipo_comprobante_id` |
+| 22 | `pedidos` | `id` | 3FN + `jornada` guardada (justificada) |
+| 23 | `pedido_detalle` | `id` | 3FN + copias históricas (justificadas) |
+| 24 | `configuracion` | `clave` | 3FN — tabla de parámetros clave/valor |
+| 25 | `auditoria` | `id` | 3FN — bitácora, solo inserción |
+| 26 | `parches_aplicados` | `archivo` | 3FN — registro técnico de qué parches corrieron |
 
-**32 tablas.** Ninguna tiene grupos repetitivos ni columnas multivaluadas (1FN), ninguna
+**26 tablas.** Ninguna tiene grupos repetitivos ni columnas multivaluadas (1FN), ninguna
 clave primaria es compuesta salvo la tabla puente `rol_permiso` —cuyos dos atributos son la
 clave completa, sin dependencias parciales (2FN)—, y tras las correcciones de abajo ningún
 atributo no clave depende de otro atributo no clave (3FN).
@@ -155,40 +196,40 @@ atributo no clave depende de otro atributo no clave (3FN).
 | Tabla | Problema | Corrección |
 |-------|----------|------------|
 | `comprobantes` | Guardaba `tipo_comprobante_id` **y** `serie_id`, pero la serie ya determina el tipo (`serie_id → series_comprobante.tipo_comprobante_id → tipo`). Dependencia transitiva y dos fuentes de verdad que podían contradecirse. **La prueba del delito:** había un trigger dedicado a comprobar que ambas coincidieran. | Se eliminó la columna. El tipo se obtiene con `JOIN series_comprobante`. Desapareció esa validación del trigger y `sp_emitir_comprobante` pasó de 3 parámetros de entrada a 2. |
-| `ventas` | `total` = `subtotal − descuento + impuesto`, los tres en la misma fila: dependencia entre atributos no clave. Podía quedar desincronizado si alguien actualizaba un importe sin recalcular. | `total` es ahora **columna generada** `STORED`. Imposible desincronizar. |
+| `ventas` | `total` = `subtotal − descuento + impuesto`, los tres en la misma fila: dependencia entre atributos no clave. | `total` es **columna generada** `STORED`. Imposible desincronizar. |
 | `comprobantes` | Mismo caso con su `total`. | Columna generada `STORED`. |
 | `sesiones_caja` | `diferencia` = `monto_declarado − monto_esperado`, ambos en la misma fila. En un arqueo, una diferencia mal calculada es exactamente el dato que no se puede permitir. | Columna generada `STORED`. |
 | `venta_pagos` | `vuelto` = `monto_recibido − monto`, ambos en la misma fila. | Columna generada `STORED` (0 cuando no hay `monto_recibido`, es decir, en pagos que no son en efectivo). |
-
-Además se corrigió un **hueco funcional** detectado en la misma revisión: nada mantenía
-`devoluciones.total`, `ventas.total_devuelto` ni el estado `DEVUELTA` / `DEVUELTA_PARCIAL`
-de la venta, aunque HU-30 los exige. Ahora los mantiene
-`trg_devolucion_detalle_after_insert`.
+| `pedido_detalle` | `importe` = `cantidad × precio_unitario`. | Columna generada `STORED`. |
+| `pedidos` | `venta_id` guardaba 1 a 1 una relación que es 1 a N (el pedido puede tener la venta anulada y la que lo volvió a cobrar), y al anular se ponía en `NULL`: la venta anulada perdía de qué pedido era. `cliente_id` repetía `ventas.cliente_id` sin nada que los igualara. | La clave pasó a la venta (`ventas.pedido_id`), con una sola vigente por pedido (`uq_venta_pedido_cobrado`). El cliente queda solo en la venta. |
+| `configuracion` | `serie_factura` y `serie_recibo` guardaban como texto el id de una serie: una clave foránea sin FK, que podía apuntar a una serie de otro tipo. | `tipos_comprobante.serie_por_omision_id`, con FK compuesta contra `series_comprobante (id, tipo_comprobante_id)`. |
+| `clientes`, `empleados`, `comprobantes` | La lista de documentos de identidad repetida en tres `ENUM`, y en los `CHECK` de clientes. | Tabla `tipos_documento`; clientes y empleados la referencian con FK compuestas (ver `clientes`). |
 
 ### Separación de empleado, cargo, rol y usuario
 
 En la primera versión, `usuarios` mezclaba tres cosas: la **persona** (nombres, apellidos,
 documento, teléfono), la **cuenta** (usuario, contraseña, último acceso) y, de hecho, el
-**cargo** — porque los roles se llamaban "Cajero" y "Almacenero", que son puestos de trabajo,
-no niveles de acceso. Consecuencias: un empleado sin cuenta no podía existir, no había dónde
-anotar la fecha de ingreso ni el cese, y `activo` significaba a la vez "cuenta deshabilitada"
-y "ya no trabaja aquí".
+**cargo** — porque los roles llevaban nombres de puestos de trabajo, no de niveles de acceso.
+Consecuencias: un empleado sin cuenta no podía existir, no había dónde anotar la fecha de
+ingreso ni el cese, y `activo` significaba a la vez "cuenta deshabilitada" y "ya no trabaja
+aquí".
 
 Ahora son cuatro conceptos en cuatro tablas:
 
 | Tabla | Responde a | Ejemplo |
 |-------|-----------|---------|
-| `cargos` | ¿Qué hace en el negocio? | Gerente, Cajero, Almacenero, Ayudante |
+| `cargos` | ¿Qué hace en el negocio? | Gerente, Cajero, Cocinero, Ayudante |
 | `empleados` | ¿Quién es y bajo qué vínculo trabaja? | Luis Ramos, cajero, ingresó el 01/03/2025, contrato indefinido |
-| `roles` | ¿Qué puede hacer en el sistema? | Administrador, Cajero, Almacenero (conjuntos de permisos) |
+| `roles` | ¿Qué puede hacer en el sistema? | Administrador, Cajero, Cocina (conjuntos de permisos) |
 | `usuarios` | ¿Con qué cuenta entra? | `cajero1`, rol Cajero, del empleado Luis Ramos |
 
 - `empleados` → `usuarios` es **1:1 opcional**: `usuarios.empleado_id` es `NOT NULL` y
   `UNIQUE`, así que toda cuenta pertenece a un empleado y ningún empleado tiene dos cuentas,
   pero un empleado puede no tener ninguna (en los datos de ejemplo, el ayudante Jorge
-  trabaja sin usar el sistema).
-- **Cargo y rol quedan independientes.** Un cajero de confianza puede tener rol
-  Administrador sin dejar de ser cajero, y eso ya no obliga a inventar un cargo falso.
+  —el que lleva los platos— trabaja sin usar el sistema).
+- **Cargo y rol quedan independientes.** El cargo "Cajero" y el rol "Cajero" se llaman igual
+  pero dicen cosas distintas: un cajero de confianza puede tener rol Administrador sin dejar
+  de ser cajero, y un ayudante puede tener rol Cajero sin dejar de ser ayudante.
 - `empleados.estado` (`ACTIVO` / `SUSPENDIDO` / `CESADO`) es el vínculo laboral;
   `usuarios.activo` es el acceso. El trigger `trg_empleados_after_update` hace que el primero
   mande sobre el segundo: al cesar o suspender a alguien, su cuenta se desactiva sola. Al
@@ -196,60 +237,11 @@ Ahora son cuatro conceptos en cuatro tablas:
 - Dos `CHECK` mantienen coherente el cese: `CESADO` exige `fecha_cese`, y una `fecha_cese`
   exige estado `CESADO`; además el cese no puede ser anterior al ingreso.
 
-Toda la trazabilidad del sistema (`ventas.usuario_id`, `sesiones_caja.usuario_apertura_id`,
-`comprobantes.emitido_por`, `auditoria.usuario_id`…) **sigue apuntando a `usuarios`**, que es
-lo correcto: quien ejecuta una operación es una cuenta, no una persona. El nombre para
-mostrar se obtiene con un JOIN a `empleados`, y la vista `v_empleados` ya entrega persona,
-cargo, cuenta y rol en una sola consulta.
-
-### Integridad referencial del kardex
-
-`movimientos_inventario` referenciaba su documento de origen con el par
-`(referencia_tipo, referencia_id)` — una relación polimórfica, sin `FOREIGN KEY`: nada
-impedía apuntar a una venta inexistente, y la integridad quedaba en manos de la aplicación.
-En la tabla que sostiene la auditoría del inventario, eso es justo donde no conviene ceder.
-
-Se reemplazó por **una clave foránea por origen**:
-
-| Origen | Referencia |
-|--------|------------|
-| `VENTA`, `ANULACION` | `venta_id` → `ventas` |
-| `DEVOLUCION` | `devolucion_id` → `devoluciones` |
-| `COMPRA` | `proveedor_id` → `proveedores`, más `documento_externo` (guía o factura del proveedor) |
-| `DEVOLUCION_COMPRA` | `devolucion_compra_id` → `devoluciones_compra` |
-| `AJUSTE`, `INICIAL` | ninguna; el `motivo` pasa a ser obligatorio |
-
-Un `CHECK` de exclusividad garantiza que cada origen traiga **exactamente** la referencia
-que le corresponde y ninguna de las otras:
-
-```sql
-CONSTRAINT ck_movinv_origen CHECK (
-    (origen IN ('VENTA','ANULACION')
-         AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-         AND devolucion_compra_id IS NULL)
- OR (origen = 'DEVOLUCION'
-         AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL
-         AND devolucion_compra_id IS NULL)
- OR (origen = 'COMPRA'
-         AND venta_id IS NULL AND devolucion_id IS NULL AND devolucion_compra_id IS NULL)
- OR (origen = 'DEVOLUCION_COMPRA'
-         AND devolucion_compra_id IS NOT NULL AND venta_id IS NULL AND devolucion_id IS NULL)
- OR (origen IN ('AJUSTE','INICIAL')
-         AND venta_id IS NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-         AND devolucion_compra_id IS NULL AND documento_externo IS NULL)
-),
--- un ajuste sin explicación es un descuadre sin responsable
-CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
-```
-
-Beneficio adicional: el kardex puede mostrar el **documento real** en lugar de un par
-`('ventas', 42)`. `v_kardex` ahora resuelve el número de comprobante de la venta, el
-correlativo de la devolución o el proveedor y su guía, según el origen.
-
-**Costo asumido:** agregar un origen nuevo (por ejemplo, transferencias entre almacenes)
-exige agregar su columna FK y ampliar el `CHECK`, en vez de solo insertar un valor. Es un
-`ALTER TABLE` por cada tipo de documento nuevo — a cambio, ninguna fila del kardex puede
-apuntar a un documento que no existe.
+Toda la trazabilidad del sistema (`ventas.usuario_id`, `pedidos.usuario_id`,
+`pedido_detalle.actualizado_por`, `sesiones_caja.usuario_apertura_id`,
+`comprobantes.emitido_por`, `auditoria.usuario_id`…) **apunta a `usuarios`**, que es lo
+correcto: quien ejecuta una operación es una cuenta, no una persona. El nombre para mostrar
+se obtiene con un JOIN a `empleados`.
 
 ### Desnormalizaciones deliberadas (y por qué se quedan)
 
@@ -259,25 +251,39 @@ que se calcularía hoy, y eso es justamente lo que se quiere.
 
 | Dato | Se podría derivar de | Por qué se guarda |
 |------|----------------------|-------------------|
-| `venta_detalle.descripcion`, `unidad`, `precio_unitario`, `afecto_impuesto`, `tasa_impuesto` | `productos` y `configuracion` | Es el precio, el nombre y la unidad **del día de la venta**. Si mañana sube el precio, cambia la tasa o se corrige la unidad, la venta de ayer no puede cambiar con ellos: un comprobante reimpreso tiene que decir lo mismo que el que se entregó en mano. |
+| `pedido_detalle.descripcion`, `precio_unitario` | `productos` | Es el nombre y el precio **del momento en que el cliente pidió**. Si la carta sube a media tarde, el pedido conserva lo que se le cobró al pedir. |
+| `pedido_detalle.pasa_por_cocina` | `productos` → `categorias.pasa_por_cocina` | Si la línea va a la cocina **según su sección el día que se pidió**. Cambiar la sección después no hace aparecer ni desaparecer de la cocina lo ya pedido. |
+| `pedidos.jornada` | `fecha_apertura` y `configuracion.hora_corte_jornada` | La jornada **con la que se numeró** el pedido. Si el administrador cambia la hora de corte, los pedidos ya numerados no se mudan de jornada: sus números están impresos en tickets que el cliente se llevó, y recalcularlos podía juntar dos "pedido 1" en la misma jornada y romper `uq_pedido_numero_dia`. |
+| `venta_detalle.descripcion`, `precio_unitario`, `afecto_impuesto`, `tasa_impuesto`, `impuesto_incluido` | `productos`, `configuracion` y `ventas` | Es el precio, el nombre y el régimen de impuesto **del día de la venta**. Un comprobante reimpreso tiene que decir lo mismo que el que se entregó en mano. |
 | `comprobantes.*` (nombre, documento, dirección, importes del cliente) | `clientes` y `ventas` | Un documento contable es inmutable: si el cliente cambia de razón social, la factura emitida no se altera. |
+| `comprobantes.emisor_nombre`, `emisor_documento`, `emisor_direccion`, `emisor_telefono` | `configuracion` (`negocio_*`) | Los datos **del negocio** al emitir. Si el local cambia de nombre o de NIT, un comprobante viejo se reimprime como se entregó, no con los datos de hoy. |
 | `comprobantes.numero_completo` | `serie` + `numero` + `longitud` | El número impreso en el papel. Si mañana cambia el formato de la serie, el documento ya emitido conserva el suyo. |
-| `productos.stock_actual` | `SUM` sobre `movimientos_inventario` | Sumar el kardex entero en cada tecla del lector de código de barras haría inviable el POS (RNF1: respuesta < 1 s). Lo mantienen los triggers dentro de la misma transacción. |
-| `ventas.subtotal`, `impuesto` | `SUM` sobre `venta_detalle` | Agregado de otra tabla; lo recalcula `sp_recalcular_venta`. Evita agregaciones en cada listado de ventas. |
-| `venta_detalle.cantidad_devuelta` | `SUM` sobre `devolucion_detalle` | Necesario para el `CHECK (cantidad_devuelta <= cantidad)`: una restricción no puede consultar otra tabla. |
-| `devoluciones.total`, `ventas.total_devuelto` | `SUM` sobre los detalles | Mismo motivo: reportes y cierre de caja sin agregaciones anidadas. |
-| `movimientos_inventario.stock_anterior` / `stock_resultante` | Recorriendo el kardex | Es un libro de auditoría: guardar el saldo antes y después es lo que permite ubicar dónde se rompió el inventario. Además, en un `AJUSTE` el signo no es deducible del tipo. |
+| `ventas.subtotal`, `descuento`, `impuesto` | `SUM` sobre `venta_detalle` | Agregado de otra tabla; lo recalcula `sp_recalcular_venta`. Evita agregaciones en cada listado de ventas. |
 
 ### Lo que decidí no cambiar (y la alternativa)
 
 - **`clientes` con subtipos en una sola tabla.** Un purista separaría en `clientes` +
   `clientes_natural` + `clientes_juridica` para eliminar las columnas nulas. No lo hice: son
-  seis columnas opcionales, los dos `CHECK` ya impiden un registro incoherente, y el POS
-  necesita el cliente completo en **cada** venta — dos JOIN extra por operación, en la
-  pantalla más sensible al tiempo de respuesta, a cambio de pureza formal. Las columnas
-  nulas por subtipo no violan 3FN.
-Con esto **ninguna relación del esquema queda fuera del control del motor**: no hay
-referencias polimórficas ni claves foráneas implícitas.
+  seis columnas opcionales, los dos `CHECK` ya impiden un registro incoherente, y el cobro
+  necesita el cliente completo en **cada** venta — dos JOIN extra por operación a cambio de
+  pureza formal. Las columnas nulas por subtipo no violan 3FN.
+- **`pedido_detalle` sin índice único por producto**, a diferencia de `venta_detalle`. El
+  mostrador hoy manda una línea por plato, pero cada línea lleva su nota, su hora y su estado
+  en la cocina: un índice único ataría la cocina a una sola nota por plato. El cobro agrupa por producto antes de pasar las líneas a la venta.
+- **`cantidad` sigue siendo `DECIMAL(12,3)`** aunque en el restaurante todo va por porción
+  entera. En la base están las ventas del minimarket, pesadas al gramo, y reescribirlas a
+  entero les cambiaría el importe. La cantidad entera la valida la aplicación
+  (`App\Services\Ventas` y `App\Services\Pedidos`); en `pedido_detalle`, que nació con el
+  restaurante y no arrastra historial pesado al gramo, la exige además `ck_pedidodet_entera`.
+- **`auditoria.(entidad, entidad_id)` es una referencia sin clave foránea**, y es la única
+  del esquema. Es deliberado: la bitácora anota operaciones sobre tablas distintas (ventas,
+  pedidos, líneas de pedido, comprobantes), incluidas filas que ya no existen, como las de
+  las tablas que retiraron los parches del 17/09. Una FK obligaría a conservar la fila
+  solo para que la bitácora pueda nombrarla.
+
+Fuera de la bitácora, **ninguna relación del esquema queda fuera del control del motor**.
+(`comprobantes.cliente_tipo_documento` guarda un código de `tipos_documento` sin FK, pero no
+es una referencia: es la foto del código tal como era al emitir.)
 
 ## 3.5 Diccionario de datos (tablas centrales)
 
@@ -286,15 +292,21 @@ referencias polimórficas ni claves foráneas implícitas.
 | Columna | Tipo | Nulo | Descripción |
 |---------|------|:----:|-------------|
 | `id` | INT UNSIGNED PK | No | Identificador |
-| `cargo_id` | TINYINT FK | No | Puesto que desempeña (`cargos`) |
-| `tipo_documento`, `documento` | ENUM + VARCHAR | No | DNI/CE/PAS; únicos en conjunto |
-| `nombres`, `apellidos` | VARCHAR | No | Datos de la persona |
+| `cargo_id` | INT FK | No | Puesto que desempeña (`cargos`) |
+| `tipo_documento`, `documento` | VARCHAR(5) FK + VARCHAR(20) | No | `CI`, `CE`, `PAS`: los de `tipos_documento` con `aplica_empleado = 1`; únicos en conjunto (`uq_empleados_documento`) |
+| `nombres`, `apellidos` | VARCHAR(60) | No | Datos de la persona |
 | `fecha_nacimiento`, `telefono`, `email`, `direccion` | — | Sí | Datos de contacto |
 | `fecha_ingreso` | DATE | No | Inicio del vínculo laboral |
 | `fecha_cese`, `motivo_cese` | DATE + VARCHAR | Sí | Solo si `estado = 'CESADO'` |
 | `tipo_contrato` | ENUM | No | `INDEFINIDO`, `PLAZO_FIJO`, `PARCIAL`, `PRACTICAS` |
 | `estado` | ENUM | No | `ACTIVO`, `SUSPENDIDO`, `CESADO` — **vínculo laboral**, no acceso |
 | `nombre_completo` | VARCHAR(130) | No | **Columna generada**: `nombres + apellidos` |
+| `tipodoc_empleado` | TINYINT(1) | No | **Columna generada**, siempre 1: con `tipo_documento` forma la FK `fk_empleados_tipodoc` contra `tipos_documento (codigo, aplica_empleado)` |
+
+Los ids de `cargos`, `roles` y `cajas` son `INT UNSIGNED` (hasta el 19/09 eran `TINYINT`, 255
+como máximo). Ningún negocio llega a 255 cajas, pero el `AUTO_INCREMENT` no vuelve atrás
+cuando una transacción se deshace, y la base de pruebas llegó al tope; en un servidor real
+pasaría lo mismo con cualquier alta que fallara a mitad.
 
 ### `usuarios`
 
@@ -302,54 +314,228 @@ referencias polimórficas ni claves foráneas implícitas.
 |---------|------|:----:|-------------|
 | `id` | INT UNSIGNED PK | No | Identificador; es el que referencia toda la trazabilidad |
 | `empleado_id` | INT FK **UQ** | No | Persona dueña de la cuenta; el índice único impide dos cuentas por empleado |
-| `rol_id` | TINYINT FK | No | Rol de acceso (conjunto de permisos) |
+| `rol_id` | INT FK | No | Rol de acceso (conjunto de permisos) |
 | `usuario` | VARCHAR(40) UQ | No | Nombre de inicio de sesión |
 | `password_hash` | VARCHAR(255) | No | Hash de la contraseña (RNF4) |
 | `password_actualizado_en` | DATETIME | Sí | Último cambio de contraseña |
+| `debe_cambiar_password` | TINYINT(1) | No | 1 = la contraseña la puso otro (la instalación o un administrador): se pide cambiarla al entrar |
 | `activo` | TINYINT(1) | No | **Acceso al sistema**, distinto de `empleados.estado` |
 | `ultimo_acceso`, `intentos_fallidos` | — | — | Control de sesión y bloqueo |
 
-### `productos`
+### Roles y permisos de fábrica
+
+| Rol | Permisos | Qué hace |
+|-----|----------|----------|
+| Administrador | Todos | Administra el local, cierra la caja, anula, ve reportes |
+| Cajero | `ventas.registrar`, `caja.abrir`, `pedidos.registrar` | Abre su turno, **toma el pedido y lo cobra en el mismo acto**, vuelve a cobrar o cancela el pedido de una venta anulada. **No** cierra la caja |
+| Cocina | `cocina.ver` | Ve la pantalla de cocina, mueve el estado de cada plato, entrega el pedido e imprime la comanda. Nada de dinero |
+
+Los permisos completos son 15: `usuarios.gestionar`, `empleados.gestionar`,
+`productos.gestionar`, `ventas.registrar`, `ventas.anular`, `ventas.descuento`,
+`pedidos.registrar`, `cocina.ver`, `caja.abrir`, `caja.cerrar`, `reportes.ver`,
+`configuracion.editar`, `bitacora.ver`, `clientes.editar` y `registros.eliminar`.
+**Respaldos no es un permiso**: no tiene pantalla. Los hace el programador de tareas cada
+noche, por debajo, para que nadie del local —ni el administrador— pueda llevarse la base
+entera desde el navegador (parche 18). Los roles son editables desde la aplicación; la tabla de arriba es lo
+que siembra `02_datos_iniciales.sql`. El id 3 del rol y el del cargo quedan sin usar, para
+que los demás conserven su número en todas las bases.
+
+`pedidos.registrar` ya no abre pedidos —eso lo hace la venta, con `ventas.registrar`—: sirve
+para **cancelar el pedido de una venta anulada, o uno de sus platos**, mientras espera volver
+a cobrarse. Si la cocina ya empezó algo, cancelar el pedido exige además `ventas.anular`, y
+cancelar un plato que ya está **en preparación** también, con su motivo: con los roles de
+fábrica, solo lo hace el administrador (§3.6).
+
+### `categorias` (las secciones de la carta)
+
+| Columna | Tipo | Nulo | Descripción |
+|---------|------|:----:|-------------|
+| `id` | SMALLINT UNSIGNED PK | No | Identificador |
+| `nombre` | VARCHAR(60) UQ | No | Entradas, Platos de fondo, Bebidas, Postres |
+| `descripcion` | VARCHAR(200) | Sí | Descripción de la sección |
+| `activo` | TINYINT(1) | No | Baja lógica |
+| `pasa_por_cocina` | TINYINT(1) | No | 1 = lo de esta sección se prepara en la cocina. **Bebidas en 0** en los datos de ejemplo: se cobran, pero no van a la pantalla de la cocina ni a la comanda |
+| `creado_en` | TIMESTAMP | No | Alta |
+
+### `productos` (los platos del menú)
 
 | Columna | Tipo | Nulo | Descripción |
 |---------|------|:----:|-------------|
 | `id` | INT UNSIGNED PK | No | Identificador |
-| `categoria_id` | SMALLINT FK | No | Categoría a la que pertenece |
-| `unidad_medida_id` | TINYINT FK | No | Unidad de venta (UND, KG, LT…) |
-| `contenido_empaque` | DECIMAL(10,3) | Sí | Unidades de venta que trae un empaque (24 gaseosas, 46 kg, 3.785 L). NULL = no viene en empaque |
-| `nombre_empaque` | VARCHAR(20) | Sí | Cómo se llama ese empaque: Caja, Paquete, Plancha |
-| `controla_vencimiento` | TINYINT(1) | No | 1 = el stock se lleva por lotes con fecha (tabla `lotes`) |
-| `proveedor_id` | INT FK | Sí | Proveedor habitual |
-| `codigo` | VARCHAR(30) UQ | No | Código interno / SKU |
-| `codigo_barras` | VARCHAR(50) UQ | Sí | Código de barras para el lector |
-| `nombre` | VARCHAR(120) | No | Nombre comercial |
-| `precio_compra` | DECIMAL(12,2) | No | Costo **sin impuesto**, base del margen |
-| `precio_venta` | DECIMAL(12,2) | No | Precio vigente **sin impuesto** (base imponible) |
-| `afecto_impuesto` | TINYINT(1) | No | 1 = se le agrega el impuesto al vender |
-| `stock_actual` | DECIMAL(12,3) | No | Saldo actual de existencias |
-| `stock_minimo` | DECIMAL(12,3) | No | Umbral que dispara la alerta (HU-22) |
-| `activo` | TINYINT(1) | No | Baja lógica (HU-07) |
+| `categoria_id` | SMALLINT FK | No | Sección de la carta: Entradas, Platos de fondo, Bebidas, Postres |
+| `codigo` | VARCHAR(30) UQ | No | Código interno (`P-0010`): lo que se teclea para encontrar el plato rápido |
+| `nombre` | VARCHAR(120) | No | Nombre en la carta |
+| `descripcion` | VARCHAR(255) | Sí | Descripción del plato |
+| `precio_venta` | DECIMAL(12,2) | No | **El único precio del plato.** Con la configuración por omisión es la base **sin impuesto** (ver §3.5 «Cálculo del impuesto») |
+| `afecto_impuesto` | TINYINT(1) | No | 1 = se le aplica el impuesto al vender |
+| `imagen` | VARCHAR(255) | Sí | Ruta de la foto del plato |
+| `activo` | TINYINT(1) | No | 0 = fuera de carta (baja lógica, HU-07) |
+
+`CHECK ck_productos_precios (precio_venta >= 0)`. No hay stock, ni unidad de medida, ni
+código de barras, ni precio de compra (§3.3).
+
+### `pedidos` (lo que un cliente pidió en el mostrador)
+
+El local atiende en el mostrador: el cliente pide y paga en la caja —primero se paga—, se
+lleva un ticket con el número del pedido y se sienta donde quiera, o espera para llevar. Cada
+venta del punto de venta es un pedido, que se abre, se carga y se cobra en la misma
+transacción (`App\Services\Pedidos::venderEnMostrador`).
+
+| Columna | Tipo | Nulo | Descripción |
+|---------|------|:----:|-------------|
+| `id` | BIGINT UNSIGNED PK | No | Clave; es lo que va en las direcciones, no lo que se lee en voz alta |
+| `tipo` | ENUM | No | `LOCAL` ("comer aquí", por omisión) o `LLEVAR` |
+| `numero_dia` | SMALLINT UNSIGNED | No | **El número que se canta al entregar**: 1, 2, 3… y vuelve a 1 en cada jornada. Un solo contador para comer aquí y para llevar |
+| `jornada` | DATE | No | La jornada del local a la que pertenece el pedido (ver abajo). Columna **normal** que escribe la aplicación |
+| `usuario_id` | INT FK | No | Quien lo abrió: el cajero que tomó el pedido |
+| `nombre_cliente` | VARCHAR(80) | Sí | A quién llamar cuando esté. El cliente registrado, si lo hay, es de la venta (`ventas.cliente_id`) |
+| `estado` | ENUM | No | `ABIERTO` (cobro anulado, para volver a cobrar), `CERRADO` (cobrado) o `CANCELADO` |
+| `observacion` | VARCHAR(255) | Sí | Nota general del pedido |
+| `motivo_cancelacion` | VARCHAR(255) | Sí | Obligatorio si `estado = 'CANCELADO'` |
+| `fecha_apertura` | DATETIME | No | Momento en que se tomó el pedido |
+| `fecha_cierre` | DATETIME | Sí | Cobro o cancelación; `NULL` mientras espera volver a cobrarse |
+| `cerrado_por` | INT FK | Sí | Quién lo cobró o lo canceló |
+| `creado_en` | TIMESTAMP | No | Alta de la fila |
+
+**Cuándo un pedido está `ABIERTO`.** En el mostrador, solo dentro de la transacción de la
+venta: sale de ella `CERRADO`, o no sale. El único pedido que queda abierto a la vista es el
+que se **reabre al anular su venta** (`Pedidos::reabrirTrasAnular`): el cliente ya tiene su
+ticket y la cocina ya lo prepara, así que se vuelve a cobrar con el mismo número y sus
+mismas líneas, o se cancela.
+
+**El pedido no guarda su venta: la venta guarda su pedido** (`ventas.pedido_id`). Un pedido
+puede tener varias ventas —la que se anuló y la que lo volvió a cobrar— y la anulada tiene que
+seguir diciendo de qué pedido era. Que un pedido se cobre **una sola vez** lo garantiza
+`uq_venta_pedido_cobrado`, en `ventas`. «Pedido `CERRADO` ⇔ tiene una venta `COMPLETADA`» ya
+no cabe en un `CHECK` (son dos tablas): lo garantiza `App\Services\Pedidos`, que cierra el
+pedido en la misma transacción en que registra su venta y lo reabre en la misma en que la
+anula.
+
+**Índices únicos**
+
+| Índice | Columnas | Garantiza |
+|--------|----------|-----------|
+| `uq_pedido_numero_dia` | `(jornada, numero_dia)` | **No hay dos "pedido 7" en la misma jornada**, aunque dos cajeros cobren en el mismo segundo. |
+
+Además: `ix_pedidos_estado (estado, fecha_apertura)` para los pedidos que hay que volver a
+cobrar e
+`ix_pedidos_usuario`.
+
+**Restricciones `CHECK`**
+
+```sql
+-- abierto es no tener fecha de cierre: la misma cosa dicha dos veces
+CONSTRAINT ck_pedidos_cierre CHECK ((estado = 'ABIERTO') = (fecha_cierre IS NULL)),
+-- cancelar exige explicar por qué
+CONSTRAINT ck_pedidos_cancel CHECK (estado <> 'CANCELADO' OR motivo_cancelacion IS NOT NULL),
+-- el contador de la jornada empieza en 1: un «pedido 0» no se canta
+CONSTRAINT ck_pedidos_numero CHECK (numero_dia > 0)
+```
+
+**La jornada.** El local cierra pasada la medianoche, y el pedido de la 01:30 del 19 es de la
+noche del 18: sigue su numeración, no empieza otra. `jornada` es la fecha de la apertura
+menos `configuracion.hora_corte_jornada` horas (5 por omisión, de 0 a 12), y la calcula
+`App\Support\Config::jornadaDe()`. No es columna generada porque una columna generada no
+puede leer la configuración. Los pedidos anteriores al parche del 18/09 conservan como
+jornada el día de su apertura, que es con lo que se numeraron (§3.11).
+
+**Cómo se asigna el número.** `App\Services\Pedidos::abrir()` toma el siguiente dentro de la
+transacción de apertura:
+
+```sql
+SELECT COALESCE(MAX(numero_dia), 0) + 1 FROM pedidos WHERE jornada = ? FOR UPDATE;
+```
+
+El bloqueo cae sobre el tramo de `uq_pedido_numero_dia` de esa jornada —el índice empieza por
+`jornada`—, así que el segundo cajero espera y lee un máximo que ya incluye al primero. Si
+aun así el índice rechaza el número, el servicio reintenta (hasta 3 veces), igual que
+`Ventas::registrar()` ante un deadlock. Es el mismo criterio que `sp_siguiente_comprobante`
+con el correlativo. El comprobante impreso lleva `numero_dia`, no el `id` (HU-52).
+
+### `pedido_detalle` (lo que se pidió, línea por línea)
+
+| Columna | Tipo | Nulo | Descripción |
+|---------|------|:----:|-------------|
+| `id` | BIGINT UNSIGNED PK | No | Identificador |
+| `pedido_id` | BIGINT FK | No | Pedido al que pertenece (`ON DELETE RESTRICT`: los pedidos no se borran) |
+| `producto_id` | INT FK | No | Plato pedido |
+| `descripcion` | VARCHAR(120) | No | **Copia histórica** del nombre del plato |
+| `cantidad` | DECIMAL(12,3) | No | Porciones (> 0 y enteras) |
+| `precio_unitario` | DECIMAL(12,2) | No | **Copia** del precio al momento de pedir |
+| `importe` | DECIMAL(12,2) | No | **Columna generada**: `ROUND(cantidad × precio_unitario, 2)` |
+| `nota` | VARCHAR(255) | Sí | Nota para la cocina: "sin cebolla", "término medio" |
+| `pasa_por_cocina` | TINYINT(1) | No | **Copia** de `categorias.pasa_por_cocina` al pedirse: 0 = no va a la pantalla de la cocina ni a la comanda |
+| `estado_cocina` | ENUM | No | `PENDIENTE`, `EN_PREPARACION`, `LISTO`, `ENTREGADO`, `CANCELADO` |
+| `usuario_id` | INT FK | No | Quién agregó la línea |
+| `actualizado_por` | INT FK | Sí | Quién movió su estado por última vez |
+| `comandado_en` | TIMESTAMP | Sí | Cuándo salió en una comanda impresa. La comanda trae solo lo que todavía no salió; una reimpresión no lo toca |
+| `cancelacion_comandada_en` | TIMESTAMP | Sí | Cuándo salió en papel el aviso de que se canceló, para avisarlo una sola vez |
+| `creado_en` | TIMESTAMP | No | Hora del pedido: es lo que ordena la cocina |
+| `actualizado_en` | TIMESTAMP | No | Último cambio en la cocina (imprimir la comanda no lo toca) |
+
+`CHECK ck_pedidodet_cantidad (cantidad > 0)`, `ck_pedidodet_precio (precio_unitario >= 0)` y
+`ck_pedidodet_entera (cantidad = FLOOR(cantidad))`: todo va por porción.
+Índices: `ix_pedidodet_pedido`, `ix_pedidodet_producto` e `ix_pedidodet_cocina
+(estado_cocina, creado_en)`, que es exactamente como lee la pantalla de la cocina: por
+estado y en orden de llegada.
+
+**El recorrido de una línea por la cocina** (lo aplica la aplicación, no la base):
+
+```
+PENDIENTE ──► EN_PREPARACION ──► LISTO ──► ENTREGADO
+    │               │
+    └──► LISTO      └──► CANCELADO
+    └──► CANCELADO
+```
+
+No se vuelve atrás: si la cocina se adelantó, queda escrito lo que pasó. Ninguna línea se
+borra: lo que ya no se quiere se **cancela**, y solo mientras el pedido espera volver a
+cobrarse; de un pedido ya cobrado no se cancela nada —el dinero ya entró—, se anula la venta.
+Cancelar lo hace la caja, no la cocina; y una línea `EN_PREPARACION` solo la cancela el
+administrador (`ventas.anular`), con su motivo. Las líneas `CANCELADO` no se cobran.
+
+Lo que no pasa por la cocina (`pasa_por_cocina = 0`) se queda `PENDIENTE` mientras el pedido
+espera volver a cobrarse —en la pantalla de cobro se lee "Sin cocina"— y pasa a `ENTREGADO` al cobrarse,
+sin recorrer el camino de arriba: se entrega con el ticket.
 
 ### `ventas`
 
 | Columna | Tipo | Nulo | Descripción |
 |---------|------|:----:|-------------|
 | `id` | BIGINT UNSIGNED PK | No | Identificador |
-| `cliente_id` | INT FK | Sí | `NULL` = cliente varios (venta al paso) |
+| `cliente_id` | INT FK | Sí | `NULL` = cliente varios (cobro sin cliente) |
 | `usuario_id` | INT FK | No | Cajero que registró la venta |
 | `sesion_caja_id` | INT FK | No | Turno de caja al que pertenece (HU-28) |
+| `pedido_id` | BIGINT FK | Sí | El pedido que cobró. Lo conserva aunque se anule; `NULL` solo en las ventas de antes de los pedidos |
 | `fecha` | DATETIME | No | Fecha y hora del servidor |
 | `subtotal` | DECIMAL(12,2) | No | Base imponible: suma del detalle, **sin impuesto** |
-| `descuento` | DECIMAL(12,2) | No | Descuento de cabecera, aplicado sobre la base |
-| `impuesto` | DECIMAL(12,2) | No | Impuesto calculado sobre la base afecta neta de descuento |
-| `total` | DECIMAL(12,2) | No | `subtotal − descuento + impuesto` |
-| `total_devuelto` | DECIMAL(12,2) | No | Acumulado devuelto al cliente |
-| `estado` | ENUM | No | `COMPLETADA`, `ANULADA`, `DEVUELTA_PARCIAL`, `DEVUELTA` |
+| `descuento` | DECIMAL(12,2) | No | La parte del descuento que baja la base |
+| `impuesto` | DECIMAL(12,2) | No | Impuesto de las líneas, en la proporción de la base que deja el descuento |
+| `impuesto_incluido` | TINYINT(1) | No | 1 = la venta se registró con precios que ya traen el impuesto |
+| `descuento_precio_final` | DECIMAL(12,2) | Sí | Con impuesto incluido: el descuento tal como lo vio el cliente, sobre el precio final |
+| `total` | DECIMAL(12,2) | No | **Columna generada**: `subtotal − descuento + impuesto` |
+| `estado` | ENUM | No | `COMPLETADA` o `ANULADA`. No hay estados de devolución |
+| `observacion` | VARCHAR(255) | Sí | Nota de la venta |
 | `anulada_en`, `anulada_por`, `motivo_anulacion` | — | Sí | Rastro de la anulación (HU-29) |
+| `pedido_cobrado_uk` | BIGINT | Sí | **Columna generada** `VIRTUAL`: `IF(estado = 'COMPLETADA', pedido_id, NULL)`. Con `uq_venta_pedido_cobrado`, **una sola venta vigente por pedido**, aunque dos cajeros pulsen "Cobrar" a la vez; las anuladas no ocupan lugar |
 
-> El número de documento **ya no vive en `ventas`**: la venta es la operación comercial y el
-> documento entregado al cliente está en `comprobantes` (relación 1 a 1). Así una venta
-> interna puede existir sin documento, y el documento conserva sus propios datos y estado.
+Restricciones `CHECK`:
+
+```sql
+CONSTRAINT ck_ventas_montos  CHECK (subtotal >= 0 AND descuento >= 0 AND impuesto >= 0
+                                    AND descuento <= subtotal),
+-- anulada es tener cuándo, quién y por qué; una completada no tiene nada de eso
+CONSTRAINT ck_ventas_anulacion CHECK ((estado = 'ANULADA') = (anulada_en IS NOT NULL)
+                                      AND (anulada_en IS NULL) = (anulada_por IS NULL)
+                                      AND (anulada_en IS NULL) = (motivo_anulacion IS NULL)),
+-- el descuento sobre el precio final solo existe con el impuesto incluido
+CONSTRAINT ck_ventas_precio_final CHECK (impuesto_incluido = 1 OR descuento_precio_final IS NULL)
+```
+
+> El número de documento **no vive en `ventas`**: la venta es la operación comercial y el
+> documento entregado al cliente está en `comprobantes`. El pedido, en cambio, sí: la venta
+> que salió de un pedido lo dice en `pedido_id`, y lo sigue diciendo después de anulada.
+> Desde el 18/09 todas las del mostrador salen de uno; las del minimarket, no.
 
 ### `clientes` (persona natural / jurídica)
 
@@ -359,431 +545,677 @@ nulas para el otro, y dos `CHECK` impiden que un cliente quede a medio llenar.
 | Columna | Tipo | Aplica a | Descripción |
 |---------|------|----------|-------------|
 | `tipo_persona` | ENUM | ambos | `NATURAL` o `JURIDICA` |
-| `tipo_documento` | ENUM | ambos | `DNI`, `CE`, `PAS`, `SIN` (natural) · `RUC` (jurídica) |
+| `tipo_documento` | VARCHAR(5) FK | ambos | Código de `tipos_documento`: `CI`, `CE`, `PAS`, `SIN`, `NIT` (natural) · `NIT` (jurídica) |
 | `documento` | VARCHAR(20) | ambos | Único junto con `tipo_documento` |
-| `nombres`, `apellidos` | VARCHAR | natural | Obligatorios si `tipo_persona = 'NATURAL'` |
+| `nombres`, `apellidos` | VARCHAR(60) | natural | Obligatorios si `tipo_persona = 'NATURAL'` |
 | `fecha_nacimiento` | DATE | natural | Opcional |
 | `razon_social` | VARCHAR(150) | jurídica | Obligatoria si `tipo_persona = 'JURIDICA'` |
 | `nombre_comercial` | VARCHAR(120) | jurídica | Opcional |
 | `representante_legal` | VARCHAR(120) | jurídica | Se imprime en la factura |
 | `direccion` | VARCHAR(200) | ambos | **Obligatoria** para persona jurídica (dirección fiscal) |
+| `telefono`, `email`, `activo` | — | ambos | Contacto y baja lógica |
 | `nombre` | VARCHAR(150) | ambos | **Columna generada**: razón social, o `nombres + apellidos` |
+| `tipodoc_natural`, `tipodoc_juridica` | TINYINT(1) | ambos | **Columnas generadas**: 1 en la de su tipo de persona y `NULL` en la otra. Con `tipo_documento` forman las FK contra `tipos_documento (codigo, aplica_natural)` y `(codigo, aplica_juridica)`; la FK con `NULL` no se comprueba, así que cada cliente pasa por la suya |
 
 Reglas garantizadas por la base de datos:
 
 ```sql
 -- ck_clientes_natural
-tipo_persona = 'NATURAL'  → nombres y apellidos obligatorios,
-                            razon_social nula, documento en (DNI, CE, PAS, SIN)
+tipo_persona = 'NATURAL'  → nombres y apellidos obligatorios, razon_social nula;
+                            con NIT, el número es obligatorio
 
 -- ck_clientes_juridica
 tipo_persona = 'JURIDICA' → razon_social, documento y direccion obligatorios,
-                            nombres y apellidos nulos, tipo_documento = 'RUC'
+                            nombres y apellidos nulos
+
+-- fk_clientes_tipodoc_natural / fk_clientes_tipodoc_juridica
+qué documento vale para cada tipo de persona lo dice tipos_documento
+(natural: CI, NIT, CE, PAS, SIN · jurídica: solo NIT)
 ```
 
-La columna generada `nombre` permite que listados, búsquedas y comprobantes usen un solo
-campo sin preguntar de qué tipo de cliente se trata.
+Una persona natural **puede** tener NIT (unipersonal, profesional independiente): con él
+recibe factura a su nombre. La columna generada `nombre` permite que listados, búsquedas y
+comprobantes usen un solo campo sin preguntar de qué tipo de cliente se trata.
+
+### `tipos_documento` (documentos de identidad)
+
+Hasta el 19/09 eran tres `ENUM` repetidos (clientes, empleados y comprobantes). La clave es
+el código, el mismo que se imprime y se busca: clientes y empleados siguen guardando `CI` o
+`NIT`, y un documento nuevo es una fila, no un `ALTER`.
+
+| Código | Nombre | `aplica_natural` | `aplica_juridica` | `aplica_empleado` |
+|--------|--------|:----------------:|:-----------------:|:-----------------:|
+| `CI` | CI (cédula de identidad) | Sí | No | Sí |
+| `NIT` | NIT | Sí | Sí | No |
+| `CE` | Carné de extranjería | Sí | No | Sí |
+| `PAS` | Pasaporte | Sí | No | Sí |
+| `SIN` | Sin documento | Sí | No | No |
+
+Las banderas dicen para quién vale cada uno, y clientes y empleados lo exigen con una FK
+compuesta contra `(codigo, aplica_*)` —los índices únicos `uq_tipodoc_natural`,
+`uq_tipodoc_juridica` y `uq_tipodoc_empleado` son los que la FK necesita—: la regla vive en
+esta tabla y en ningún otro lado. `orden` fija cómo se ofrecen en pantalla.
 
 ### `comprobantes` (factura / recibo)
 
-Apartado donde se guarda el documento entregado al cliente. Relación **1 a 1** con la venta.
+Apartado donde se guarda el documento entregado al cliente. Una venta tiene como máximo **un**
+comprobante vigente.
 
 | Columna | Tipo | Descripción |
 |---------|------|-------------|
 | `venta_id` | BIGINT FK | Venta documentada |
-| `serie_id`, `numero` | FK + INT | Serie y correlativo; únicos en conjunto (HU-13). **La serie determina el tipo** (`FAC`, `REC`, `NV`): no se guarda el tipo aparte |
+| `serie_id`, `numero` | FK + INT | Serie y correlativo; únicos en conjunto (`uq_comprobante_numero`, HU-13). **La serie determina el tipo** (`FAC`, `REC`, `NV`): no se guarda el tipo aparte |
 | `numero_completo` | VARCHAR(20) | Número formateado, ej. `F001-000126`, `R001-000341` |
 | `fecha_emision` | DATETIME | Fecha del documento |
-| `cliente_id` | INT FK | Cliente al que se emitió (`NULL` en venta al paso) |
+| `emisor_nombre`, `emisor_documento`, `emisor_direccion`, `emisor_telefono` | VARCHAR | **Foto** de los datos del negocio (`configuracion.negocio_*`) al emitir. La llena `sp_emitir_comprobante` (y su gemelo en PHP) |
+| `cliente_id` | INT FK | Cliente al que se emitió (`NULL` si se cobró sin cliente) |
 | `tipo_persona` | ENUM | **Foto** del tipo de cliente al emitir |
 | `cliente_nombre` | VARCHAR(150) | **Foto** de la razón social o nombre completo |
-| `cliente_tipo_documento`, `cliente_documento` | ENUM + VARCHAR | **Foto** del RUC/DNI |
+| `cliente_tipo_documento`, `cliente_documento` | VARCHAR(5) + VARCHAR(20) | **Foto** del NIT/CI (`SIN` si no hay cliente). El código va **sin FK** a `tipos_documento`: es el que era al emitir |
 | `cliente_direccion` | VARCHAR(200) | **Foto** de la dirección fiscal |
 | `representante_legal` | VARCHAR(120) | **Foto**, solo persona jurídica |
-| `subtotal`, `descuento`, `impuesto`, `total` | DECIMAL(12,2) | **Foto** de los importes |
-| `moneda` | VARCHAR(3) | Código ISO tomado de `configuracion` |
+| `subtotal`, `descuento`, `impuesto` | DECIMAL(12,2) | **Foto** de los importes |
+| `total` | DECIMAL(12,2) | **Columna generada** |
+| `moneda` | VARCHAR(3) | Código ISO tomado de `configuracion.moneda_codigo` (`BOB` por omisión) |
 | `estado` | ENUM | `EMITIDO` (vigente), `ANULADO` (venta anulada) o `SUSTITUIDO` (reemplazado por otro) |
 | `anulado_en`, `motivo_anulacion` | — | Rastro de la anulación del documento |
 | `sustituye_a` | BIGINT FK self | Documento al que reemplaza (HU-42) |
 | `sustituido_en` | DATETIME | Momento en que dejó de ser el vigente |
 | `motivo_emision` | VARCHAR(255) | Por qué se emitió este reemplazo |
 | `emitido_por` | INT FK | Usuario que emitió el documento |
-| `venta_vigente_uk` | Generada + UQ | `venta_id` solo si `estado = 'EMITIDO'`: garantiza **un único comprobante vigente por venta** |
-| `archivo_pdf` | VARCHAR(255) | Ruta del PDF generado (HU-14) |
+| `observacion` | VARCHAR(255) | Nota |
+| `venta_vigente_uk` | Generada `VIRTUAL` + UQ | `venta_id` solo si `estado = 'EMITIDO'`: garantiza **un único comprobante vigente por venta** (`uq_comprobante_vigente`) |
+
+Además de `ck_comprobante_montos`, el estado y su fecha no pueden contradecirse:
+
+```sql
+CONSTRAINT ck_comprobante_anulado    CHECK ((estado = 'ANULADO') = (anulado_en IS NOT NULL)),
+CONSTRAINT ck_comprobante_sustituido CHECK ((estado = 'SUSTITUIDO') = (sustituido_en IS NOT NULL))
+```
 
 **Por qué se guarda una foto y no solo la relación:** un comprobante es un documento
 contable. Si mañana el cliente cambia de razón social o de dirección fiscal, la factura ya
-emitida no puede cambiar con él. Lo mismo aplica a los importes: quedan congelados en el
-documento aunque después se registre una devolución parcial sobre la venta.
+emitida no puede cambiar con él. Lo mismo aplica a los importes y a los datos del propio
+negocio: antes del 19/09 se imprimían los datos **actuales** de `configuracion`, y un
+comprobante viejo se reimprimía con el nombre o el NIT de hoy. Los comprobantes que ya
+existían al aplicar el parche se llenaron con los datos de ese día: el del día en que se
+emitieron no se había guardado en ningún lado.
 
-### Venta al paso: cuando no se registra al cliente
+### Cobro sin cliente registrado
 
-Es el caso más frecuente en mostrador, y el modelo lo trata como el camino normal, no como
-una excepción:
+Es el caso de casi todos los pedidos, y el modelo lo trata como el camino normal, no como una
+excepción:
 
 - `ventas.cliente_id` es **NULL** y `comprobantes.cliente_id` también.
 - El comprobante se emite igual, a nombre del texto configurado en
   `configuracion.cliente_generico_nombre` (por defecto "Cliente varios"), con
   `cliente_tipo_documento = 'SIN'` y `cliente_documento = NULL`.
 - El tipo de documento aplicable es el **recibo** (`exige_cliente = 0`), o la nota de venta.
-- El cajero no escribe ni un dato: escanear → cobrar → imprimir.
 
 **Una sola forma de representarlo.** No existe un registro semilla "Cliente varios" en la
 tabla `clientes`. Tener las dos cosas —un cliente ficticio y el `NULL`— significa que la
 mitad de las ventas anónimas quedarían apuntando a un cliente falso: ese registro terminaría
-encabezando el reporte de mejores clientes y ensuciando el historial de compras. La regla
-es: **sin cliente identificado, `cliente_id = NULL`**; el nombre genérico es un texto de
-impresión, no una persona.
-
-Consecuencias para las consultas:
+encabezando el reporte de mejores clientes y ensuciando el historial. La regla es: **sin
+cliente identificado, `cliente_id = NULL`**; el nombre genérico es un texto de impresión, no
+una persona.
 
 ```sql
 -- correcto: LEFT JOIN, porque el cliente puede no existir
 SELECT v.id, v.total, IFNULL(c.nombre, 'Cliente varios') AS cliente
   FROM ventas v LEFT JOIN clientes c ON c.id = v.cliente_id;
-
--- ventas al paso del día
-SELECT COUNT(*) FROM ventas WHERE cliente_id IS NULL AND DATE(fecha) = CURDATE();
 ```
 
 **Único caso en que el cajero está obligado a pedir datos:** si el cliente pide **factura**.
-`tipos_comprobante.FAC` tiene `exige_cliente = 1` y `exige_documento = 1`, así que hay que
-registrar a la persona jurídica con RUC y dirección fiscal antes de emitir. Es una exigencia
-del documento, no del sistema.
-
-**Si el cliente pide factura después de emitido el recibo:** se **sustituye** el comprobante
-con `sp_sustituir_comprobante` (HU-42). No se anula la venta ni se toca el stock: el recibo
-pasa a estado `SUSTITUIDO`, se asigna el cliente jurídico a la venta y se emite una factura
-nueva que referencia al recibo en `sustituye_a`. Ver «Sustitución de comprobante» más abajo.
+`tipos_comprobante.FAC` tiene `exige_cliente = 1` y `exige_documento = 1`. Si la pide
+**después** de emitido el recibo, se **sustituye** el comprobante (HU-42, ver más abajo).
 
 ### `tipos_comprobante`
 
 | Código | Nombre | `aplica_persona` | `exige_cliente` | `exige_documento` |
 |--------|--------|------------------|:---------------:|:-----------------:|
-| `FAC` | Factura | `JURIDICA` | Sí | Sí (RUC) |
+| `FAC` | Factura | `JURIDICA` | Sí | Sí (NIT) |
 | `REC` | Recibo | `NATURAL` | No | No |
 | `NV` | Nota de venta | `AMBAS` | No | No |
 
 Estas tres banderas son las que el trigger `trg_comprobantes_before_insert` usa para decidir
-si el documento puede emitirse. Agregar un tipo nuevo (nota de crédito, guía) es insertar una
-fila, no tocar código.
+si el documento puede emitirse. Series sembradas: `F001`, `R001` y `NV01`.
+
+`serie_por_omision_id` es la serie con que se numera cada tipo; cada serie sembrada es la
+de su tipo. Antes eran dos claves de texto en `configuracion` (`serie_factura` y
+`serie_recibo`) y la de la nota de venta salía de otra consulta. La FK es compuesta,
+`(serie_por_omision_id, id)` contra `series_comprobante (id, tipo_comprobante_id)`: la base
+impide elegir la serie de los recibos como serie de facturas.
 
 ### Sustitución de comprobante (recibo → factura)
 
-El caso real: la venta se cobró al paso y salió con recibo; al rato vuelve el cliente y dice
-que era para su empresa, que necesita factura. **No se anula la venta** —la mercadería salió,
-el dinero entró, el stock está bien— solo cambia el documento.
+El caso real: el pedido se cobró sin cliente y salió con recibo; al rato vuelve el comensal y
+dice que era un almuerzo de trabajo y necesita factura. **No se anula la venta** —la comida
+se sirvió y el dinero entró— solo cambia el documento.
 
-`sp_sustituir_comprobante(comprobante, serie, cliente, usuario, motivo)` hace, en una
-transacción:
+`sp_sustituir_comprobante(comprobante, serie, cliente, usuario, motivo)` hace:
 
 1. Valida que el documento esté **vigente** (`estado = 'EMITIDO'`) y que la venta esté
    `COMPLETADA` — no se sustituye el documento de una venta anulada.
 2. Valida la ventana de tiempo: `configuracion.dias_max_sustitucion` (1 día por defecto).
-   Cambiar un documento de hace tres meses no es una corrección, es otra cosa.
-3. Asigna el cliente jurídico a la venta (`ventas.cliente_id`), que antes era nulo.
-4. Marca el recibo como `SUSTITUIDO` con su `sustituido_en`. Esto **libera el índice único**,
-   porque `venta_vigente_uk` solo tiene valor mientras el estado es `EMITIDO`.
-5. Emite la factura con su **propio correlativo nuevo** (nunca se reutiliza un número), y el
-   trigger valida que el cliente sea persona jurídica.
-6. Enlaza la factura al recibo (`sustituye_a`) con el motivo y el usuario, y escribe en
-   `auditoria`.
-
-Resultado en la tabla:
+3. Asigna el cliente a la venta (`ventas.cliente_id`), si se indicó uno.
+4. Marca el documento anterior como `SUSTITUIDO` con su `sustituido_en`. Esto **libera el
+   índice único**, porque `venta_vigente_uk` solo tiene valor mientras el estado es `EMITIDO`.
+5. Emite el documento nuevo con su **propio correlativo** (nunca se reutiliza un número), y
+   el trigger valida que el cliente corresponda.
+6. Enlaza el nuevo con el anterior (`sustituye_a`), con el motivo y el usuario, y escribe
+   en `auditoria` (`SUSTITUIR_COMPROBANTE`).
 
 | numero_completo | estado | sustituye_a | sustituido_en |
 |---|---|---|---|
-| `R001-000002` | `SUSTITUIDO` | — | 2026-08-19 11:40 |
+| `R001-000002` | `SUSTITUIDO` | — | 2026-09-18 13:40 |
 | `F001-000002` | `EMITIDO` | `R001-000002` | — |
 
-Nada se borra ni se edita: el recibo entregado existió y queda registrado. La vista
-`v_comprobantes_sustituidos` muestra la cadena completa para auditoría, y
-`v_ventas_comprobante` excluye los sustituidos para que una venta no aparezca dos veces en
-los listados.
-
-> **Ojo con el reporte de ventas.** `v_comprobantes_emitidos` filtra `estado = 'EMITIDO'`, así
-> que un documento sustituido no se suma dos veces a la facturación del día. La venta, en
-> cambio, sigue siendo una sola en `ventas`: la sustitución nunca duplica ingresos.
+La cadena completa se sigue por `sustituye_a`, y quien liste ventas con su documento filtra
+`estado <> 'SUSTITUIDO'` para que una venta no aparezca dos veces.
 
 ### `venta_detalle`
 
 | Columna | Tipo | Nulo | Descripción |
 |---------|------|:----:|-------------|
-| `venta_id` | BIGINT FK | No | Venta a la que pertenece (`ON DELETE CASCADE`) |
-| `producto_id` | INT FK | No | Producto vendido |
-| `descripcion` | VARCHAR(120) | No | **Copia histórica** del nombre del producto |
-| `unidad` | VARCHAR(10) | Sí | **Copia histórica** de la unidad de venta (UND, KG, LT). Es lo que imprime el ticket junto a la cantidad |
-| `cantidad` | DECIMAL(12,3) | No | Unidades vendidas (> 0) |
+| `venta_id` | BIGINT FK | No | Venta a la que pertenece (`ON DELETE RESTRICT`: las ventas no se borran) |
+| `producto_id` | INT FK | No | Plato vendido |
+| `descripcion` | VARCHAR(120) | No | **Copia histórica** del nombre |
+| `cantidad` | DECIMAL(12,3) | No | Porciones vendidas (> 0) |
 | `precio_unitario` | DECIMAL(12,2) | No | **Copia histórica** del precio aplicado |
-| `descuento` | DECIMAL(12,2) | No | Descuento sobre la línea (HU-15) |
-| `importe` | DECIMAL(12,2) | No | Columna generada: `cantidad × precio − descuento` |
-| `afecto_impuesto` | TINYINT(1) | No | **Copia histórica** del régimen del producto |
+| `afecto_impuesto` | TINYINT(1) | No | **Copia histórica** del régimen del plato |
 | `tasa_impuesto` | DECIMAL(6,4) | No | **Copia histórica** de la tasa vigente al vender |
-| `impuesto_linea` | DECIMAL(12,2) | No | Columna generada: `importe × tasa` (0 si es inafecto) |
-| `total_linea` | DECIMAL(12,2) | No | Columna generada: `importe + impuesto_linea` |
-| `cantidad_devuelta` | DECIMAL(12,3) | No | Acumulado devuelto; `CHECK` impide superar `cantidad` |
+| `impuesto_incluido` | TINYINT(1) | No | **Copia** del modo de precio de su venta: todas las líneas iguales |
+| `importe` | DECIMAL(12,2) | No | **Columna generada**: la base de la línea, sin impuesto |
+| `impuesto_linea` | DECIMAL(12,2) | No | **Columna generada**: el impuesto de la línea (0 si es inafecta) |
+| `total_linea` | DECIMAL(12,2) | No | **Columna generada**: lo que paga el cliente por la línea |
 
-Las cuatro columnas de impuesto son el **desglose por línea que imprime la factura**:
-base, tasa aplicada, impuesto e importe con impuesto de cada ítem. El trigger
-`trg_venta_detalle_before_insert` copia el régimen y la tasa desde el producto y la
-configuración al momento de vender, así una futura modificación de la tasa no altera los
-documentos ya emitidos. Un recibo simplemente no imprime ese desglose, pero lo tiene.
+No hay descuento por línea: el descuento se aplica al total de la venta (`ventas.descuento`),
+nunca por plato. La columna `descuento` valía siempre 0 y se retiró el 19/09.
 
-### Cálculo del impuesto (precio sin impuesto)
+Índice único `uq_detalle_venta_producto (venta_id, producto_id)`: **un plato, una sola
+línea por venta**. Por eso cobrar un pedido agrupa antes las líneas del mismo plato. Como
+empieza por `venta_id`, también sirve de índice para leer el detalle de una venta.
 
-El `precio_venta` del producto es la **base imponible**: el impuesto se agrega al calcular
-el total de la venta, no está contenido en el precio. `sp_recalcular_venta` aplica:
+El trigger `trg_venta_detalle_before_insert` copia `impuesto_incluido` de la venta,
+`afecto_impuesto` del plato y la tasa de `configuracion.tasa_impuesto` (un valor vacío
+cuenta como 0). Lo hace **siempre**: una tasa que venga en el `INSERT` no manda. Así una
+futura modificación de la tasa no altera los documentos ya emitidos, y un `INSERT` a mano no
+puede poner cualquier tasa.
+
+### Cálculo del impuesto
+
+Lo gobierna `configuracion.precios_incluyen_impuesto`, y cada venta guarda el modo con el que
+se registró en `ventas.impuesto_incluido`.
+
+**Impuesto encima del precio** (`precios_incluyen_impuesto = '0'`, el valor sembrado): el
+`precio_venta` del plato es la **base imponible** y el impuesto se agrega al total.
 
 ```
 -- por línea (columnas generadas en venta_detalle)
-importe        = ROUND(cantidad × precio_unitario − descuento, 2)
-impuesto_linea = ROUND(importe × tasa_impuesto, 2)     -- 0 si el producto es inafecto
+importe        = ROUND(cantidad × precio_unitario, 2)
+impuesto_linea = ROUND(importe × tasa_impuesto, 2)       -- 0 si el plato es inafecto
 total_linea    = importe + impuesto_linea
 
 -- por venta (sp_recalcular_venta)
-subtotal = Σ importe                                   (base, sin impuesto)
-factor   = (subtotal − descuento) / subtotal           (prorrateo del descuento)
-impuesto = ROUND(Σ impuesto_linea × factor, 2)
-total    = ROUND(subtotal − descuento + impuesto, 2)
+subtotal = Σ importe
+impuesto = ROUND(Σ impuesto_linea × (subtotal − descuento) / subtotal, 2)
+total    = subtotal − descuento + impuesto              -- columna generada
 ```
 
-Notas:
-
-- El impuesto se calcula y se **guarda línea por línea**, que es el desglose que exige la
-  factura; el total de la venta es la suma de esas líneas ajustada por el descuento.
-- El descuento de cabecera se **prorratea**, de modo que un producto exonerado no absorbe
-  impuesto que no le corresponde.
-- El procedimiento rechaza con `SIGNAL` un descuento mayor al subtotal.
-- La tasa se lee de `configuracion.tasa_impuesto` (0.1800 por defecto), y
-  `configuracion.precio_incluye_impuesto = '0'` documenta este criterio para la aplicación.
-- Consecuencia para el POS: el precio mostrado al cliente en el ticket es
-  `precio_venta × (1 + tasa)` para los productos afectos. Si la etiqueta del estante debe
-  mostrar el precio final, la interfaz es la responsable de calcularlo; la base guarda
-  siempre el valor sin impuesto.
-
-**Precios de ejemplo.** Los 12 productos de `02_datos_iniciales.sql` se cargaron con la
-base derivada de un precio de estante redondo:
+**Impuesto incluido en el precio** (`precios_incluyen_impuesto = '1'`): el precio de la carta
+ya trae el impuesto, que se calcula "por dentro".
 
 ```
-precio_venta = ROUND(precio_estante / 1.13, 2)      -- ej: 4.50 → 3.98
-precio_estante = ROUND(precio_venta * 1.13, 2)      -- ej: 3.98 → 4.50
+-- por línea
+cobrado        = ROUND(cantidad × precio_unitario, 2)
+impuesto_linea = ROUND(cobrado × tasa / (1 + tasa), 2)
+importe        = cobrado − impuesto_linea                -- la base
+total_linea    = cobrado
+
+-- por venta: el descuento se da sobre el precio final (descuento_precio_final)
+impuesto  = ROUND(Σ impuesto_linea × (Σ total_linea − descuento_precio_final) / Σ total_linea, 2)
+descuento = descuento_precio_final − Σ impuesto_linea + impuesto   -- la parte que baja la base
+total     = Σ total_linea − descuento_precio_final
 ```
 
-La tasa es la del IVA boliviano, 13 %. Hasta septiembre de 2026 la semilla traía el 18 % del
-IGV peruano y las bases estaban calculadas para esa tasa; se recalcularon para que los
-precios de estante sigan siendo los mismos.
+En los dos modos las columnas de `ventas` guardan lo mismo (base, descuento sobre la base,
+impuesto), así que los reportes y las vistas no necesitan saber con qué modo se vendió. El
+procedimiento rechaza con `SIGNAL` un descuento mayor que el subtotal (o que el total, en el
+modo incluido).
 
-| Producto | Base (`precio_venta`) | Estante (c/imp.) |
-|----------|----------------------:|-----------------:|
-| Arroz extra 1 kg | 3.98 | 4.50 |
-| Aceite vegetal 1 L | 7.26 | 8.20 |
-| Azúcar rubia 1 kg | 3.72 | 4.20 |
-| Leche evaporada 400 g | 3.54 | 4.00 |
-| Gaseosa 1.5 L | 5.75 | 6.50 |
-| Agua mineral 625 ml | 1.33 | 1.50 |
-| Detergente 1 kg | 9.65 | 10.90 |
-| Lejía 1 L | 3.10 | 3.50 |
-| Jabón de tocador | 2.48 | 2.80 |
-| Papel higiénico x4 | 5.75 | 6.50 |
-| Galletas surtidas | 1.06 | 1.20 |
-| Chocolate barra 40 g | 2.21 | 2.50 |
+**Precios de ejemplo.** Los 12 platos de `02_datos_iniciales.sql` se cargaron con la base
+derivada de un precio de carta redondo, con el IVA boliviano del 13 %:
 
-> **Límite del redondeo.** No todo precio de estante es alcanzable con una base de dos
-> decimales: 3.00 y 5.00 no lo son con tasa 13% (`5.00/1.13 = 4.4247…`, y 4.42 da 4.99
-> mientras 4.43 da 5.01). Cada céntimo de base mueve el precio final 1,13 céntimos, así que
-> algunos precios quedan salteados. Además, como el
-> impuesto se calcula sobre el importe de la línea y no sobre el precio unitario, en
-> cantidades altas aparece una diferencia de céntimos frente a `cantidad × precio_estante`
-> (3 arroz + 2 gaseosas: base 23.44 + impuesto 3.05 = 26.49 en vez de 26.50). Es inherente a operar con precios netos,
-> no un defecto del cálculo. Si el negocio exige que el ticket coincida exactamente con la
-> suma de los precios de estante, la alternativa es volver al esquema de precio con
-> impuesto incluido.
+```
+precio_venta = ROUND(precio_carta / 1.13, 2)      -- ej: 4.50 → 3.98
+precio_carta = ROUND(precio_venta * 1.13, 2)      -- ej: 3.98 → 4.50
+```
 
-### `movimientos_inventario` (kardex)
+| Código | Plato | Sección | Base (`precio_venta`) | Carta (c/imp.) |
+|--------|-------|---------|----------------------:|---------------:|
+| P-0001 | Pollo a la parrilla | Platos de fondo | 3.98 | 4.50 |
+| P-0002 | Jugo de frutas | Bebidas | 7.26 | 8.20 |
+| P-0003 | Papas fritas | Entradas | 3.72 | 4.20 |
+| P-0004 | Milanesa de pollo | Platos de fondo | 3.54 | 4.00 |
+| P-0005 | Refresco de la casa | Bebidas | 5.75 | 6.50 |
+| P-0006 | Mocochinchi | Bebidas | 1.33 | 1.50 |
+| P-0007 | Lomo a la plancha | Platos de fondo | 9.65 | 10.90 |
+| P-0008 | Helado de canela | Postres | 3.10 | 3.50 |
+| P-0009 | Empanada de queso | Entradas | 2.48 | 2.80 |
+| P-0010 | Pique macho | Platos de fondo | 5.75 | 6.50 |
+| P-0011 | Pan al ajo | Entradas | 1.06 | 1.20 |
+| P-0012 | Flan de vainilla | Postres | 2.21 | 2.50 |
 
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `tipo` | ENUM | `ENTRADA`, `SALIDA`, `AJUSTE` |
-| `origen` | ENUM | `VENTA`, `COMPRA`, `DEVOLUCION`, `DEVOLUCION_COMPRA`, `ANULACION`, `AJUSTE`, `INICIAL` |
-| `venta_id` | BIGINT FK | Documento de origen para `VENTA` y `ANULACION` |
-| `devolucion_id` | BIGINT FK | Documento de origen para `DEVOLUCION` (la del cliente) |
-| `proveedor_id` | INT FK | Proveedor del ingreso, para `COMPRA` y `DEVOLUCION_COMPRA` |
-| `compra_id` | INT FK | Cabecera de la compra, para `COMPRA` cuando vino de una factura |
-| `devolucion_compra_id` | INT FK | Documento de origen para `DEVOLUCION_COMPRA` (la que va al proveedor) |
-| `documento_externo` | VARCHAR(30) | Guía o factura del proveedor, para `COMPRA`; nota de crédito para `DEVOLUCION_COMPRA` |
-| `cantidad` | DECIMAL(12,3) | Siempre positiva; el signo lo da `tipo` |
-| `stock_anterior` / `stock_resultante` | DECIMAL(12,3) | Saldo antes y después: permite auditar cualquier descuadre |
+> Son precios de demostración: se heredaron de la semilla anterior con otros nombres, y no
+> pretenden ser los de una carta real.
+
+> **Límite del redondeo.** No todo precio de carta es alcanzable con una base de dos
+> decimales: 5.00 no lo es con tasa 13 % (`5.00/1.13 = 4.4247…`, y 4.42 da 4.99 mientras
+> 4.43 da 5.01). Además, como el impuesto se calcula sobre el importe de la línea y no sobre
+> el precio unitario, en cantidades altas aparece una diferencia de céntimos frente a
+> `cantidad × precio_carta`: 3 Pollo a la parrilla + 2 Refresco de la casa dan base 23.44 +
+> impuesto 3.05 = **26.49**, en vez de 26.50. Es inherente a operar con precios netos. Si el
+> negocio exige que el ticket coincida exactamente con la carta, la solución es
+> `precios_incluyen_impuesto = '1'`.
 
 ### `sesiones_caja`
 
-Registra el turno completo. La columna generada `caja_abierta_uk` más un índice único
-garantizan a nivel de base de datos que **una caja no puede tener dos sesiones abiertas**.
+| Columna | Descripción |
+|---------|-------------|
+| `caja_id`, `usuario_apertura_id`, `usuario_cierre_id` | Caja física, quién abrió y quién cerró el turno |
+| `fecha_apertura`, `fecha_cierre` | Duración del turno |
+| `monto_inicial` | Efectivo con el que arranca (`CHECK >= 0`) |
+| `monto_esperado` | Calculado por `sp_cerrar_caja` al cerrar |
+| `monto_declarado` | Efectivo contado |
+| `fondo_dejado` | Lo que queda en el cajón para el siguiente turno |
+| `diferencia` | **Columna generada**: `monto_declarado − monto_esperado` |
+| `estado` | `ABIERTA` o `CERRADA` |
+| `observacion`, `observacion_cierre` | Nota de apertura y nota de cierre (explica la diferencia), en columnas separadas |
+| `caja_abierta_uk` | Generada: `caja_id` si está abierta → `uq_sesion_caja_abierta`: **una caja no tiene dos turnos abiertos** |
+| `usuario_abierta_uk` | Generada: `usuario_apertura_id` si está abierta → `uq_sesion_usuario_abierta`: **un cajero no tiene dos turnos abiertos**, en dos cajas a la vez |
+
+Sin triggers (`LOGICA_EN_PHP`), estos `CHECK` son la única guarda de un turno coherente:
+
+```sql
+-- abierta es no tener fecha de cierre
+CONSTRAINT ck_sesion_cierre  CHECK ((estado = 'ABIERTA') = (fecha_cierre IS NULL)),
+-- cerrada es tener quién cerró y el arqueo firmado
+CONSTRAINT ck_sesion_cerrada CHECK (estado <> 'CERRADA' OR (usuario_cierre_id IS NOT NULL
+                                    AND monto_esperado IS NOT NULL AND monto_declarado IS NOT NULL)),
+-- lo que queda en el cajón sale de lo contado: ni negativo ni más
+CONSTRAINT ck_sesion_fondo   CHECK (fondo_dejado IS NULL OR (fondo_dejado >= 0 AND fondo_dejado <= monto_declarado))
+```
+
 Al cerrar, `sp_cerrar_caja` calcula:
 
 ```
 monto_esperado = monto_inicial
-               + ventas cobradas en métodos que afectan la caja (el importe de la venta,
-                 no lo que entregó el cliente: el vuelto ya salió del cajón)
+               + pagos de ventas no anuladas del turno, en métodos con afecta_caja = 1
+                 (el importe aplicado a la venta, no lo que entregó el cliente:
+                  el vuelto ya salió del cajón)
                + ingresos de efectivo
                − egresos de efectivo
-               − devoluciones pagadas en el turno
 
 diferencia     = monto_declarado − monto_esperado
 ```
+
+**No hay devoluciones que restar**: una venta mal cobrada se anula, y su efectivo deja de
+contarse arriba (`v.estado <> 'ANULADA'`). Solo `EFECTIVO` afecta la caja en los métodos
+sembrados; tarjeta, billetera, transferencia y QR caen en la cuenta del banco.
+
+### `cobros_qr`
+
+El cobro por QR se genera contra el **carrito**, antes de que exista la venta: por eso
+`venta_id` es `NULL` hasta que el pago se confirma. Si colgara de la venta habría que
+registrarla primero, y una venta creada antes de cobrar ya emitió su comprobante y entró al
+arqueo; si el cliente no paga, quedaría una venta fantasma. Estados `PENDIENTE`, `PAGADO`,
+`EXPIRADO`, `ANULADO`; `ck_cobros_qr_pagado` exige que un cobro `PAGADO` tenga `pagado_en` y
+`confirmado_por` (`PASARELA` o `MANUAL`: confirmar a mano es legítimo, pero queda con nombre).
+`ck_cobros_qr_venta (venta_id IS NULL OR estado = 'PAGADO')`: solo un cobro pagado respalda
+una venta. `ck_cobros_qr_manual (confirmado_por <> 'MANUAL' OR confirmado_por_id IS NOT NULL)`:
+lo confirmado a mano dice quién lo confirmó.
+`uq_cobro_externo (pasarela, id_externo)` impide que el mismo cobro del banco quede registrado
+dos veces.
+
+### `configuracion`
+
+Clave y valor, todo como texto. Donde el tipo importa, un `CHECK` por clave lo exige, para que
+un valor mal escrito a mano (o por un script) no llegue a los cálculos:
+
+| `CHECK` | Clave | Exige |
+|---------|-------|-------|
+| `ck_config_banderas` | `precios_incluyen_impuesto`, `exigir_referencia_pago` | `'0'` o `'1'` |
+| `ck_config_tasa` | `tasa_impuesto` | Fracción entre 0 y 1 (`0.13` es el 13 %) |
+| `ck_config_hora` | `hora_corte_jornada` | Entero de 0 a 12 |
+| `ck_config_descuento` | `descuento_max_cajero` | Entero de 0 a 100 |
+| `ck_config_dias` | `dias_max_sustitucion` | Entero no negativo, hasta tres cifras |
+| `ck_config_egreso` | `egreso_max_cajero` | Importe no negativo, hasta dos decimales |
+| `ck_config_moneda` | `moneda_codigo` | Código ISO de tres letras mayúsculas (`BOB`): es lo que se congela en cada comprobante |
+
+Las series de los comprobantes ya no viven aquí (ver `tipos_comprobante`), ni el símbolo de
+la moneda, que sale del código (`Config::simbolo`). Los procedimientos y el trigger leen la
+configuración con `NULLIF(valor, '')`: un valor **vacío** cuenta como ausente y toma el valor
+por omisión, igual que en PHP.
 
 ## 3.6 Reglas de negocio implementadas en la base de datos
 
 | Regla | Implementación | Historia |
 |-------|----------------|----------|
-| El stock se descuenta al confirmar la venta | Trigger `trg_venta_detalle_after_insert` | HU-17 |
-| No se puede vender sin stock suficiente | El mismo trigger lanza `SIGNAL SQLSTATE '45000'` | HU-18 |
-| Toda salida de stock queda registrada | El trigger inserta en `movimientos_inventario` con `stock_anterior` y `stock_resultante` | HU-17, HU-21 |
-| Un movimiento de stock no puede apuntar a un documento inexistente | FK por origen (`venta_id`, `devolucion_id`, `proveedor_id`) + `ck_movinv_origen` | HU-19, HU-21 |
-| Un ajuste de inventario siempre lleva motivo | `CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)` | HU-20 |
 | Un empleado cesado o suspendido pierde el acceso al sistema | Trigger `trg_empleados_after_update` desactiva su usuario | HU-44 |
 | Un empleado no puede tener dos cuentas | `UNIQUE KEY uq_usuarios_empleado (empleado_id)` | HU-44 |
 | Un cese exige fecha, y una fecha de cese exige estado cesado | `CHECK ck_empleados_cese` y `ck_empleados_fechas` | HU-44 |
-| Correlativo sin saltos ni duplicados | `sp_siguiente_comprobante` con `SELECT ... FOR UPDATE` + índice único `(serie_id, numero)` | HU-13 |
-| La devolución reingresa el stock | Trigger `trg_devolucion_detalle_after_insert` | HU-30 |
-| No se puede devolver más de lo vendido | `CHECK (cantidad_devuelta <= cantidad)` en `venta_detalle` | HU-30 |
-| La anulación revierte stock y dinero | `sp_anular_venta` (además escribe en `auditoria`) | HU-29 |
+| A un pedido cerrado o cancelado no se le agregan platos | Trigger `trg_pedido_detalle_before_insert` | HU-55, HU-60 |
+| El número del pedido no se repite en la jornada y empieza en 1 | `UNIQUE KEY uq_pedido_numero_dia (jornada, numero_dia)` + `CHECK ck_pedidos_numero` | HU-50, HU-59 |
+| Un pedido tiene una sola venta vigente (se cobra una sola vez) | Columna generada `ventas.pedido_cobrado_uk` + `UNIQUE KEY uq_venta_pedido_cobrado` | HU-49 |
+| Un pedido abierto no tiene fecha de cierre, y uno cerrado o cancelado sí | `CHECK ck_pedidos_cierre` | HU-49, HU-60 |
+| Las porciones de un pedido son enteras | `CHECK ck_pedidodet_entera` | HU-49 |
+| Cancelar un pedido exige motivo | `CHECK ck_pedidos_cancel` | HU-60 |
+| Los pedidos no se borran | Trigger `trg_pedidos_before_delete` bloquea el `DELETE` | HU-60, RNF6 |
+| Una venta solo entra en un turno de caja abierto | Trigger `trg_ventas_before_insert` | HU-28 |
+| Una sola sesión abierta por caja, y una sola por cajero | Columnas generadas + `uq_sesion_caja_abierta` y `uq_sesion_usuario_abierta` | HU-25, HU-28 |
+| Un turno cerrado tiene fecha, quién lo cerró y su arqueo; el fondo que queda no supera lo contado | `CHECK ck_sesion_cierre`, `ck_sesion_cerrada` y `ck_sesion_fondo` | HU-27 |
+| Correlativo sin saltos ni duplicados | `sp_siguiente_comprobante` con `SELECT ... FOR UPDATE` + `uq_comprobante_numero (serie_id, numero)` | HU-13 |
+| Un plato ocupa una sola línea por venta | `UNIQUE KEY uq_detalle_venta_producto` | HU-08, HU-49 |
+| Importes siempre consistentes | Columnas generadas `importe`, `impuesto_linea`, `total_linea`, `total`, `vuelto`, `diferencia` | HU-10 |
+| El impuesto se suma encima o va incluido, según la configuración | `sp_recalcular_venta` | HU-10, HU-35 |
+| El descuento no puede superar el subtotal | `SIGNAL` en `sp_recalcular_venta` + `CHECK ck_ventas_montos` | HU-15 |
+| Lo pagado tiene que sumar el total antes de emitir el comprobante | `trg_comprobantes_before_insert` | HU-11, HU-13 |
+| La anulación marca la venta y su comprobante, sin perder el correlativo | `sp_anular_venta` (además escribe en `auditoria`) | HU-29 |
+| **Anular una venta exige que su turno de caja siga abierto**: ese dinero ya se contó en su arqueo | `SIGNAL` en `sp_anular_venta`, con el turno bloqueado (`FOR SHARE`) | HU-29 |
+| Una venta anulada tiene cuándo, quién y por qué; una completada no tiene nada de eso | `CHECK ck_ventas_anulacion` | HU-29 |
+| El descuento sobre el precio final solo existe con el impuesto incluido | `CHECK ck_ventas_precio_final` | HU-15, HU-35 |
+| Un comprobante anulado o sustituido tiene su fecha, y solo él | `CHECK ck_comprobante_anulado` y `ck_comprobante_sustituido` | HU-29, HU-42 |
 | Las ventas no se borran | Trigger `trg_ventas_before_delete` bloquea el `DELETE` | RNF6 |
-| Una sola caja abierta por punto de venta | Columna generada + índice único `uq_sesion_caja_abierta` | HU-25, HU-28 |
-| Importes siempre consistentes | Columnas generadas `importe` en detalle de venta y de devolución | HU-10 |
-| El impuesto se agrega sobre el precio (no está incluido) | `sp_recalcular_venta`: `total = subtotal − descuento + impuesto` | HU-10, HU-35 |
-| El descuento no puede superar el subtotal | `SIGNAL` en `sp_recalcular_venta` | HU-15 |
-| Un cliente natural no puede tener RUC ni razón social, y uno jurídico no puede quedarse sin RUC ni dirección | `CHECK ck_clientes_natural` y `ck_clientes_juridica` | HU-39 |
-| **La factura solo se emite a persona jurídica y el recibo a persona natural** | Trigger `trg_comprobantes_before_insert` contra `tipos_comprobante.aplica_persona` | HU-40 |
-| Una venta no puede tener dos comprobantes **vigentes** | Columna generada `venta_vigente_uk` + índice único `uq_comprobante_vigente` | HU-40, HU-42 |
-| Un comprobante sustituido conserva su número y no se reutiliza | `sp_sustituir_comprobante` toma un correlativo nuevo y marca el anterior `SUSTITUIDO` | HU-42 |
+| Lo documentado no se borra: comprobantes, detalle y pagos de la venta, platos del pedido | Triggers `trg_comprobantes_before_delete`, `trg_venta_detalle_before_delete`, `trg_venta_pagos_before_delete`, `trg_pedido_detalle_before_delete` | RNF6 |
+| Una venta anulada o con comprobante no admite más líneas ni pagos | `trg_venta_detalle_before_insert` y `trg_venta_pagos_before_insert` | RNF6 |
+| Un turno cerrado no admite movimientos ni cobros QR, y el efectivo contado no es negativo | `trg_movimientos_caja_before_insert`, `trg_cobros_qr_before_insert` + `CHECK ck_sesion_declarado` | HU-24 |
+| El número impreso del comprobante nunca se corta ni se repite | `CHECK ck_series_longitud`, `ck_series_serie`, `ck_series_tope` | HU-40 |
+| Un comprobante se sustituye una sola vez | `UNIQUE KEY uq_comprobante_sustituye` | HU-42 |
+| Pedido cerrado ⇔ tiene quién lo cerró | `CHECK ck_pedidos_cerrador` | HU-49 |
+| «Sin documento» no lleva número | `CHECK ck_clientes_sin_doc` | HU-11 |
+| Los datos del negocio caben en el comprobante | `CHECK ck_config_largo` | HU-35 |
+| Un cliente natural no puede tener razón social, y uno jurídico no puede quedarse sin NIT ni dirección | `CHECK ck_clientes_natural` y `ck_clientes_juridica` | HU-39 |
+| **La factura solo se emite a persona jurídica (o natural con NIT) y el recibo a persona natural** | Trigger `trg_comprobantes_before_insert` contra `tipos_comprobante.aplica_persona` | HU-40 |
+| La factura exige cliente identificado con documento | `exige_cliente` y `exige_documento` validados en el mismo trigger | HU-40 |
+| Una venta no puede tener dos comprobantes **vigentes** | Columna generada `venta_vigente_uk` + `uq_comprobante_vigente` | HU-40, HU-42 |
 | Solo se sustituye un documento vigente, de una venta completada y dentro del plazo | `SIGNAL` en `sp_sustituir_comprobante` + `configuracion.dias_max_sustitucion` | HU-42 |
-| Se puede vender y emitir recibo sin registrar al cliente | `ventas.cliente_id` nulo + `tipos_comprobante.exige_cliente = 0` | HU-43 |
-| La factura sí exige cliente identificado con documento | `exige_cliente` y `exige_documento` validados en el trigger | HU-40 |
-| La serie no puede contradecir al tipo de documento | **Estructural**: el comprobante solo guarda la serie, y el tipo se deriva de ella. Nada que validar | HU-13 |
-| Anular la venta anula su comprobante sin perder el correlativo | `sp_anular_venta` marca `comprobantes.estado = 'ANULADO'` | HU-29 |
-| El desglose de impuesto por línea se congela al vender | Trigger `trg_venta_detalle_before_insert` copia `afecto_impuesto` y `tasa_impuesto` | HU-40 |
+| Un comprobante sustituido conserva su número y no se reutiliza | `sp_sustituir_comprobante` toma un correlativo nuevo y marca el anterior `SUSTITUIDO` | HU-42 |
+| Se puede cobrar y emitir recibo sin registrar al cliente | `ventas.cliente_id` nulo + `tipos_comprobante.exige_cliente = 0` | HU-43 |
+| La serie no puede contradecir al tipo de documento | **Estructural**: el comprobante solo guarda la serie, y el tipo se deriva de ella | HU-13 |
+| La serie por omisión de un tipo es de ese tipo | FK compuesta `fk_tipocomp_serie` contra `series_comprobante (id, tipo_comprobante_id)` | HU-13 |
+| El comprobante se reimprime con los datos del negocio del día en que se emitió | `sp_emitir_comprobante` congela `emisor_*` | HU-40 |
+| El documento de identidad vale para ese tipo de persona (o para empleados) | FK compuestas contra `tipos_documento (codigo, aplica_*)` | HU-39, HU-44 |
+| El desglose de impuesto por línea se congela al vender, y un `INSERT` no puede imponer su tasa | Trigger `trg_venta_detalle_before_insert` | HU-40 |
+| Un cobro QR pagado dice cuándo y quién lo confirmó; solo uno pagado respalda una venta | `CHECK ck_cobros_qr_pagado`, `ck_cobros_qr_manual` y `ck_cobros_qr_venta` | HU-12 |
+| Los parámetros con tipo no admiten un valor mal escrito | `CHECK ck_config_*` por clave | HU-35 |
+| El detalle de una venta o de un pedido no se va con un `DELETE` de la cabecera | FK `ON DELETE RESTRICT` en `venta_detalle`, `venta_pagos` y `pedido_detalle` | RNF6 |
+
+### Reglas que viven en la aplicación
+
+No todo lo que el sistema exige puede expresarlo el motor. Estas reglas las aplica la
+aplicación, con la fila bloqueada dentro de la transacción:
+
+| Regla | Dónde |
+|-------|-------|
+| La venta de mostrador abre el pedido, carga sus líneas y lo cobra en una sola transacción | `Pedidos::venderEnMostrador()` |
+| El recorrido de estados de cocina y la prohibición de volver atrás | `PedidoDetalle::TRANSICIONES` |
+| Un pedido está `CERRADO` si y solo si tiene una venta `COMPLETADA` (son dos tablas: no cabe en un `CHECK`) | `Pedidos::cobrar()` lo cierra en la transacción de la venta; `Pedidos::reabrirTrasAnular()` lo reabre en la de la anulación |
+| Un plato solo se cancela mientras su pedido espera volver a cobrarse; de un pedido cobrado no se cancela nada | `Pedidos::actualizarEstadoLinea()` |
+| Cancelar un plato lo hace la caja (`pedidos.registrar`), no la cocina; si ya está `EN_PREPARACION`, exige además `ventas.anular` y un motivo | `Pedidos::actualizarEstadoLinea()` |
+| Cancelar el pedido de una venta anulada con platos que la cocina ya empezó, terminó o entregó exige `ventas.anular` | `Pedidos::cancelar()` |
+| Las cantidades son porciones enteras | `Ventas` y `Pedidos` (en `pedido_detalle`, además, `ck_pedidodet_entera`) |
+| Un pedido vacío, o con todo cancelado, no se cobra | `Pedidos::lineasAgrupadas()` |
+| Cobrar exige un turno de caja abierto del cajero | `Pedidos::cobrar()` (y, en la base, `trg_ventas_before_insert`) |
+| Lo que no pasa por la cocina copia la marca de su categoría al pedirse y queda `ENTREGADO` al cobrar | `Pedidos::agregarLinea()` y `Pedidos::cobrar()` |
+| Anular una venta de un turno ya cerrado se avisa con un mensaje propio antes de llegar a la base | `Ventas::anular()`; la última palabra es de `sp_anular_venta` (o de su gemelo en PHP) |
+| Anular la venta de un pedido lo deja para volver a cobrar, con su número y sus líneas | `Pedidos::reabrirTrasAnular()`, dentro de `Ventas::anular()` |
+| La jornada del pedido sale de la hora de corte | `Config::jornadaDe()`, al abrir el pedido |
+| El número de la jornada se toma con `FOR UPDATE` y se reintenta si choca | `Pedidos::abrir()` |
+| La comanda no repite lo que ya salió en papel y avisa una sola vez lo cancelado | `App\Services\Comandas` |
+| Cerrar la caja con pedidos para volver a cobrar exige confirmarlo | `Cajas::cerrar()` |
+
+### Dos vías para la misma lógica
+
+Las reglas de los procedimientos y los triggers tienen un gemelo en PHP,
+`App\Services\ReglasEnPhp`, que se activa con `LOGICA_EN_PHP=true` (`config/ventas.php`). Es
+para un hosting compartido que no deja crear procedimientos ni triggers (exige el privilegio
+`SUPER`). La vía por omisión (`false`) es la de la base, y es la que conviene para datos
+reales. Las dos vías corren la misma batería de pruebas para que no se separen. Con
+`LOGICA_EN_PHP=true` los triggers de pedidos no existen, así que la guarda de la aplicación
+—el pedido bloqueado antes de agregar una línea o de cobrarlo— es la única defensa. Los
+`CHECK`, las FK y los índices únicos sí existen en las dos vías: por eso los `CHECK` de
+coherencia de estados de ventas, turnos, comprobantes y cobros QR se agregaron a la base
+aunque la aplicación ya los respetara. Desde el 19/09 las dos vías también coinciden en que un
+valor vacío de `configuracion` cuenta como ausente.
 
 ### Flujo de una venta con su comprobante
 
-Todo dentro de una sola transacción:
+Todo dentro de una sola transacción, y **en este orden**: el trigger del comprobante exige que
+los pagos ya sumen el total.
 
 ```sql
 START TRANSACTION;
 
--- 1. cabecera de la venta (sin número de documento todavía)
-INSERT INTO ventas (cliente_id, usuario_id, sesion_caja_id) VALUES (?, ?, ?);
+-- 1. cabecera (el trigger exige que el turno de caja esté abierto);
+--    pedido_id es el pedido que se cobra, o NULL
+INSERT INTO ventas (cliente_id, usuario_id, sesion_caja_id, pedido_id) VALUES (?, ?, ?, ?);
 SET @venta = LAST_INSERT_ID();
 
--- 2. líneas: descuentan stock, escriben el kardex y congelan la tasa de impuesto
-INSERT INTO venta_detalle (venta_id, producto_id, descripcion, cantidad, precio_unitario) ...;
+-- 2. líneas: el trigger congela el régimen y la tasa de impuesto
+INSERT INTO venta_detalle (venta_id, producto_id, descripcion, cantidad, precio_unitario) VALUES ...;
 
 -- 3. totales
 CALL sp_recalcular_venta(@venta);
 
--- 4. documento: basta la serie — F001 emite FACTURA, R001 emite RECIBO
-CALL sp_emitir_comprobante(@venta, @serie, @comprobante_id, @numero);
+-- 4. cobro (vuelto es columna generada: no se inserta)
+INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto, monto_recibido) ...;
 
--- 5. cobro
-INSERT INTO venta_pagos (venta_id, metodo_pago_id, monto, monto_recibido, vuelto) ...;
+-- 5. documento: basta la serie — F001 emite FACTURA, R001 emite RECIBO
+CALL sp_emitir_comprobante(@venta, @serie, @comprobante_id, @numero);
 
 COMMIT;
 ```
 
-> **Restricción de MySQL que hay que respetar en el paso 2.** El trigger que descuenta el
-> stock actualiza `productos`, y MySQL prohíbe que un trigger modifique una tabla que la
-> sentencia invocante está leyendo (error 1442). Por eso el detalle se inserta con
-> `VALUES`, **nunca** con `INSERT INTO venta_detalle ... SELECT ... FROM productos`, que es
-> lo primero que uno intenta escribir. En la práctica no estorba: la aplicación ya tiene el
-> precio y el nombre en el carrito. Verificado contra MySQL 8.0.46.
+Si el cliente no corresponde al tipo de documento, o los pagos no suman el total, el trigger
+aborta y el `ROLLBACK` deja la base sin rastro: no se consume el correlativo.
 
-El paso 4 es el único que toca `comprobantes`. `sp_emitir_comprobante` valida el estado de
-la venta, comprueba que no tenga ya un documento, toma el correlativo con bloqueo de fila y
-copia los datos del cliente y los importes. Si el cliente no corresponde al tipo de
-documento (por ejemplo, factura a una persona natural), el trigger aborta y el `ROLLBACK`
-deja la base sin rastro: no se consume el correlativo ni se descuenta el stock.
+**Cómo elige el cobro el documento:** por el `tipo_persona` del cliente seleccionado.
+Persona jurídica → factura; persona natural o cobro sin cliente → recibo. Cada uno con la
+serie por omisión de su tipo (`tipos_comprobante.serie_por_omision_id`). La base de datos no
+adivina: valida.
 
-**Cómo elige el POS el documento:** por el `tipo_persona` del cliente seleccionado.
-Persona jurídica → factura (serie de `configuracion.serie_factura`); persona natural o venta
-sin cliente → recibo (`configuracion.serie_recibo`). La base de datos no adivina: valida.
+### Flujo de una venta de mostrador
+
+La venta del punto de venta **no** tiene procedimiento propio:
+`App\Services\Pedidos::venderEnMostrador()` abre el pedido, le carga las líneas y lo cobra
+con `Pedidos::cobrar()`, que lo traduce a la venta de arriba. Todo en **una** transacción:
+
+```
+START TRANSACTION
+ 1. jornada = fecha de ahora − hora_corte_jornada horas
+    SELECT COALESCE(MAX(numero_dia), 0) + 1 FROM pedidos WHERE jornada = ? FOR UPDATE
+    INSERT INTO pedidos (tipo, jornada, numero_dia, ..., estado = 'ABIERTO')
+                                                       -- uq_pedido_numero_dia remata
+ 2. por cada plato: INSERT INTO pedido_detalle          -- copia nombre, precio y
+                                                       -- pasa_por_cocina; nota; PENDIENTE
+ 3. Pedidos::cobrar():
+    SELECT ... FROM pedidos WHERE id = ? FOR UPDATE
+    ¿sigue ABIERTO?  si no: "ya se cobró" / "está cancelado"
+    líneas no CANCELADO, agrupadas por producto:
+        cantidad        = Σ cantidad
+        precio_unitario = ROUND(Σ importe / Σ cantidad, 2)   -- lo pedido, no la carta de hoy
+    Ventas::registrar(..., pedido_id = ?)                  -- el flujo de la venta, completo;
+                                                       -- uq_venta_pedido_cobrado remata
+    UPDATE pedidos SET estado = 'CERRADO',
+                       fecha_cierre = NOW(), cerrado_por = ?
+    UPDATE pedido_detalle SET estado_cocina = 'ENTREGADO'
+     WHERE pasa_por_cocina = 0 AND estado_cocina = 'PENDIENTE' -- la bebida sale con el ticket
+ 4. auditoria: PEDIDO_ABIERTO, PEDIDO_COBRADO
+COMMIT
+```
+
+Si algo falla, el `ROLLBACK` no deja nada: ni venta, ni pedido en la cocina, ni número de la
+jornada gastado. Ante un deadlock se reintenta entero. El comprobante impreso de esa venta
+lleva `PEDIDO #7` y `COMER AQUÍ` o `PARA LLEVAR`, leyendo el pedido de `ventas.pedido_id`.
+
+**Al anular.** `Ventas::anular()` llama a `sp_anular_venta` (o a su gemelo en PHP) y, en la
+misma transacción, `Pedidos::reabrirTrasAnular()` deja el pedido para volver a cobrarlo:
+
+```sql
+UPDATE pedidos SET estado = 'ABIERTO',
+                   fecha_cierre = NULL, cerrado_por = NULL    -- todo junto, por el CHECK
+ WHERE id = ?;                                               -- el pedido_id de la venta anulada
+-- auditoria: PEDIDO_REABIERTO (anota la venta anulada)
+```
+
+La venta anulada **conserva** su `pedido_id`: de qué pedido era sigue escrito, y como ya no
+está `COMPLETADA` deja libre `uq_venta_pedido_cobrado`. El pedido conserva su número y sus
+líneas, sigue en la cocina y se vuelve a cobrar con `Pedidos::cobrar()` —el mismo paso 3 de
+arriba, con una venta nueva que apunta al mismo pedido— o se cancela con su motivo.
 
 ## 3.7 Vistas para reportes
 
+Solo las que el sistema usa: son la definición oficial de cada cifra de los reportes, y las
+pruebas (`ReportesTest`) las comparan con lo que calcula PHP.
+
 | Vista | Entrega | Historia |
 |-------|---------|----------|
-| `v_empleados` | Persona, cargo, vínculo laboral, cuenta y rol de acceso en una sola fila | HU-02, HU-44 |
-| `v_alertas_stock` | Productos en o bajo el stock mínimo, con el faltante a reponer | HU-22 |
-| `v_ventas_por_dia` | Cantidad de ventas, monto y ticket promedio por día (excluye anuladas) | HU-31, HU-32 |
-| `v_productos_mas_vendidos` | Unidades netas vendidas, monto y margen estimado por producto | HU-33 |
-| `v_kardex` | Historial legible de movimientos por producto con usuario y documento | HU-21 |
-| `v_ventas_por_metodo_pago` | Recaudación diaria por método de pago | HU-27, HU-32 |
-| `v_ventas_comprobante` | Cada venta con su documento (número, tipo, estado) y el cliente | HU-32, HU-40 |
-| `v_comprobantes_emitidos` | Facturación diaria por tipo de documento y tipo de persona | HU-32, HU-40 |
-| `v_comprobantes_sustituidos` | Cadena de sustituciones: documento anterior, nuevo, motivo y usuario | HU-42, HU-36 |
+| `v_ventas_por_dia` | Cantidad de ventas, monto y ticket promedio por **jornada** (excluye anuladas): la fecha menos `configuracion.hora_corte_jornada` horas (5 si no está), la misma cuenta que numera los pedidos. La columna se sigue llamando `dia` | HU-31, HU-32 |
+| `v_productos_mas_vendidos` | Porciones vendidas y monto neto por plato, con su sección de la carta; el descuento de cabecera se reparte entre las líneas. Sin margen: no hay costo | HU-33 |
+| `v_ventas_por_metodo_pago` | Recaudación diaria por método de pago (excluye anuladas) | HU-27, HU-32 |
+
+`v_empleados`, `v_ventas_comprobante`, `v_comprobantes_sustituidos` y
+`v_comprobantes_emitidos` se retiraron el 19/09: ninguna pantalla las leía.
 
 ## 3.8 Estrategia de índices
 
-- **Búsqueda en el POS (HU-06):** `uq_productos_codigo`, `uq_productos_barras`,
-  `ix_productos_nombre`, `ix_productos_activo`. Para catálogos grandes se recomienda
-  agregar un índice `FULLTEXT (nombre, descripcion)`.
+- **Búsqueda en el mostrador (HU-06):** `uq_productos_codigo`,
+  `ix_productos_nombre`, `ix_productos_activo` e `ix_productos_categoria`. La carta de un
+  restaurante son decenas de filas, no miles: no hace falta `FULLTEXT`.
+- **Volver a cobrar (HU-60, HU-61):** `ix_pedidos_estado (estado, fecha_apertura)` para
+  listar los pedidos `ABIERTO` en el punto de venta y en el cierre de caja.
+- **Pantalla de cocina (HU-48):** `ix_pedidodet_cocina (estado_cocina, creado_en)` — filtro
+  por estado y orden de llegada en una sola pasada; el recorte a la jornada en curso lo sirve
+  `uq_pedido_numero_dia`, que empieza por `jornada`.
+- **Número de la jornada (HU-50, HU-59):** `uq_pedido_numero_dia (jornada, numero_dia)` sirve
+  a la vez de garantía y de índice para el `MAX(numero_dia) ... FOR UPDATE` de la jornada.
 - **Reportes por período (HU-32):** `ix_ventas_fecha` e `ix_ventas_estado (estado, fecha)`.
-- **Trazabilidad inversa del kardex:** `ix_movinv_venta`, `ix_movinv_devolucion` e
-  `ix_movinv_proveedor` — desde un documento, todos los movimientos de stock que originó.
-- **Kardex (HU-21):** `ix_movinv_producto (producto_id, fecha)` — índice compuesto que
-  resuelve filtro y orden en una sola pasada.
 - **Cierre de caja (HU-27):** `ix_ventas_sesion` e `ix_movcaja_sesion`.
-- **Búsqueda de comprobantes:** `uq_comprobante_numero (serie_id, numero)` para ubicar una
-  factura por su número, `ix_comprobante_documento` para buscarla por el RUC/DNI del cliente
-  e `ix_comprobante_serie (serie_id, fecha_emision)` para el reporte de facturación del
-  período por tipo de documento (la serie lo determina).
+- **Búsqueda de comprobantes:** `uq_comprobante_numero (serie_id, numero)` para ubicar un
+  documento por su número, `ix_comprobante_documento` para buscarlo por el NIT/CI del cliente
+  e `ix_comprobante_serie (serie_id, fecha_emision)` para la facturación del período.
 - **Clientes:** `ix_clientes_persona` para listar naturales y jurídicos por separado, e
-  `ix_clientes_nombre` sobre la columna generada para la búsqueda en el POS.
-- **Detalle de venta:** `ix_detalle_venta` y `ix_detalle_producto` para el reporte de
-  productos más vendidos.
+  `ix_clientes_nombre` sobre la columna generada.
+- **Detalle de venta:** `uq_detalle_venta_producto (venta_id, producto_id)` —que empieza
+  por la venta y hace innecesario un índice aparte— e `ix_detalle_producto` para el reporte
+  de platos más vendidos.
+- **Pedido de una venta:** `ix_ventas_pedido` para encontrar las ventas de un pedido (la
+  anulada y la vigente); `uq_venta_pedido_cobrado` ubica la vigente.
+- **Bitácora:** `ix_auditoria_fecha (fecha, id)` para leerla de la más nueva a la más vieja,
+  e `ix_auditoria_accion (accion, fecha)` para filtrar por acción.
 
 ## 3.9 Cómo ejecutar los scripts
 
-La forma recomendada es Docker: levanta MySQL 8 con el esquema y los datos ya cargados,
-sin instalar nada en la máquina. Ver [04-entorno-docker.md](04-entorno-docker.md).
+La forma recomendada es Docker: levanta MySQL 8 con el esquema y los datos ya cargados, sin
+instalar nada en la máquina. Ver [04-entorno-docker.md](04-entorno-docker.md).
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.restaurante.yml up -d --build
 ```
 
 Sobre un MySQL ya instalado, los scripts se ejecutan directamente y en este orden:
 
 ```bash
-mysql -u root -p < docs/sql/01_schema_mysql.sql
+mysql --default-character-set=utf8mb4 -u root -p < docs/sql/01_schema_mysql.sql
 ```
 
 ```bash
-mysql -u root -p < docs/sql/02_datos_iniciales.sql
+mysql --default-character-set=utf8mb4 -u root -p < docs/sql/02_datos_iniciales.sql
 ```
 
 > `01_schema_mysql.sql` comienza con `DROP DATABASE IF EXISTS ventas_db`. Ejecutarlo sobre
 > una instalación con datos reales los elimina; usarlo solo para crear el entorno desde cero.
+> Para llevar una base existente al modelo actual se usan los parches (§3.11).
+>
+> `02_datos_iniciales.sql` trae datos de **demostración** (platos, clientes, cuentas de
+> prueba). Una instalación real usa `docs/sql/produccion/02_datos_base.sql`, que no trae
+> datos de ejemplo ni contraseñas.
 
-**Estado de verificación:** el esquema fue ejecutado y probado contra **MySQL 8.0.46** en el
-entorno Docker del proyecto. Se verificaron la creación de los 26+9+6+6 objetos, una venta
-completa con su comprobante y su kardex, la venta al paso, la sustitución de recibo por
-factura, la devolución parcial, la anulación, el cese de empleado y el arqueo de caja, más
-doce reglas negativas que el motor rechaza. El detalle está en
-[04-entorno-docker.md](04-entorno-docker.md) §4.4.
+**Estado de verificación:** el esquema no se verifica a mano sino con la batería de pruebas
+(`sistema-ventas/tests`), que corre contra una copia real en MySQL (`ventas_db_test`) y no
+contra SQLite, porque el modelo depende de columnas generadas, `ENUM`, triggers y
+procedimientos. Entre otras cosas comprueba que el esquema registre en `parches_aplicados`
+todos los parches de esquema que ya incorpora, que la base de producción
+(`docs/sql/produccion/`) no se quede atrás de la de desarrollo y que todos los parches fijen
+la codificación `utf8mb4`.
 
-Al final de `02_datos_iniciales.sql` hay un **ejemplo comentado de venta completa**
-(apertura de caja → correlativo → cabecera → detalle → recálculo → pago) que sirve para
-verificar que los triggers descuentan el stock y escriben el kardex correctamente.
+En la última parte de `02_datos_iniciales.sql` hay **ejemplos comentados** de venta con recibo, con
+factura, sin cliente, de sustitución de comprobante y de lo que el modelo rechaza.
 
 ## 3.10 Consideraciones de operación
 
-- **Transacciones:** la aplicación debe envolver la venta completa en
-  `START TRANSACTION … COMMIT`. Si un `SIGNAL` de stock insuficiente aborta el proceso, el
+- **Transacciones:** la aplicación envuelve la venta completa —y el pedido de mostrador,
+  que la incluye— en `START TRANSACTION … COMMIT`. Si un `SIGNAL` aborta el proceso, el
   `ROLLBACK` deja la base sin rastros parciales (RNF5).
 - **Nivel de aislamiento:** `REPEATABLE READ` (el de InnoDB por defecto) junto con los
-  `FOR UPDATE` de correlativos y stock es suficiente para el volumen esperado.
-- **Respaldo:** `mysqldump` diario con `--single-transaction --routines --triggers`
-  (RNF8); los `--routines --triggers` son necesarios porque parte de la lógica vive en la
-  base de datos.
-- **Crecimiento:** `ventas`, `venta_detalle` y `movimientos_inventario` son las tablas que
-  crecen. Con más de ~5 millones de filas conviene particionar por año sobre `fecha`.
-- **Zona horaria:** el servidor MySQL debe tener configurada la zona horaria del negocio,
-  ya que las fechas se toman con `CURRENT_TIMESTAMP`.
+  `FOR UPDATE` de correlativos, pedidos y turnos, y los índices únicos de §3.6, es suficiente
+  para el volumen de un restaurante.
+- **Respaldo:** `mysqldump` con `--single-transaction --routines --triggers` (RNF9); los
+  `--routines --triggers` son necesarios porque parte de la lógica vive en la base.
+- **Crecimiento:** `ventas`, `venta_detalle`, `pedido_detalle` y `auditoria` son las tablas
+  que crecen. Con más de ~5 millones de filas conviene particionar por año.
+- **Zona horaria:** el servidor MySQL y la aplicación deben tener la zona horaria del negocio
+  (el entorno Docker fija `-04:00` en MySQL y la aplicación usa `America/La_Paz`): varias
+  fechas se toman con `CURRENT_TIMESTAMP`, y la jornada del pedido (`jornada`) la calcula la
+  aplicación a partir de su propio reloj y de la hora de corte. Con las dos en la misma zona,
+  "hoy" significa lo mismo para la base y para el servicio.
+- **Hora de corte:** `configuracion.hora_corte_jornada` tiene que caer con el local cerrado
+  (5 por omisión). Cambiarla en plena noche no renumera nada: los pedidos ya abiertos
+  conservan su jornada, y los siguientes toman la nueva.
+
+## 3.11 Migrar una base del sistema anterior
+
+Una base creada con el `01_schema_mysql.sql` actual **ya es** el modelo de restaurante de
+mostrador: no necesita parches. Una instalación existente se pone al día con los parches de
+`docs/sql/parches/`, que se aplican en orden alfabético —que es el de fecha—:
+
+- una base del **punto de venta anterior** (el minimarket) necesita los seis del
+  **17/09/2026**, después los seis del **18/09/2026**, los seis del **19/09/2026** y el del
+  **20/09/2026**;
+- una base creada con el esquema del restaurante del 17/09 necesita los seis del 18/09, los
+  seis del 19/09 y el del 20/09;
+- una creada con el esquema del 18/09, los seis del 19/09 y el del 20/09;
+- una creada con el del 19/09, solo el del 20/09.
+
+| # | Parche | Qué hace | ¿Borra datos? |
+|:-:|--------|----------|:-------------:|
+| 1 | `2026_09_17_eliminar_inventario_y_devoluciones.sql` | Retira inventario, lotes, compras, devoluciones a proveedor, tomas de inventario, proveedores y devoluciones de cliente, con sus triggers, vistas y permisos; reescribe `sp_anular_venta` y `sp_cerrar_caja` sin stock ni devoluciones; elimina el rol Almacenero y pasa sus cuentas a Cajero | **Sí** |
+| 2 | `2026_09_17_mesas_y_pedidos.sql` | Crea `pedidos` y `pedido_detalle`, sus dos triggers, los permisos `pedidos.registrar` y `cocina.ver`, el rol Cocina y el cargo Cocinero. Crea además una estructura intermedia que deshacen los parches 11 y 12: sin efecto en una base del sistema de ventas | No |
+| 3 | `2026_09_17_numero_diario_de_pedido.sql` | Agrega `numero_dia`, la columna generada `fecha_dia` y `uq_pedido_numero_dia`; numera por día, en orden de apertura, los pedidos que ya existieran | No |
+| 4 | `2026_09_17_sin_codigo_de_barras.sql` | Quita `productos.codigo_barras` y `uq_productos_barras` | **Sí** |
+| 5 | `2026_09_17_sin_costo_de_compra.sql` | Rehace `v_productos_mas_vendidos` sin margen y quita `productos.precio_compra` y `venta_detalle.costo_unitario` | **Sí** |
+| 6 | `2026_09_17_sin_unidades_de_medida.sql` | Quita `productos.unidad_medida_id`, `venta_detalle.unidad` y la tabla `unidades_medida` | **Sí** |
+| 7 | `2026_09_18_comanda.sql` | Agrega `pedido_detalle.comandado_en` y `cancelacion_comandada_en`, en `NULL` para lo que ya existe: nunca salió en papel | No |
+| 8 | `2026_09_18_jornada_del_pedido.sql` | Agrega `configuracion.hora_corte_jornada` (5) y convierte `pedidos.fecha_dia` en la columna normal `jornada`, con el mismo valor que ya tenía cada fila; `uq_pedido_numero_dia` pasa a `(jornada, numero_dia)`. No renumera el historial | No |
+| 9 | `2026_09_18_pasa_por_cocina.sql` | Agrega `categorias.pasa_por_cocina` (en 0 para "Bebidas", solo la primera vez) y `pedido_detalle.pasa_por_cocina`, y alinea una sola vez lo ya pedido con su categoría | No |
+| 10 | `2026_09_18_permiso_del_menu.sql` | Solo el texto: el permiso `productos.gestionar` pasa al módulo "Menú" | No |
+| 11 | `2026_09_18_sin_mesas.sql` | Deja `pedidos.tipo` en `ENUM('LOCAL','LLEVAR')`, borra la estructura intermedia del parche 2 (una tabla, columnas, índices y un `CHECK` de `pedidos`), que en una base del sistema de ventas está vacía, y actualiza la descripción de `pedidos.registrar` | No |
+| 12 | `2026_09_18_sin_mozos.sql` | Deshace el rol y el cargo intermedios del parche 2: sin efecto en una base del sistema de ventas | No |
+| 13 | `2026_09_19_1_logica_igual_en_las_dos_vias.sql` | Iguala la base con PHP: las rutinas leen la configuración con `NULLIF(valor, '')` (un valor vacío cuenta como ausente) y `sp_anular_venta` rechaza anular una venta de un turno de caja cerrado. Solo reemplaza triggers y procedimientos | No |
+| 14 | `2026_09_19_2_la_venta_guarda_su_pedido.sql` | Agrega `ventas.pedido_id`, `pedido_cobrado_uk` y `uq_venta_pedido_cobrado`, y los llena desde `pedidos.venta_id` y, para las ventas anuladas que ya lo habían perdido, desde la bitácora (`PEDIDO_REABIERTO`); quita `pedidos.venta_id` (con `uq_pedido_venta`, `fk_pedidos_venta` y `ck_pedidos_venta`) y `pedidos.cliente_id`. Agrega los `CHECK` de coherencia de ventas, turnos, comprobantes, cobros QR y porciones enteras | No |
+| 15 | `2026_09_19_3_configuracion_y_limpieza.sql` | Crea `tipos_comprobante.serie_por_omision_id` con su FK compuesta, la llena con `serie_factura` y `serie_recibo` (la nota de venta, con su primera serie activa) y borra esas claves y `moneda_simbolo`; agrega los `CHECK` por clave de `configuracion`; quita `pedidos.telefono_cliente` y `comprobantes.archivo_pdf` (la aplicación nunca los llenó), cuatro vistas sin uso e `ix_detalle_venta`; el trigger del detalle copia siempre la tasa; `v_ventas_por_dia` agrupa por jornada; las FK del detalle a su cabecera pasan a `RESTRICT` | Dos columnas que la aplicación nunca llenó: solo se pierde algo si alguien las escribió a mano |
+| 16 | `2026_09_19_4_emisor_documentos_y_detalle.sql` | Agrega `comprobantes.emisor_*` y llena los ya emitidos con los datos del negocio **del día del parche**; quita `venta_detalle.descuento` y rehace `importe`, `impuesto_linea`, `total_linea` y `ck_detalle_precio`; crea `tipos_documento` y pasa `clientes.tipo_documento` y `empleados.tipo_documento` de `ENUM` a FK compuestas (los códigos no cambian); `comprobantes.cliente_tipo_documento` queda como texto sin FK | No |
+| 17 | `2026_09_19_5_identificadores_sin_tope.sql` | Pasa `cajas.id`, `roles.id` y `cargos.id` —y todo lo que los referencia— de `TINYINT` a `INT UNSIGNED`. Los datos no cambian | No |
+| 18 | `2026_09_19_6_sin_pantalla_de_respaldos.sql` | Quita el permiso `respaldos.gestionar` y su asignación a los roles: la pantalla de Respaldos ya no existe y el respaldo de cada noche corre por debajo | No |
+| 19 | `2026_09_20_1_lo_cerrado_no_se_toca.sql` | Lo que encontró la auditoría del 20/09: `comprobantes`, `venta_detalle`, `venta_pagos` y `pedido_detalle` no se borran; una venta anulada o con comprobante no admite más líneas ni pagos; un turno cerrado no admite movimientos ni cobros QR (triggers). `CHECK` nuevos: `ck_pedidos_cerrador`, `ck_sesion_declarado`, `ck_clientes_sin_doc`, `ck_series_longitud/serie/tope` (el número impreso ya no se corta), `ck_comprobante_persona` y `ck_config_largo`. `comprobantes.emitido_por` NOT NULL; `uq_comprobante_sustituye` (una sola sustitución); `ix_ventas_usuario (usuario_id, fecha)`; `metodos_pago.id` a `INT`; `v_ventas_por_metodo_pago` por jornada. Aborta sin tocar nada si algún dato no cumple | No |
+
+Los diecinueve son **idempotentes** —cada paso comprueba si queda algo por hacer— y se
+registran en `parches_aplicados`. Cuatro borran datos que no se recuperan (historial de
+compras, lotes, kardex y devoluciones; códigos de barras; costos; unidades): **hay que
+respaldar antes**. Los del 19/09 y el del 20/09 no borran datos del negocio, y cuatro de ellos (14, 15, 16 y 19)
+**comprueban antes de tocar nada** que ningún dato viole lo que agregan —los `CHECK` nuevos,
+las series de la configuración, un descuento por línea distinto de cero, un documento que no
+valga para ese cliente o empleado—: si algo falla, muestran qué y abortan sin cambiar nada, y
+hay que corregirlo a mano antes de volver a aplicarlos. Tras migrar, las cuentas que tenían el rol Almacenero quedan como Cajero: el Cajero
+además cobra y abre caja, así que conviene revisarlas. El procedimiento completo, con el script que los aplica, está en
+[04-entorno-docker.md](04-entorno-docker.md) §4.6.

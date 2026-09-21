@@ -3,14 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
-use App\Models\Devolucion;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
-use App\Services\Devoluciones;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -166,42 +164,27 @@ class ImpuestoIncluidoTest extends TestCase
 
     // ================================================================ lo que depende
 
-    public function test_la_devolucion_completa_devuelve_lo_cobrado(): void
-    {
-        $sesion = $this->turno(200);
-        $venta = $this->vender(['P-0004' => 3, 'P-0009' => 1], descuento: 0.70);
-
-        Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion->fresh(),
-            $venta->detalle->map(fn ($l) => ['venta_detalle_id' => $l->id, 'cantidad' => (float) $l->cantidad])->all(),
-            'El cliente devuelve todo', Devolucion::EFECTIVO);
-
-        $venta->refresh();
-        $this->assertSame($venta->total, $venta->total_devuelto);
-        $this->assertSame(200.0, $sesion->fresh()->efectivoEsperado());
-    }
-
-    public function test_la_ganancia_del_reporte_va_sin_iva(): void
+    /** Lo vendido es el total cobrado, IVA incluido; la base imponible va aparte. */
+    public function test_lo_vendido_del_reporte_es_el_total_cobrado(): void
     {
         $antes = $this->actingAs($this->admin())->get(route('reportes.ventas', ['desde' => now()->toDateString(), 'hasta' => now()->toDateString()]))
             ->viewData('resumen');
 
-        $venta = $this->vender(['P-0004' => 3]);
+        $this->vender(['P-0004' => 3]);
 
         $despues = $this->actingAs($this->admin())->get(route('reportes.ventas', ['desde' => now()->toDateString(), 'hasta' => now()->toDateString()]))
             ->viewData('resumen');
 
-        $costo = 3 * (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
-        $this->assertSame(round(10.62 - $costo, 2), round($despues['ganancia'] - $antes['ganancia'], 2));
         $this->assertSame(12.0, round($despues['vendido'] - $antes['vendido'], 2));
+        $this->assertSame(1.38, round($despues['impuesto'] - $antes['impuesto'], 2));
     }
 
-    public function test_el_producto_muestra_el_precio_y_calcula_el_margen_sin_iva(): void
+    public function test_el_producto_muestra_el_precio_y_su_base_sin_iva(): void
     {
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
 
         $this->assertSame(4.0, $producto->precio_estante);
         $this->assertSame(3.54, $producto->precio_base);   // 4,00 − 0,46
-        $this->assertSame(round(3.54 - (float) $producto->precio_compra, 2), $producto->margen);
     }
 
     public function test_el_ticket_y_el_mostrador_dicen_iva_incluido(): void
@@ -210,10 +193,10 @@ class ImpuestoIncluidoTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('ventas.show', $venta))->assertOk()
             ->assertSee('data-iva-incluido', false)
-            ->assertSeeInOrder(['Productos', Config::importe(12), 'Descuento', Config::importe(1), 'Total', Config::importe(11)]);
+            ->assertSeeInOrder(['Subtotal', Config::importe(12), 'Descuento', Config::importe(1), 'Total', Config::importe(11)]);
 
         $this->actingAs($this->admin())->get(route('comprobantes.imprimir', $venta->comprobante))->assertOk()
-            ->assertSeeInOrder(['Productos', '12.00', 'Descuento', '1.00', 'TOTAL', '11.00', 'IVA incluido', '1.27']);
+            ->assertSeeInOrder(['Subtotal', '12.00', 'Descuento', '1.00', 'TOTAL', '11.00', 'IVA incluido', '1.27']);
 
         $this->actingAs($this->admin())->get(route('pos.index'))->assertOk()->assertSee('IVA incluido (13%)');
     }
@@ -223,7 +206,7 @@ class ImpuestoIncluidoTest extends TestCase
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
 
         $this->actingAs($this->admin())->get(route('productos.edit', $producto))->assertOk()
-            ->assertSee('Lo que paga el cliente por una unidad, con el IVA incluido.')
+            ->assertSee('Lo que paga el cliente por una porción, con el IVA incluido.')
             ->assertSee('IVA incluido')
             ->assertDontSee('Precio de venta (base)');
 
@@ -233,62 +216,5 @@ class ImpuestoIncluidoTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('productos.index'))->assertOk()
             ->assertSee('el precio final con el IVA incluido', false);
-    }
-
-    // ================================================================ devoluciones al centavo
-
-    /**
-     * 30 unidades de Bs 1,00 se cobran 30,00. Devolverlas devolvía 30,17,
-     * porque la línea de devolución calculaba el impuesto «por fuera» sobre un
-     * precio redondeado por unidad: 17 centavos que salían del cajón.
-     */
-    public function test_devolver_muchas_unidades_baratas_devuelve_lo_cobrado(): void
-    {
-        Producto::where('codigo', 'P-0004')->update(['precio_venta' => 1.00, 'afecto_impuesto' => 1]);
-        $sesion = $this->turno(500);
-        $antes = $sesion->fresh()->efectivoEsperado();
-
-        $venta = $this->vender(['P-0004' => 30]);
-        $this->assertSame('30.00', $venta->total);
-
-        $devolucion = Devoluciones::registrar(
-            $venta->fresh(), $this->admin(), $sesion->fresh(),
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 30]],
-            'El cliente devolvió todo', Devolucion::EFECTIVO,
-        );
-
-        $venta->refresh();
-        $this->assertSame($venta->total, $venta->total_devuelto);
-        $this->assertSame('30.00', (string) $devolucion->fresh()->total);
-        // El impuesto también se separa por dentro en la devolución.
-        $this->assertSame('3.45', (string) $devolucion->detalle->first()->impuesto_linea);
-        $this->assertSame($antes, $sesion->fresh()->efectivoEsperado());
-    }
-
-    /** Devolver en partes tampoco puede sacar del cajón más de lo cobrado. */
-    public function test_ninguna_devolucion_parcial_devuelve_de_mas(): void
-    {
-        Producto::where('codigo', 'P-0004')->update(['precio_venta' => 1.00, 'afecto_impuesto' => 1]);
-        $sesion = $this->turno(500);
-        $venta = $this->vender(['P-0004' => 30], descuento: 0.70);
-        $linea = $venta->detalle->first();
-
-        foreach ([7, 11, 12] as $cantidad) {
-            Devoluciones::registrar(
-                $venta->fresh(), $this->admin(), $sesion->fresh(),
-                [['venta_detalle_id' => $linea->id, 'cantidad' => $cantidad]],
-                'Devolución en partes', Devolucion::EFECTIVO,
-            );
-
-            $this->assertLessThanOrEqual(
-                (float) $venta->fresh()->total,
-                (float) $venta->fresh()->total_devuelto,
-                'se devolvió más de lo cobrado',
-            );
-        }
-
-        $venta->refresh();
-        $this->assertSame('DEVUELTA', $venta->estado);
-        $this->assertSame($venta->total, $venta->total_devuelto);
     }
 }

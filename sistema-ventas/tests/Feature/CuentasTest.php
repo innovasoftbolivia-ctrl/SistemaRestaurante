@@ -27,13 +27,13 @@ class CuentasTest extends TestCase
     /** «Desactivar» un rol con cuentas tiene que quitarles el acceso. */
     public function test_un_rol_desactivado_deja_a_sus_cuentas_sin_permisos_ni_acceso(): void
     {
-        Rol::where('nombre', 'Almacenero')->update(['activo' => 0]);
-        $almacen = $this->usuario('almacen');
+        Rol::where('nombre', 'Cocina')->update(['activo' => 0]);
+        $cocina = $this->usuario('cocina1');
 
-        $this->assertFalse($almacen->tienePermiso('inventario.ajustar'));
-        $this->assertFalse($almacen->puedeIngresar());
+        $this->assertFalse($cocina->tienePermiso('cocina.ver'));
+        $this->assertFalse($cocina->puedeIngresar());
 
-        $this->actingAs($almacen)->get(route('inventario.index'))->assertRedirect(route('login'));
+        $this->actingAs($cocina)->get(route('cocina.index'))->assertRedirect(route('login'));
     }
 
     // ================================================================ sesiones
@@ -100,8 +100,8 @@ class CuentasTest extends TestCase
     {
         $admin = $this->usuario('admin');
         $gestionar = Permiso::where('codigo', 'usuarios.gestionar')->value('id');
-        $almacenero = Rol::where('nombre', 'Almacenero')->firstOrFail();
-        $almacenero->permisos()->attach($gestionar);
+        $cocina = Rol::where('nombre', 'Cocina')->firstOrFail();
+        $cocina->permisos()->attach($gestionar);
 
         $rol = Rol::where('nombre', 'Administrador')->firstOrFail();
         $this->actingAs($admin)->put(route('roles.update', $rol), [
@@ -139,7 +139,7 @@ class CuentasTest extends TestCase
     /** Un rol desactivado dejaría la cuenta sin permisos y sin poder entrar. */
     public function test_no_se_asigna_un_rol_desactivado(): void
     {
-        $rol = Rol::where('nombre', 'Almacenero')->firstOrFail();
+        $rol = Rol::where('nombre', 'Cocina')->firstOrFail();
         $rol->update(['activo' => 0]);
         $cajero = $this->usuario('cajero1');
 

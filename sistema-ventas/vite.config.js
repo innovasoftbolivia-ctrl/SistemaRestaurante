@@ -7,6 +7,10 @@ import tailwindcss from '@tailwindcss/vite';
 // siempre: puerto 5173 en localhost.
 const inDocker = process.env.DOCKER === 'true';
 
+// Cada stack de Docker necesita el suyo para poder levantar dos a la vez: el de
+// ventas usa el 5174 y el de restaurante el 5175 (VITE_PUERTO en su compose).
+const puerto = Number(process.env.VITE_PUERTO ?? 5174);
+
 export default defineConfig({
     plugins: [
         laravel({
@@ -21,7 +25,7 @@ export default defineConfig({
               // En loopback el puerto publicado por Docker no llega: hay que
               // escuchar en todas las interfaces.
               host: '0.0.0.0',
-              port: 5174,
+              port: puerto,
               strictPort: true,
               // Imprescindible, y por partida doble: además de decirle al
               // cliente de HMR a dónde conectarse, es lo que laravel-vite-plugin

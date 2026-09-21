@@ -10,7 +10,9 @@ use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\Ventas;
+use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -27,9 +29,9 @@ class DashboardTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function turno(?Usuario $usuario = null): SesionCaja
@@ -58,7 +60,7 @@ class DashboardTest extends TestCase
     /** La portada es para todos: cada bloque se muestra según el rol. */
     public function test_todos_los_roles_entran_a_la_portada(): void
     {
-        foreach ([$this->admin(), $this->cajero(), $this->almacenero()] as $usuario) {
+        foreach ([$this->admin(), $this->cajero(), $this->cocina()] as $usuario) {
             $this->actingAs($usuario)->get('/inicio')->assertOk();
         }
     }
@@ -100,17 +102,16 @@ class DashboardTest extends TestCase
         $this->assertNotNull($respuesta->viewData('hoy'));
         $this->assertNotNull($respuesta->viewData('serie'));
         $this->assertNotNull($respuesta->viewData('ultimas'));
-        $this->assertNotNull($respuesta->viewData('alertas'));
         $this->assertTrue($respuesta->viewData('gestion'));
     }
 
-    /** El almacenero no vende, así que no tiene ventas propias que mostrar. */
-    public function test_el_almacenero_ve_alertas_pero_no_ventas_propias(): void
+    /** La cocina no vende, así que no tiene ventas propias que mostrar. */
+    public function test_la_cocina_no_ve_ventas_propias_ni_el_resumen(): void
     {
-        $respuesta = $this->actingAs($this->almacenero())->get('/inicio')->assertOk();
+        $respuesta = $this->actingAs($this->cocina())->get('/inicio')->assertOk();
 
         $this->assertNull($respuesta->viewData('mias'));
-        $this->assertNotNull($respuesta->viewData('alertas'));
+        $this->assertNull($respuesta->viewData('hoy'));
     }
 
     // -------------------------------------------------------------- cifras
@@ -190,15 +191,10 @@ class DashboardTest extends TestCase
         $serie = $this->actingAs($this->admin())->get('/inicio')->viewData('serie');
 
         $this->assertCount(14, $serie);
-        $this->assertSame(now()->format('d/m'), end($serie)['etiqueta']);
-        $this->assertSame(now()->subDays(13)->format('d/m'), $serie[0]['etiqueta']);
-    }
-
-    public function test_las_alertas_se_limitan_a_las_mas_urgentes(): void
-    {
-        $alertas = $this->actingAs($this->admin())->get('/inicio')->viewData('alertas');
-
-        $this->assertLessThanOrEqual(6, $alertas->count());
+        // Por jornada: a la 01:30 la última barra todavía es la de ayer.
+        $jornada = Carbon::parse(Config::jornadaActual());
+        $this->assertSame($jornada->format('d/m'), end($serie)['etiqueta']);
+        $this->assertSame($jornada->copy()->subDays(13)->format('d/m'), $serie[0]['etiqueta']);
     }
 
     public function test_la_portada_publica_los_datos_del_grafico(): void

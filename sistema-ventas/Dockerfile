@@ -35,7 +35,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # (`docker compose exec app mysql ...`) sin depender de tenerlo en el host.
 # mariadb-connector-c trae el plugin caching_sha2_password, el método de
 # autenticación por defecto de MySQL 8; sin él la conexión muere al saludar.
-RUN apk add --no-cache mariadb-client mariadb-connector-c
+# rclone sube cada respaldo a Google Drive (ver App\Services\Respaldos).
+RUN apk add --no-cache mariadb-client mariadb-connector-c rclone
 
 WORKDIR /var/www/html
 

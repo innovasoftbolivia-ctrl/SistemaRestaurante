@@ -9,6 +9,7 @@
         nombre: @js(old('nombre', '')),
         descripcion: @js(old('descripcion', '')),
         activo: @js((bool) old('activo', true)),
+        cocina: @js((bool) old('pasa_por_cocina', true)),
         productos: 0,
         borrando: false,
 
@@ -18,6 +19,7 @@
             this.nombre = '';
             this.descripcion = '';
             this.activo = true;
+            this.cocina = true;
             this.abierto = true;
         },
         editar(categoria) {
@@ -26,6 +28,7 @@
             this.nombre = categoria.nombre;
             this.descripcion = categoria.descripcion ?? '';
             this.activo = categoria.activo;
+            this.cocina = categoria.cocina;
             this.abierto = true;
         },
         eliminar(categoria) {
@@ -38,7 +41,9 @@
 
         <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
             <p class="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">
-                Las categorías agrupan el catálogo para buscar y para los reportes de venta por rubro.
+                Las categorías agrupan el menú para buscar y para los reportes de venta por rubro. Cada una
+                dice además si sus platos <b>pasan por la cocina</b>: los de las que no —las bebidas, por
+                ejemplo— se cobran igual, pero no aparecen en la pantalla de la cocina ni en la comanda.
             </p>
 
             <form method="GET" action="{{ route('categorias.index') }}"
@@ -63,7 +68,8 @@
                         <tr>
                             <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Categoría</th>
                             <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Descripción</th>
-                            <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Productos</th>
+                            <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">En el menú</th>
+                            <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Cocina</th>
                             <th class="px-5 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Estado</th>
                             <th class="px-5 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Acciones</th>
                         </tr>
@@ -76,6 +82,7 @@
                                     'nombre' => $categoria->nombre,
                                     'descripcion' => $categoria->descripcion,
                                     'activo' => (bool) $categoria->activo,
+                                    'cocina' => (bool) $categoria->pasa_por_cocina,
                                     'productos' => $categoria->productos_count,
                                 ];
                             @endphp
@@ -91,11 +98,14 @@
                                         <a href="{{ route('productos.index', ['categoria' => $categoria->id]) }}"
                                             class="hover:text-brand-500">
                                             <b class="text-gray-800 dark:text-white/90">{{ $categoria->productos_activos_count }}</b>
-                                            en catálogo de {{ $categoria->productos_count }}
+                                            en el menú de {{ $categoria->productos_count }}
                                         </a>
                                     @else
-                                        sin productos
+                                        sin nada asignado
                                     @endif
+                                </td>
+                                <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400" data-pasa-por-cocina="{{ $categoria->pasa_por_cocina ? '1' : '0' }}">
+                                    {{ $categoria->pasa_por_cocina ? 'Pasa por la cocina' : 'Se sirve directo' }}
                                 </td>
                                 <td class="px-5 py-4">
                                     <x-ui.estado :estado="$categoria->activo ? 'ACTIVO' : 'CESADO'"
@@ -125,7 +135,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="6" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
                                     No hay categorías que coincidan con la búsqueda.
                                 </td>
                             </tr>
@@ -156,14 +166,22 @@
                     </template>
 
                     <x-form.campo label="Nombre" for="categoria-nombre" name="nombre" required>
-                        <x-form.input id="categoria-nombre" name="nombre" x-model="nombre" placeholder="Abarrotes"
+                        <x-form.input id="categoria-nombre" name="nombre" x-model="nombre" placeholder="Platos de fondo"
                             required />
                     </x-form.campo>
 
                     <x-form.campo label="Descripción" for="categoria-descripcion" name="descripcion">
                         <x-form.textarea id="categoria-descripcion" name="descripcion" x-model="descripcion"
-                            placeholder="Qué tipo de productos agrupa" />
+                            placeholder="Qué parte del menú agrupa" />
                     </x-form.campo>
+
+                    <div>
+                        <x-form.check name="pasa_por_cocina" model="cocina" label="Sus platos pasan por la cocina" />
+                        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            Desmárcalo en lo que se sirve directo, sin cocinar (gaseosas, agua): se cobra igual, pero no
+                            sale en la pantalla de la cocina ni en la comanda. Rige para lo que se pida desde ahora.
+                        </p>
+                    </div>
 
                     @puede('registros.eliminar')
                     <x-form.check name="activo" model="activo" label="Categoría disponible para asignar" />
@@ -189,7 +207,7 @@
                     ¿Eliminar la categoría <b x-text="nombre"></b>?
                 </p>
                 <p x-show="productos > 0" class="mb-6 text-theme-sm text-warning-700 dark:text-orange-400">
-                    Tiene <span x-text="productos"></span> producto(s), así que se desactivará en lugar de eliminarse.
+                    Tiene <span x-text="productos"></span> ítem(s) del menú, así que se desactivará en lugar de eliminarse.
                 </p>
 
                 <form method="POST" :action="`/categorias/${id}`" class="flex justify-end gap-3">

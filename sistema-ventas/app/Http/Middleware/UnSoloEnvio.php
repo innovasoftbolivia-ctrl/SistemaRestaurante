@@ -10,13 +10,15 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Un formulario se registra una sola vez.
  *
- * Cada formulario que mueve stock o dinero lleva un número de envío único
- * (`@unEnvio`). Un doble clic o un reenvío del navegador manda dos veces el
- * mismo número: el segundo no se procesa. Antes, dos clics rápidos en
- * «Registrar compra» dejaban dos compras y el stock al doble.
+ * Cada formulario que mueve dinero o carga platos lleva un número de envío
+ * único (`@unEnvio`). Un doble clic o un reenvío del navegador manda dos veces
+ * el mismo número: el segundo no se procesa. Sin esto, dos clics rápidos en
+ * «Cobrar» dejaban dos ventas, y en «Agregar al pedido», el plato dos veces
+ * en la cocina.
  *
- * Si la operación no llegó a hacerse (error de validación o del servicio), el
- * número se libera para que el mismo formulario pueda corregirse y reenviarse.
+ * Si la operación no llegó a hacerse (error de validación, del servicio o un
+ * error inesperado del servidor), el número se libera para que el mismo
+ * formulario pueda corregirse y reenviarse.
  */
 class UnSoloEnvio
 {
@@ -31,12 +33,17 @@ class UnSoloEnvio
         $clave = 'envio:'.($request->user()?->id ?? 'anonimo').':'.sha1($numero);
 
         if (! Cache::add($clave, true, now()->addHour())) {
-            return back()->with('aviso', 'Esa operación ya se había enviado: se registró una sola vez.');
+            // Puede que el primer envío todavía se esté procesando: no se
+            // afirma que quedó registrado, se manda a comprobarlo.
+            return back()->with('aviso', 'Esa operación ya se envió y no se repitió. Antes de volver a intentarla, revisa si quedó registrada.');
         }
 
         $respuesta = $next($request);
 
-        if ($request->hasSession() && ($request->session()->has('errors') || $request->session()->has('error'))) {
+        $fallo = $respuesta->getStatusCode() >= 500
+            || ($request->hasSession() && ($request->session()->has('errors') || $request->session()->has('error')));
+
+        if ($fallo) {
             Cache::forget($clave);
         }
 

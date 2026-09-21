@@ -50,8 +50,8 @@ class InstalacionLimpiaTest extends TestCase
         $desarrollo = $this->sql('02_datos_iniciales.sql');
         $produccion = $this->sql('produccion/02_datos_base.sql');
 
-        foreach (['permisos', 'roles', 'metodos_pago', 'tipos_comprobante', 'configuracion', 'unidades_medida'] as $tabla) {
-            $columna = in_array($tabla, ['roles', 'metodos_pago', 'tipos_comprobante', 'unidades_medida'], true) ? 1 : 0;
+        foreach (['permisos', 'roles', 'metodos_pago', 'tipos_comprobante', 'configuracion'] as $tabla) {
+            $columna = in_array($tabla, ['roles', 'metodos_pago', 'tipos_comprobante'], true) ? 1 : 0;
             $this->assertSame(
                 $this->primeraColumna($desarrollo, $tabla, $columna),
                 $this->primeraColumna($produccion, $tabla, $columna),
@@ -69,7 +69,7 @@ class InstalacionLimpiaTest extends TestCase
     {
         $produccion = $this->sql('produccion/02_datos_base.sql');
 
-        foreach (['productos', 'clientes', 'proveedores', 'movimientos_inventario', 'lotes', 'ventas'] as $tabla) {
+        foreach (['productos', 'clientes', 'ventas'] as $tabla) {
             $this->assertDoesNotMatchRegularExpression('/INSERT INTO '.$tabla.'\b/', $produccion, "trae {$tabla} de ejemplo");
         }
 

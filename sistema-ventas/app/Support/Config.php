@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use DateTimeInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -59,9 +61,16 @@ class Config
         return intdiv(2 * $centavos * $t + $d, 2 * $d) / 100;
     }
 
+    /**
+     * El símbolo de la moneda del negocio. Sale del código (`moneda_codigo`):
+     * guardar también el símbolo era tener dos datos que podían quedar
+     * desparejos.
+     */
     public static function moneda(): string
     {
-        return self::get('moneda_simbolo', 'Bs');
+        $codigo = self::get('moneda_codigo');
+
+        return self::simbolo(blank($codigo) ? 'BOB' : $codigo);
     }
 
     /**
@@ -99,14 +108,78 @@ class Config
     }
 
     /**
-     * Cantidades de stock sin ceros de relleno: el esquema guarda tres
-     * decimales, pero «120» se lee mejor que «120.000».
+     * Cantidades sin ceros de relleno: el esquema guarda tres decimales
+     * —vienen de cuando se vendía al peso—, pero «2» se lee mejor que «2.000».
      */
     public static function cantidad(int|float|string|null $valor): string
     {
         $texto = number_format((float) $valor, 3, '.', '');
 
         return str_contains($texto, '.') ? rtrim(rtrim($texto, '0'), '.') : $texto;
+    }
+
+    /** La hora de corte más tardía que se admite: más allá, la jornada ya no es «la noche anterior». */
+    public const HORA_CORTE_MAXIMA = 12;
+
+    /**
+     * A qué hora empieza la jornada del local (`hora_corte_jornada`, 5 si no
+     * está): el restaurante cierra pasada la medianoche, y lo que se pide a la
+     * 01:30 es de la noche anterior, no del día nuevo.
+     */
+    public static function horaCorteJornada(): int
+    {
+        $hora = (int) self::get('hora_corte_jornada', '5');
+
+        return max(0, min(self::HORA_CORTE_MAXIMA, $hora));
+    }
+
+    /**
+     * La jornada a la que pertenece un momento: su fecha, menos las horas del
+     * corte. Con el corte a las 5, el 19/09 a las 01:30 es de la jornada del
+     * 18/09, y el 19/09 a las 05:00 ya es del 19/09.
+     *
+     * Es lo que numera los pedidos (`pedidos.jornada`) y lo que acota la
+     * pantalla de la cocina.
+     */
+    public static function jornadaDe(DateTimeInterface $momento): string
+    {
+        return Carbon::instance($momento)
+            ->subHours(self::horaCorteJornada())
+            ->toDateString();
+    }
+
+    /** La jornada en curso. */
+    public static function jornadaActual(): string
+    {
+        return self::jornadaDe(now());
+    }
+
+    /**
+     * La jornada de una columna de fecha y hora, en SQL: la misma cuenta que
+     * `jornadaDe()`, para agrupar por jornada en la base. Es la única copia
+     * de la expresión en PHP; la otra es la vista `v_ventas_por_dia`.
+     */
+    public static function jornadaSql(string $columna): string
+    {
+        return sprintf('DATE(%s - INTERVAL %d HOUR)', $columna, self::horaCorteJornada());
+    }
+
+    /**
+     * Desde qué momento y hasta cuál van las jornadas de un rango: de la hora
+     * de corte del primer día a un segundo antes de la hora de corte del día
+     * siguiente al último. Filtrar con este rango y no con `jornadaSql()`
+     * deja que la base use el índice de la fecha.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    public static function momentosDeJornadas(DateTimeInterface|string $desde, DateTimeInterface|string $hasta): array
+    {
+        $corte = self::horaCorteJornada();
+
+        return [
+            Carbon::parse($desde)->startOfDay()->addHours($corte),
+            Carbon::parse($hasta)->startOfDay()->addDay()->addHours($corte)->subSecond(),
+        ];
     }
 
     /** Se usa en las pruebas, cuando la configuración cambia dentro del caso. */

@@ -6,19 +6,15 @@ use App\Models\Caja;
 use App\Models\Categoria;
 use App\Models\Cliente;
 use App\Models\CobroQr;
-use App\Models\Devolucion;
 use App\Models\MetodoPago;
 use App\Models\Permiso;
 use App\Models\Producto;
-use App\Models\Proveedor;
 use App\Models\Rol;
 use App\Models\SesionCaja;
-use App\Models\UnidadMedida;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Devoluciones;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -30,9 +26,9 @@ use Tests\TestCase;
  * Quién ve qué y quién puede cambiar qué (pedido del 16/09/2026):
  *
  *   - cada cajero ve SOLO sus ventas, sus turnos, sus comprobantes, sus cobros
- *     y sus devoluciones; nadie más ve sus movimientos, salvo el administrador;
+ *     nadie más ve sus movimientos, salvo el administrador;
  *   - editar clientes y eliminar cualquier registro es del administrador;
- *   - el almacenero da de alta y edita el catálogo, pero no elimina.
+ *   - un rol acotado al catálogo da de alta y edita, pero no elimina.
  */
 class CadaQuienLoSuyoTest extends TestCase
 {
@@ -44,7 +40,7 @@ class CadaQuienLoSuyoTest extends TestCase
 
     private Usuario $cajero2;
 
-    private Usuario $almacen;
+    private Usuario $cocina;
 
     private SesionCaja $turno1;
 
@@ -60,7 +56,7 @@ class CadaQuienLoSuyoTest extends TestCase
 
         $this->admin = Usuario::where('usuario', 'admin')->firstOrFail();
         $this->cajero1 = Usuario::where('usuario', 'cajero1')->firstOrFail();
-        $this->almacen = Usuario::where('usuario', 'almacen')->firstOrFail();
+        $this->cocina = Usuario::where('usuario', 'cocina1')->firstOrFail();
         $this->cajero2 = Usuario::create([
             'empleado_id' => 4,
             'rol_id' => $this->cajero1->rol_id,
@@ -94,7 +90,6 @@ class CadaQuienLoSuyoTest extends TestCase
     private function vender(SesionCaja $turno, Usuario $cajero): Venta
     {
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
-        $producto->forceFill(['stock_actual' => 100])->save();
 
         return Ventas::registrar(
             sesion: $turno->fresh(),
@@ -179,44 +174,10 @@ class CadaQuienLoSuyoTest extends TestCase
 
     public function test_el_cajero_no_entra_a_lo_de_todos(): void
     {
-        foreach ([route('reportes.ventas'), route('reportes.productos'), route('devoluciones.index'),
-            route('bitacora.index'), route('inventario.movimientos')] as $url) {
+        foreach ([route('reportes.ventas'), route('reportes.productos'),
+            route('bitacora.index')] as $url) {
             $this->como($this->cajero2)->get($url)->assertForbidden();
         }
-    }
-
-    // ================================================================ devoluciones
-
-    /** Un rol que registra devoluciones sin ver reportes trabaja solo con sus propias ventas. */
-    public function test_las_devoluciones_de_ventas_ajenas_no_se_ven_ni_se_registran(): void
-    {
-        $encargado = $this->rolCon('Encargado de mostrador', ['ventas.registrar', 'caja.abrir', 'devoluciones.registrar']);
-        $turno = Cajas::abrir(Caja::create(['nombre' => 'Caja 3', 'activo' => 1]), $encargado, 50);
-        $propia = $this->vender($turno, $encargado);
-
-        $ajena = Devoluciones::registrar($this->venta1->fresh(), $this->admin, $this->turno1->fresh(), [
-            ['venta_detalle_id' => $this->venta1->detalle->first()->id, 'cantidad' => 1, 'reingresa_stock' => true],
-        ], 'Devolución del cajero uno', Devolucion::EFECTIVO);
-        $suya = Devoluciones::registrar($propia->fresh(), $encargado, $turno->fresh(), [
-            ['venta_detalle_id' => $propia->detalle->first()->id, 'cantidad' => 1, 'reingresa_stock' => true],
-        ], 'Devolución propia', Devolucion::EFECTIVO);
-
-        $ids = $this->como($encargado)->get(route('devoluciones.index'))->assertOk()->viewData('devoluciones')->pluck('id');
-        $this->assertContains($suya->id, $ids);
-        $this->assertNotContains($ajena->id, $ids);
-
-        $this->como($encargado)->get(route('devoluciones.show', $ajena))->assertForbidden();
-        $this->como($encargado)->get(route('devoluciones.show', $suya))->assertOk();
-        $this->como($encargado)->get(route('devoluciones.create', $this->venta2))->assertForbidden();
-        $this->como($encargado)->post(route('devoluciones.store', $this->venta2), [
-            'motivo' => 'No es mía', 'lineas' => [['venta_detalle_id' => $this->venta2->detalle->first()->id, 'cantidad' => 1]],
-        ])->assertForbidden();
-        $this->assertSame(0, Devolucion::where('venta_id', $this->venta2->id)->count());
-
-        // El administrador las ve todas.
-        $todas = $this->como($this->admin)->get(route('devoluciones.index'))->viewData('devoluciones')->pluck('id');
-        $this->assertContains($ajena->id, $todas);
-        $this->assertContains($suya->id, $todas);
     }
 
     // ================================================================ el administrador ve todo
@@ -229,71 +190,58 @@ class CadaQuienLoSuyoTest extends TestCase
 
         foreach ([route('ventas.show', $this->venta1), route('ventas.show', $this->venta2),
             route('caja.show', $this->turno1), route('caja.show', $this->turno2),
-            route('reportes.ventas'), route('devoluciones.index'), route('bitacora.index'),
-            route('inventario.movimientos')] as $url) {
+            route('reportes.ventas'), route('bitacora.index')] as $url) {
             $this->como($this->admin)->get($url)->assertOk();
         }
 
-        $this->como($this->admin)->get(route('inventario.movimientos'))->assertSee('cajero2');
+        $this->como($this->admin)->get(route('ventas.index'))->assertSee('cajero2');
     }
 
-    // ================================================================ almacenero
+    // ================================================================ cocina
 
-    public function test_el_almacenero_no_ve_ventas_cajas_ni_reportes(): void
+    public function test_la_cocina_no_ve_ventas_cajas_ni_reportes(): void
     {
         foreach ([route('ventas.index'), route('ventas.show', $this->venta1), route('caja.index'),
-            route('caja.show', $this->turno1), route('devoluciones.index'), route('comprobantes.index'),
-            route('reportes.ventas'), route('reportes.productos'), route('reportes.libro-ventas'),
+            route('caja.show', $this->turno1), route('comprobantes.index'),
+            route('reportes.ventas'), route('reportes.productos'),
             route('clientes.index')] as $url) {
-            $this->como($this->almacen)->get($url)->assertForbidden();
+            $this->como($this->cocina)->get($url)->assertForbidden();
         }
     }
 
-    /** En el kardex, el almacenero ve que salió por el mostrador, no qué cajero vendió. */
-    public function test_el_almacenero_no_ve_quien_vendio_en_el_kardex(): void
+    /** El cajero elige de la carta, pero no entra a mantenerla. */
+    public function test_el_cajero_no_entra_al_catalogo(): void
     {
-        $this->como($this->almacen)->get(route('inventario.movimientos'))->assertOk()
-            ->assertSee('Mostrador')
-            ->assertDontSee('cajero2')
-            ->assertDontSee(route('ventas.show', $this->venta2), false);
-
-        // Filtrar por el cajero no sirve para ver sus ventas.
-        $filtrado = $this->como($this->almacen)->get(route('inventario.movimientos', ['usuario' => $this->cajero2->id]))
-            ->assertOk()->viewData('movimientos');
-        $this->assertSame(0, $filtrado->total());
-
-        $this->como($this->almacen)->get(route('productos.show', Producto::where('codigo', 'P-0004')->firstOrFail()))
-            ->assertOk()->assertDontSee('cajero2');
+        $this->como($this->cajero1)->get(route('productos.index'))->assertForbidden();
+        $this->como($this->cajero1)->get(route('productos.show', Producto::where('codigo', 'P-0004')->firstOrFail()))
+            ->assertForbidden();
     }
 
-    public function test_el_almacenero_da_de_alta_y_edita_pero_no_elimina(): void
+    /** Quien mantiene la carta la edita, pero eliminar es otro permiso. */
+    public function test_quien_mantiene_la_carta_da_de_alta_y_edita_pero_no_elimina(): void
     {
+        $encargado = $this->rolCon('Encargado de la carta', ['productos.gestionar']);
         $categoria = Categoria::firstOrFail();
-        $unidad = UnidadMedida::firstOrFail();
-        $proveedor = Proveedor::firstOrFail();
         $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
 
-        $this->como($this->almacen)->post(route('categorias.store'), ['nombre' => 'Categoría del almacén', 'activo' => 1])
+        $this->como($encargado)->post(route('categorias.store'), ['nombre' => 'Sección nueva', 'activo' => 1])
             ->assertSessionHasNoErrors();
-        $this->como($this->almacen)->put(route('categorias.update', $categoria), ['nombre' => $categoria->nombre.' (editada)', 'activo' => 1])
+        $this->como($encargado)->put(route('categorias.update', $categoria), ['nombre' => $categoria->nombre.' (editada)', 'activo' => 1])
             ->assertSessionHasNoErrors();
         $this->assertStringEndsWith('(editada)', $categoria->fresh()->nombre);
 
         foreach ([
             route('productos.destroy', $producto), route('categorias.destroy', $categoria),
-            route('unidades.destroy', $unidad), route('proveedores.destroy', $proveedor),
         ] as $url) {
-            $this->como($this->almacen)->delete($url)->assertForbidden();
+            $this->como($encargado)->delete($url)->assertForbidden();
         }
 
         $this->assertTrue($producto->fresh()->activo);
         $this->assertNotNull(Categoria::find($categoria->id));
 
         // Y no ve los botones.
-        $this->como($this->almacen)->get(route('productos.show', $producto))->assertOk()->assertDontSee('Eliminar producto');
-        foreach (['categorias.index', 'unidades.index', 'proveedores.index'] as $pantalla) {
-            $this->como($this->almacen)->get(route($pantalla))->assertOk()->assertDontSee('title="Eliminar"', false);
-        }
+        $this->como($encargado)->get(route('productos.show', $producto))->assertOk()->assertDontSee('Quitar del menú');
+        $this->como($encargado)->get(route('categorias.index'))->assertOk()->assertDontSee('title="Eliminar"', false);
     }
 
     // ================================================================ clientes
@@ -340,21 +288,35 @@ class CadaQuienLoSuyoTest extends TestCase
         $this->assertNull(Categoria::find($categoria->id));
     }
 
-    /** Toda ruta que elimina exige el permiso de eliminar, además del de su módulo. */
+    /**
+     * Toda ruta que elimina un registro del negocio exige el permiso de
+     * eliminar, además del de su módulo.
+     *
+     * Ya no hay excepciones: la única que había —quitar un plato de una cuenta
+     * abierta— se fue con la cuenta abierta. Un plato ahora se cancela, no se
+     * borra, y el rastro queda.
+     */
     public function test_toda_ruta_de_eliminar_pide_el_permiso(): void
     {
+        $exentas = [];
         $sinPermiso = [];
 
         foreach (Route::getRoutes() as $ruta) {
-            if (in_array('DELETE', $ruta->methods(), true) && str_ends_with((string) $ruta->getName(), '.destroy')) {
+            $nombre = (string) $ruta->getName();
+
+            if (in_array($nombre, $exentas, true)) {
+                continue;
+            }
+
+            if (in_array('DELETE', $ruta->methods(), true) && str_ends_with($nombre, '.destroy')) {
                 if (! in_array('permiso:registros.eliminar', $ruta->middleware(), true)) {
-                    $sinPermiso[] = $ruta->getName();
+                    $sinPermiso[] = $nombre;
                 }
             }
         }
 
         $this->assertSame([], $sinPermiso);
-        $this->assertFalse($this->almacen->tienePermiso('registros.eliminar'));
+        $this->assertFalse($this->cocina->tienePermiso('registros.eliminar'));
         $this->assertFalse($this->cajero1->tienePermiso('registros.eliminar'));
         $this->assertFalse($this->cajero1->tienePermiso('clientes.editar'));
         $this->assertTrue($this->admin->tienePermiso('registros.eliminar'));

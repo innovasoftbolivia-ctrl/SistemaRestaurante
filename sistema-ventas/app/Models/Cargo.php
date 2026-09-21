@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Cargo: la función laboral de la persona dentro del negocio
- * (Gerente, Cajero, Almacenero...). No confundir con el rol de acceso
+ * (Gerente, Cajero, Cocinero...). No confundir con el rol de acceso
  * al sistema, que vive en {@see Rol}.
  */
 class Cargo extends Model

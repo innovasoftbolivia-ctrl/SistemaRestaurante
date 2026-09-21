@@ -51,7 +51,9 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # dentro del contenedor sin depender de tenerlo en el host. su-exec deja
 # correr los comandos de artisan del arranque como `www-data` en vez de como
 # root (ver entrypoint.prod.sh) — es la alternativa ligera a gosu en Alpine.
-RUN apk add --no-cache mariadb-client mariadb-connector-c su-exec
+# rclone sube cada respaldo de la noche a Google Drive (ver
+# App\Services\Respaldos y scripts/conectar-drive.sh).
+RUN apk add --no-cache mariadb-client mariadb-connector-c su-exec rclone
 
 WORKDIR /var/www/html
 

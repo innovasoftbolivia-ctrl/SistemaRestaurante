@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Auditoria;
 use App\Models\Caja;
 use App\Models\MetodoPago;
 use App\Models\Producto;
@@ -11,6 +12,8 @@ use App\Services\Respaldos;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Route;
 use PDO;
 use Tests\TestCase;
 
@@ -35,7 +38,12 @@ class RespaldosTest extends TestCase
         parent::setUp();
 
         $this->carpeta = sys_get_temp_dir().DIRECTORY_SEPARATOR.'respaldos-prueba-'.bin2hex(random_bytes(4));
-        config(['ventas.respaldos.ruta' => $this->carpeta]);
+        // Sin nube, salvo en las pruebas que la prueban: ninguna prueba
+        // llama al rclone de verdad.
+        config([
+            'ventas.respaldos.ruta' => $this->carpeta,
+            'ventas.respaldos.nube' => null,
+        ]);
     }
 
     protected function tearDown(): void
@@ -60,9 +68,9 @@ class RespaldosTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     /** Una conexión aparte, sin base elegida: la de la prueba sigue en su transacción. */
@@ -117,7 +125,7 @@ class RespaldosTest extends TestCase
      * Compara el CHECKSUM de cada tabla —una firma de todas sus filas— y la
      * cantidad de procedimientos, triggers y vistas. Si el volcado perdiera
      * una fila, insertara mal una columna generada o creara los triggers antes
-     * de los datos (y la carga volviera a descontar stock), no coincidiría.
+     * de los datos (y la carga volviera a dispararlos), no coincidiría.
      *
      * Antes de respaldar se registra una venta. Sin ella la prueba pasaba
      * igual con los triggers creados ANTES que los datos: la base de pruebas
@@ -292,73 +300,110 @@ class RespaldosTest extends TestCase
         $this->assertFileDoesNotExist($viejo);
     }
 
-    // ================================================================ pantalla
+    // ================================================================= la nube
 
-    public function test_solo_quien_gestiona_respaldos_entra(): void
+    /**
+     * No hay pantalla: los respaldos corren por debajo. Para nadie existe la
+     * dirección ni la entrada del menú, tampoco para el administrador.
+     */
+    public function test_los_respaldos_no_tienen_pantalla(): void
     {
-        $this->assertTrue($this->admin()->tienePermiso('respaldos.gestionar'));
-        $this->actingAs($this->admin())->get(route('respaldos.index'))->assertOk();
-
-        $nombre = basename(Respaldos::crear()['base']);
-
-        foreach ([$this->cajero(), $this->almacenero()] as $usuario) {
-            $this->actingAs($usuario)->get(route('respaldos.index'))->assertForbidden();
-            $this->actingAs($usuario)->post(route('respaldos.store'))->assertForbidden();
-            $this->actingAs($usuario)->get(route('respaldos.descargar', $nombre))->assertForbidden();
+        foreach ([$this->admin(), $this->cajero(), $this->cocina()] as $usuario) {
+            $this->actingAs($usuario)->get('/respaldos')->assertNotFound();
+            $this->actingAs($usuario)->post('/respaldos')->assertNotFound();
+            $this->actingAs($usuario)->get('/perfil')->assertDontSee(url('/respaldos'), false);
         }
+
+        $this->assertFalse(Route::has('respaldos.index'));
+        $this->assertFalse(DB::table('permisos')->where('codigo', 'like', 'respaldos%')->exists());
     }
 
-    public function test_se_crea_un_respaldo_desde_la_pantalla_y_queda_en_la_bitacora(): void
+    /**
+     * Cada archivo se sube por su nombre a la carpeta de Drive, y después se
+     * borran allá los de más de DIAS días, solo con nombre de respaldo.
+     */
+    public function test_cada_respaldo_se_sube_a_la_nube(): void
     {
-        $this->actingAs($this->admin())
-            ->post(route('respaldos.store'))
-            ->assertRedirect(route('respaldos.index'))
-            ->assertSessionHas('exito');
+        config(['ventas.respaldos.nube' => 'drive:']);
+        Process::fake();
 
-        $this->assertCount(1, Respaldos::listar()->where('tipo', 'base'));
-        $this->assertDatabaseHas('auditoria', ['accion' => 'RESPALDO_CREADO', 'usuario_id' => $this->admin()->id]);
+        $hecho = Respaldos::crear();
 
-        $this->actingAs($this->admin())
-            ->get(route('respaldos.index'))
-            ->assertSee(Respaldos::ultimo()['nombre']);
+        $this->assertSame('drive:', $hecho['nube']);
+        $this->assertNull($hecho['error_nube']);
+
+        Process::assertRan(fn ($p) => $p->command === ['rclone', 'copyto', $hecho['base'], 'drive:'.basename($hecho['base'])]);
+        Process::assertRan(fn ($p) => $p->command[1] === 'delete'
+            && in_array('--min-age', $p->command, true)
+            && in_array(Respaldos::DIAS.'d', $p->command, true)
+            && in_array('ventas_db_*.sql.gz', $p->command, true));
     }
 
-    /** Descargar la base entera es sensible: queda registrado quién lo hizo. */
-    public function test_se_descarga_y_queda_registrado(): void
+    /** Con una subcarpeta en el remoto, el archivo va adentro de ella. */
+    public function test_se_puede_subir_a_una_subcarpeta(): void
     {
-        $nombre = basename(Respaldos::crear()['base']);
+        config(['ventas.respaldos.nube' => 'drive:restaurante/']);
+        Process::fake();
 
-        $this->actingAs($this->admin())
-            ->get(route('respaldos.descargar', $nombre))
-            ->assertOk()
-            ->assertDownload($nombre);
+        $hecho = Respaldos::crear();
 
-        $this->assertDatabaseHas('auditoria', ['accion' => 'RESPALDO_DESCARGADO', 'usuario_id' => $this->admin()->id]);
+        Process::assertRan(fn ($p) => $p->command === ['rclone', 'copyto', $hecho['base'], 'drive:restaurante/'.basename($hecho['base'])]);
     }
 
-    /** Con el nombre no se puede pedir ningún otro archivo del servidor. */
-    public function test_no_se_descarga_nada_fuera_de_los_respaldos(): void
+    /**
+     * Solo suben los respaldos: en la misma carpeta vive PRIMER-ACCESO.txt,
+     * con la contraseña inicial del administrador.
+     */
+    public function test_solo_se_suben_los_respaldos_y_nada_mas_de_la_carpeta(): void
     {
+        file_put_contents(Respaldos::carpeta().DIRECTORY_SEPARATOR.'PRIMER-ACCESO.txt', 'clave');
+        config(['ventas.respaldos.nube' => 'drive:']);
+        Process::fake();
+
         Respaldos::crear();
 
-        foreach (['..%2F..%2F.env', '.htaccess', 'ventas_db_nada.sql.gz', 'otro.sql.gz'] as $nombre) {
-            $this->actingAs($this->admin())->get('/respaldos/'.$nombre.'/descargar')->assertNotFound();
-        }
+        Process::assertDidntRun(fn ($p) => str_contains(implode(' ', $p->command), 'PRIMER-ACCESO')
+            || (($p->command[1] ?? null) === 'copy'));
+        Process::assertRanTimes(fn ($p) => $p->command[1] === 'copyto', count(array_filter([
+            Respaldos::ultimo(),
+            Respaldos::listar()->firstWhere('tipo', 'fotos'),
+        ])));
     }
 
-    public function test_avisa_si_hace_mucho_que_no_hay_respaldo(): void
+    /**
+     * Sin internet, el respaldo queda en el servidor, el comando termina con
+     * error y queda en la bitácora. Y allá no se borra nada: nunca se tiran
+     * los viejos sin que haya llegado el nuevo.
+     */
+    public function test_si_no_se_pudo_subir_avisa_y_no_borra_nada_alla(): void
     {
-        $this->actingAs($this->admin())
-            ->get(route('respaldos.index'))
-            ->assertSee('Todavía no hay ningún respaldo');
+        config(['ventas.respaldos.nube' => 'drive:']);
+        Process::fake([
+            '*' => Process::result(errorOutput: "NOTICE: algo\nFailed to copyto: couldn't connect", exitCode: 1),
+        ]);
 
-        $viejo = Respaldos::carpeta().DIRECTORY_SEPARATOR.'ventas_db_2026-01-01_010000_cccc.sql.gz';
-        file_put_contents($viejo, 'x');
-        touch($viejo, now()->subDays(10)->getTimestamp());
+        $this->artisan('respaldo:crear')->assertFailed();
 
-        $this->actingAs($this->admin())
-            ->get(route('respaldos.index'))
-            ->assertSee('El último respaldo tiene más de una semana');
+        $this->assertNotNull(Respaldos::ultimo(), 'el respaldo local tiene que quedar igual');
+        Process::assertDidntRun(fn ($p) => ($p->command[1] ?? null) === 'delete');
+
+        $fallo = Auditoria::where('accion', 'RESPALDO_NUBE_FALLIDA')->latest('id')->first();
+        $this->assertNotNull($fallo);
+        $this->assertStringContainsString("couldn't connect", json_encode($fallo->detalle));
+    }
+
+    /** Sin RESPALDOS_NUBE no se llama a rclone: una instalación sin Drive sigue igual. */
+    public function test_sin_nube_configurada_no_se_sube_nada(): void
+    {
+        config(['ventas.respaldos.nube' => null]);
+        Process::fake();
+
+        $hecho = Respaldos::crear();
+
+        $this->assertNull($hecho['nube']);
+        $this->assertNull($hecho['error_nube']);
+        Process::assertNothingRan();
+        $this->artisan('respaldo:crear')->assertSuccessful();
     }
 
     /** Un respaldo en el mismo disco que la base se pierde con él: se copia afuera. */
@@ -373,22 +418,11 @@ class RespaldosTest extends TestCase
             $this->assertSame($afuera, $hecho['copia']);
             $this->assertNull($hecho['error_copia']);
             $this->assertFileEquals($hecho['base'], $afuera.DIRECTORY_SEPARATOR.basename($hecho['base']));
-
-            $this->actingAs($this->admin())->get(route('respaldos.index'))
-                ->assertOk()->assertSee('data-copia-afuera', false);
         } finally {
             foreach (glob($afuera.DIRECTORY_SEPARATOR.'*') ?: [] as $archivo) {
                 @unlink($archivo);
             }
             @rmdir($afuera);
         }
-    }
-
-    public function test_sin_carpeta_de_afuera_la_pantalla_lo_advierte(): void
-    {
-        config(['ventas.respaldos.copia' => null]);
-
-        $this->actingAs($this->admin())->get(route('respaldos.index'))
-            ->assertOk()->assertSee('data-sin-copia-afuera', false);
     }
 }

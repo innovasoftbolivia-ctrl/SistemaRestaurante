@@ -2,6 +2,8 @@
     use App\Support\Menu;
 
     $grupos = Menu::grupos();
+    $negocio = \App\Support\Config::negocio();
+    $cuenta = auth()->user();
 @endphp
 
 <aside id="sidebar"
@@ -22,13 +24,15 @@
         :class="(!$store.sidebar.isExpanded && !$store.sidebar.isHovered && !$store.sidebar.isMobileOpen)
             ? 'xl:justify-center'
             : 'justify-start'">
-        <a href="{{ url(Menu::inicio()) }}">
-            <img x-show="$store.sidebar.isExpanded || $store.sidebar.isHovered || $store.sidebar.isMobileOpen"
-                class="dark:hidden" src="/images/logo/logo.svg" alt="Sistema de Ventas" width="184" height="32" />
-            <img x-show="$store.sidebar.isExpanded || $store.sidebar.isHovered || $store.sidebar.isMobileOpen"
-                class="hidden dark:block" src="/images/logo/logo-dark.svg" alt="Sistema de Ventas" width="184" height="32" />
-            <img x-show="!$store.sidebar.isExpanded && !$store.sidebar.isHovered && !$store.sidebar.isMobileOpen"
-                src="/images/logo/logo-icon.svg" alt="Sistema de Ventas" width="32" height="32" />
+        {{-- El nombre del negocio (Configuración), como en el inicio de sesión:
+             es lo que el personal reconoce. Plegada, queda el ícono. --}}
+        <a href="{{ url(Menu::inicio()) }}" class="flex min-w-0 items-center gap-3" data-marca-negocio>
+            <x-common.icono-negocio />
+            <span x-show="$store.sidebar.isExpanded || $store.sidebar.isHovered || $store.sidebar.isMobileOpen"
+                class="min-w-0 leading-tight">
+                <span class="block truncate text-base font-semibold text-gray-900 dark:text-white">{{ $negocio }}</span>
+                <span class="block text-theme-xs text-gray-500 dark:text-gray-400">Pedidos y caja</span>
+            </span>
         </a>
     </div>
 
@@ -84,25 +88,32 @@
             </div>
         </nav>
 
-        <!-- Ficha del usuario en sesión -->
+        <!-- Quién está en sesión: una fila discreta. Salir también está en el
+             menú del usuario, arriba a la derecha. -->
         <div x-show="$store.sidebar.isExpanded || $store.sidebar.isHovered || $store.sidebar.isMobileOpen"
-            x-transition class="mt-auto">
-            <div class="mx-auto mb-10 w-full max-w-60 rounded-2xl bg-gray-50 px-4 py-5 dark:bg-white/[0.03]">
-                <p class="mb-1 text-xs uppercase tracking-wide text-gray-400">En sesión</p>
-                <h3 class="font-semibold text-gray-900 dark:text-white">
-                    {{ auth()->user()->nombre_completo }}
-                </h3>
-                <p class="mb-3 text-theme-sm text-gray-500 dark:text-gray-400">
-                    {{ auth()->user()->empleado?->cargo?->nombre }} · rol {{ auth()->user()->rol?->nombre }}
-                </p>
+            x-transition class="mt-auto pb-6">
+            <div class="flex items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-800" data-ficha-sesion>
+                <x-ui.inicial :nombre="$cuenta->nombre_completo" size="sm" marca />
+                <div class="min-w-0 flex-1 leading-tight">
+                    <p class="truncate text-theme-sm font-semibold text-gray-900 dark:text-white">{{ $cuenta->nombre_completo }}</p>
+                    <p class="truncate text-theme-xs text-gray-500 dark:text-gray-400">{{ $cuenta->rol?->nombre }}</p>
+                </div>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
-                    <button type="submit"
-                        class="flex w-full items-center justify-center rounded-lg bg-brand-500 p-3 font-medium text-white text-theme-sm hover:bg-brand-600">
-                        Cerrar sesión
+                    <button type="submit" aria-label="Cerrar sesión" title="Cerrar sesión"
+                        class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white">
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+                        </svg>
                     </button>
                 </form>
             </div>
+            @if (filled(config('ventas.desarrollado_por')))
+                <p class="mt-4 text-center text-theme-xs text-gray-400 dark:text-gray-500" data-desarrollado-por>
+                    Desarrollado por <span class="font-semibold text-brand-500 dark:text-brand-300">{{ config('ventas.desarrollado_por') }}</span>
+                </p>
+            @endif
         </div>
     </div>
 </aside>

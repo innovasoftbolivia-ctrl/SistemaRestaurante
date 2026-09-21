@@ -34,9 +34,9 @@ class CajaOlvidadaTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     /** Un turno abierto hace $horas horas. */
@@ -54,7 +54,7 @@ class CajaOlvidadaTest extends TestCase
     {
         $sesion = $this->turnoDeHace($this->cajero(), CajasOlvidadas::HORAS + 1);
 
-        foreach (['/inicio', '/productos', '/ventas'] as $pantalla) {
+        foreach (['/inicio', '/menu', '/ventas'] as $pantalla) {
             $this->actingAs($this->admin())
                 ->get($pantalla)
                 ->assertOk()
@@ -94,8 +94,9 @@ class CajaOlvidadaTest extends TestCase
     {
         $this->turnoDeHace($this->cajero(), CajasOlvidadas::HORAS + 1);
 
-        $this->actingAs($this->almacenero())
-            ->get('/productos')
+        // La cocina no maneja caja: su pantalla no lleva el aviso.
+        $this->actingAs($this->cocina())
+            ->get('/perfil')
             ->assertOk()
             ->assertDontSee(self::MARCA, false);
     }

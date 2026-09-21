@@ -33,21 +33,23 @@ fi
 # Mismo criterio que backup-db.sh: producción primero.
 detectar() {
     local explicito="$1"; shift
-    if [ -n "$explicito" ]; then
-        echo "$explicito"
-        return 0
-    fi
+    if [ -n "$explicito" ]; then echo "$explicito"; return 0; fi
+    # Primero uno que esté CORRIENDO, en el orden de la lista: `docker inspect`
+    # también responde por un contenedor detenido, y en una máquina con los
+    # dos stacks de desarrollo el de ventas parado le ganaba al de restaurante
+    # levantado. Si ninguno corre, el primero que exista, para que el error
+    # siguiente diga de cuál se trata.
     for nombre in "$@"; do
-        if docker inspect "$nombre" >/dev/null 2>&1; then
-            echo "$nombre"
-            return 0
-        fi
+        if [ "$(docker inspect -f '{{.State.Running}}' "$nombre" 2>/dev/null)" = "true" ]; then echo "$nombre"; return 0; fi
+    done
+    for nombre in "$@"; do
+        if docker inspect "$nombre" >/dev/null 2>&1; then echo "$nombre"; return 0; fi
     done
     return 1
 }
 
-if ! CONTENEDOR="$(detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod ventas_mysql)"; then
-    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni ventas_mysql)." >&2
+if ! CONTENEDOR="$(detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod restaurante_mysql)"; then
+    echo "No encuentro el contenedor de MySQL (ventas_mysql_prod ni restaurante_mysql)." >&2
     echo "¿Está levantado \`docker compose\`? Si usa otro nombre: VENTAS_MYSQL=... $0" >&2
     exit 1
 fi
@@ -95,7 +97,7 @@ gunzip -c "$ARCHIVO" | docker exec -i "$CONTENEDOR" \
 echo "Restaurado «$BASE» desde $ARCHIVO."
 
 if [ -n "$FOTOS" ]; then
-    if APP="$(detectar "${VENTAS_APP:-}" ventas_app_prod ventas_app)"; then
+    if APP="$(detectar "${VENTAS_APP:-}" ventas_app_prod restaurante_app ventas_app)"; then
         gunzip -c "$FOTOS" | docker exec -i "$APP" tar -xf - -C storage/app
         echo "Repuestas las fotos de producto desde $FOTOS."
     else

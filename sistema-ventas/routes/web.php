@@ -8,26 +8,19 @@ use App\Http\Controllers\CargoController;
 use App\Http\Controllers\CategoriaController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\CobroQrController;
-use App\Http\Controllers\CompraController;
+use App\Http\Controllers\CocinaController;
+use App\Http\Controllers\ComandaController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DevolucionCompraController;
-use App\Http\Controllers\DevolucionController;
 use App\Http\Controllers\EmpleadoController;
-use App\Http\Controllers\InventarioController;
-use App\Http\Controllers\LibroVentasController;
+use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductoController;
-use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ReporteController;
-use App\Http\Controllers\RespaldoController;
 use App\Http\Controllers\RolController;
-use App\Http\Controllers\TomaInventarioController;
-use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
-use App\Http\Controllers\VencimientoController;
 use App\Http\Controllers\VentaController;
 use App\Support\Menu;
 use Illuminate\Support\Facades\Route;
@@ -65,7 +58,7 @@ Route::post('logout', [LoginController::class, 'destroy'])
 // para echar a quien la tiene, no para que siga dentro dos horas más.
 Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])->group(function () {
     // La raíz manda a cada quien a su pantalla de trabajo: el cajero al
-    // mostrador, el resto a la portada.
+    // mostrador, la cocina a su pantalla, el resto a la portada.
     Route::get('/', fn () => redirect(Menu::inicio()))->name('raiz');
 
     Route::get('inicio', DashboardController::class)->name('inicio');
@@ -101,12 +94,13 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('pos/precios', [PosController::class, 'precios'])
             ->middleware('throttle:60,1')
             ->name('pos.precios');
-        Route::post('pos', [PosController::class, 'store'])->name('pos.store');
+        Route::post('pos', [PosController::class, 'store'])->middleware('un.envio')->name('pos.store');
 
         // ---- Cobro por QR ----
-        // El QR se pide con el carrito armado y ANTES de que exista la venta:
-        // si el cliente no llega a pagar, no queda una venta con stock ya
-        // descontado. Todo responde JSON porque el cajero espera de pie.
+        // El QR se pide con la cuenta armada y ANTES de que exista la venta:
+        // si el cliente no llega a pagar, no queda una venta ni un comprobante
+        // de algo que nadie pagó. Todo responde JSON porque el cajero espera
+        // de pie.
         Route::post('pos/qr', [CobroQrController::class, 'crear'])
             ->middleware('throttle:30,1')->name('qr.crear');
         Route::get('pos/qr/{cobro}', [CobroQrController::class, 'consultar'])
@@ -117,6 +111,59 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
             ->middleware('throttle:30,1')->name('qr.confirmar');
         Route::post('pos/qr/{cobro}/anular', [CobroQrController::class, 'anular'])
             ->middleware('throttle:30,1')->name('qr.anular');
+    });
+
+    /*
+     * ---- Volver a cobrar: el camino de corrección ----
+     *
+     * Los pedidos se toman y se cobran en el mostrador (`pos`), en el mismo
+     * acto. Solo queda uno sin cobrar cuando se anula su venta: el cliente ya
+     * tiene su ticket y la cocina ya lo prepara, así que el pedido vuelve a
+     * quedar abierto con su número y se cobra de nuevo o se cancela desde aquí.
+     * Cobrar pide `ventas.registrar` (y turno abierto); cancelar el pedido o
+     * uno de sus platos, `pedidos.registrar` —y, si la cocina ya empezó algo,
+     * `ventas.anular` (C1, en `Pedidos::cancelar`)—.
+     */
+    Route::middleware('permiso:pedidos.registrar')->group(function () {
+        Route::post('pedidos/{pedido}/lineas/{linea}/cancelar', [PedidoController::class, 'cancelarLinea'])
+            ->name('pedidos.lineas.cancelar');
+        Route::post('pedidos/{pedido}/cancelar', [PedidoController::class, 'cancelar'])
+            ->name('pedidos.cancelar');
+    });
+
+    Route::middleware('permiso:ventas.registrar')->group(function () {
+        Route::get('pedidos/{pedido}/cobrar', [PedidoController::class, 'cobrarForm'])->name('pedidos.cobrar');
+        // `un.envio`: un doble clic en «Cobrar» no puede dejar dos ventas del
+        // mismo pedido. El índice único de `ventas.pedido_cobrado_uk` (una sola
+        // venta vigente por pedido) lo remata en la base.
+        Route::post('pedidos/{pedido}/cobrar', [PedidoController::class, 'cobrar'])
+            ->middleware('un.envio')->name('pedidos.cobrar.store');
+    });
+
+    // ---- La comanda impresa ----
+    // La imprime la caja al cobrar y la cocina desde su pantalla. Sin precios:
+    // no hay nada de dinero que proteger, pero sí un rastro de quién la
+    // imprimió (ver `App\Services\Comandas`).
+    Route::middleware('permiso:ventas.registrar,pedidos.registrar,cocina.ver')->group(function () {
+        Route::get('pedidos/{pedido}/comanda', [ComandaController::class, 'ver'])->name('pedidos.comanda');
+        Route::post('pedidos/{pedido}/comanda', [ComandaController::class, 'imprimir'])->name('pedidos.comanda.imprimir');
+        Route::post('pedidos/{pedido}/comanda/reimprimir', [ComandaController::class, 'reimprimir'])->name('pedidos.comanda.reimprimir');
+    });
+
+    // ---- Cocina ----
+    // Sin nada de dinero: la cocina solo ve qué preparar y mueve su estado.
+    Route::middleware('permiso:cocina.ver')->group(function () {
+        Route::get('cocina', [CocinaController::class, 'index'])->name('cocina.index');
+        // La pantalla pregunta cada pocos segundos: el tope va holgado.
+        Route::get('cocina/pendientes', [CocinaController::class, 'pendientes'])
+            ->middleware('throttle:120,1')->name('cocina.pendientes');
+        Route::post('cocina/lineas/{linea}', [CocinaController::class, 'actualizarEstado'])
+            ->name('cocina.estado');
+        // Quien lleva los platos entrega el pedido entero de un toque.
+        Route::post('cocina/pedidos/{pedido}/avanzar', [CocinaController::class, 'avanzar'])
+            ->middleware('un.envio')->name('cocina.avanzar');
+        Route::post('cocina/pedidos/{pedido}/entregar', [CocinaController::class, 'entregar'])
+            ->middleware('un.envio')->name('cocina.entregar');
     });
 
     Route::middleware('permiso:ventas.registrar,reportes.ver')->group(function () {
@@ -135,8 +182,8 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
 
     // Crear/editar/borrar clientes es una acción de venta (se dan de alta al
     // vuelo en el mostrador), no de reportes: separado del grupo de arriba
-    // para que `reportes.ver` por sí solo (p. ej. el Almacenero) no alcance
-    // para modificar clientes, igual que ya pasa con devoluciones más abajo.
+    // para que `reportes.ver` por sí solo no alcance
+    // para modificar clientes.
     Route::middleware('permiso:ventas.registrar')->group(function () {
         Route::post('clientes', [ClienteController::class, 'store'])->name('clientes.store');
         // Registrar un cliente es del mostrador; corregirlo o borrarlo, del
@@ -157,18 +204,6 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         ->middleware('permiso:ventas.anular')
         ->name('comprobantes.sustituir');
 
-    // ---- Devoluciones ----
-    // Consultarlas es información de gestión; registrarlas exige su permiso.
-    Route::middleware('permiso:devoluciones.registrar,reportes.ver')->group(function () {
-        Route::get('devoluciones', [DevolucionController::class, 'index'])->name('devoluciones.index');
-        Route::get('devoluciones/{devolucion}', [DevolucionController::class, 'show'])->name('devoluciones.show');
-    });
-
-    Route::middleware('permiso:devoluciones.registrar')->group(function () {
-        Route::get('ventas/{venta}/devolver', [DevolucionController::class, 'create'])->name('devoluciones.create');
-        Route::post('ventas/{venta}/devolver', [DevolucionController::class, 'store'])->middleware('un.envio')->name('devoluciones.store');
-    });
-
     // ---- Reportes ----
     Route::middleware('permiso:reportes.ver')->group(function () {
         Route::get('reportes/ventas', [ReporteController::class, 'ventas'])->name('reportes.ventas');
@@ -180,11 +215,6 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::get('reportes/productos/excel', [ReporteController::class, 'productosExcel'])->name('reportes.productos.excel');
         Route::get('reportes/ventas/pdf', [ReporteController::class, 'ventasPdf'])->name('reportes.ventas.pdf');
         Route::get('reportes/productos/pdf', [ReporteController::class, 'productosPdf'])->name('reportes.productos.pdf');
-
-        // Libro de Ventas IVA: borrador para el contador (ver App\Services\LibroDeVentas).
-        Route::get('reportes/libro-ventas', [LibroVentasController::class, 'index'])->name('reportes.libro-ventas');
-        Route::get('reportes/libro-ventas/excel', [LibroVentasController::class, 'excel'])->name('reportes.libro-ventas.excel');
-        Route::get('reportes/libro-ventas/pdf', [LibroVentasController::class, 'pdf'])->name('reportes.libro-ventas.pdf');
     });
 
     // ---- Caja ----
@@ -198,7 +228,10 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         ->middleware('permiso:caja.abrir')->name('caja.abrir');
 
     Route::post('caja/{sesion}/movimiento', [CajaController::class, 'movimiento'])
-        ->middleware('permiso:caja.abrir')->middleware('un.envio')->name('caja.movimiento');
+        // Quien abrió el turno, o quien puede cerrarlo (el administrador
+        // registra en el turno del cajero el egreso que supera su tope): la
+        // ruta exige lo mismo que el controlador, y no solo `caja.abrir`.
+        ->middleware('permiso:caja.abrir,caja.cerrar')->middleware('un.envio')->name('caja.movimiento');
 
     Route::post('caja/{sesion}/cerrar', [CajaController::class, 'cerrar'])
         ->middleware('permiso:caja.cerrar')->name('caja.cerrar');
@@ -227,169 +260,34 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         ->middleware('permiso:bitacora.ver')
         ->name('bitacora.index');
 
-    // Respaldos: la base entera, con los hashes de las contraseñas. Permiso
-    // propio y nada de nombres de archivo libres (ver Respaldos::ruta()).
-    Route::middleware('permiso:respaldos.gestionar')->group(function () {
-        Route::get('respaldos', [RespaldoController::class, 'index'])->name('respaldos.index');
-        Route::post('respaldos', [RespaldoController::class, 'store'])->name('respaldos.store');
-        Route::get('respaldos/{nombre}/descargar', [RespaldoController::class, 'descargar'])
-            ->where('nombre', '[^/]+')
-            ->name('respaldos.descargar');
-    });
+    // Los respaldos no tienen pantalla: los hace el programador de tareas
+    // cada noche y los sube a la nube (ver App\Services\Respaldos). La base
+    // entera no sale por el navegador para nadie.
 
-    // ---- Catálogo: productos y sus tablas de apoyo ----
-    // La ficha con su kardex se lee desde el almacén y los reportes, que la
-    // enlazan: la abre cualquiera que trabaje con el inventario. Las acciones
+    // ---- El menú: los platos de la carta y sus tablas de apoyo ----
+    // La URL dice `menu` porque es lo que el negocio ve; los nombres de ruta,
+    // la tabla y el permiso siguen diciendo `productos` para no tocar el
+    // esquema ni media aplicación por un cambio de etiqueta.
+    // La ficha se lee también desde los reportes, que la enlazan. Las acciones
     // de adentro llevan cada una su permiso.
-    Route::get('productos/{producto}', [ProductoController::class, 'show'])
-        ->middleware('permiso:productos.gestionar,inventario.ingresar,inventario.ajustar,reportes.ver')
+    Route::get('menu/{producto}', [ProductoController::class, 'show'])
+        ->middleware('permiso:productos.gestionar,reportes.ver')
         ->whereNumber('producto')
         ->name('productos.show');
 
     Route::middleware('permiso:productos.gestionar')->group(function () {
-        Route::get('productos', [ProductoController::class, 'index'])->name('productos.index');
-        Route::get('productos/nuevo', [ProductoController::class, 'create'])->name('productos.create');
-        Route::post('productos', [ProductoController::class, 'store'])->name('productos.store');
-        Route::get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
-        Route::put('productos/{producto}', [ProductoController::class, 'update'])->name('productos.update');
-        Route::delete('productos/{producto}', [ProductoController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('productos.destroy');
+        Route::get('menu', [ProductoController::class, 'index'])->name('productos.index');
+        Route::get('menu/nuevo', [ProductoController::class, 'create'])->name('productos.create');
+        Route::post('menu', [ProductoController::class, 'store'])->name('productos.store');
+        Route::get('menu/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
+        Route::put('menu/{producto}', [ProductoController::class, 'update'])->name('productos.update');
+        Route::delete('menu/{producto}', [ProductoController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('productos.destroy');
 
         Route::get('categorias', [CategoriaController::class, 'index'])->name('categorias.index');
         Route::post('categorias', [CategoriaController::class, 'store'])->name('categorias.store');
         Route::put('categorias/{categoria}', [CategoriaController::class, 'update'])->name('categorias.update');
         Route::delete('categorias/{categoria}', [CategoriaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('categorias.destroy');
-
-        Route::get('unidades', [UnidadMedidaController::class, 'index'])->name('unidades.index');
-        Route::post('unidades', [UnidadMedidaController::class, 'store'])->name('unidades.store');
-        Route::put('unidades/{unidad}', [UnidadMedidaController::class, 'update'])->name('unidades.update');
-        Route::delete('unidades/{unidad}', [UnidadMedidaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('unidades.destroy');
-
-        Route::get('proveedores', [ProveedorController::class, 'index'])->name('proveedores.index');
-        Route::post('proveedores', [ProveedorController::class, 'store'])->name('proveedores.store');
-        Route::put('proveedores/{proveedor}', [ProveedorController::class, 'update'])->name('proveedores.update');
-        Route::delete('proveedores/{proveedor}', [ProveedorController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('proveedores.destroy');
     });
-
-    // ---- Movimientos de stock: permisos propios, distintos del catálogo ----
-    //
-    // Las mismas dos operaciones tienen dos puertas: desde la ficha del
-    // producto (cuando ya se está mirando ese producto) y desde el módulo de
-    // inventario (cuando se llega con la mercadería en la mano y hay que
-    // buscarla). Las dos terminan en `Inventario`, que sigue siendo el único
-    // sitio donde cambia el stock.
-    Route::post('productos/{producto}/ingreso', [ProductoController::class, 'ingresar'])
-        ->middleware('permiso:inventario.ingresar')
-        ->middleware('un.envio')->name('productos.ingreso');
-
-    Route::post('productos/{producto}/ajuste', [ProductoController::class, 'ajustar'])
-        ->middleware('permiso:inventario.ajustar')
-        ->middleware('un.envio')->name('productos.ajuste');
-
-    // ---- Inventario: el almacén como módulo propio ----
-    // Se puede mirar con cualquiera de los tres permisos: quien carga, quien
-    // ajusta y quien solo consulta los reportes.
-    Route::middleware('permiso:inventario.ingresar,inventario.ajustar,reportes.ver')->group(function () {
-        Route::get('inventario', [InventarioController::class, 'index'])->name('inventario.index');
-        Route::get('inventario/movimientos', [InventarioController::class, 'movimientos'])
-            ->name('inventario.movimientos');
-    });
-
-    Route::post('inventario/ingreso', [InventarioController::class, 'ingreso'])
-        ->middleware('permiso:inventario.ingresar')
-        ->middleware('un.envio')->name('inventario.ingreso');
-
-    Route::post('inventario/ajuste', [InventarioController::class, 'ajuste'])
-        ->middleware('permiso:inventario.ajustar')
-        ->middleware('un.envio')->name('inventario.ajuste');
-
-    // ---- Toma de inventario: contar el local entero ----
-    // La mira quien mira el inventario; contar y cerrar es ajustar stock, así
-    // que pide el mismo permiso que el ajuste de a un producto.
-    Route::middleware('permiso:inventario.ajustar,reportes.ver')->group(function () {
-        Route::get('tomas-inventario', [TomaInventarioController::class, 'index'])->name('tomas.index');
-        Route::get('tomas-inventario/{toma}', [TomaInventarioController::class, 'show'])->name('tomas.show');
-        Route::get('tomas-inventario/{toma}/imprimir', [TomaInventarioController::class, 'imprimir'])->name('tomas.imprimir');
-    });
-
-    Route::middleware('permiso:inventario.ajustar')->group(function () {
-        Route::post('tomas-inventario', [TomaInventarioController::class, 'store'])->name('tomas.store');
-        // `scopeBindings`: la línea tiene que ser de ESA toma. Sin esto, con el
-        // id de una línea de una toma cancelada se escribiría en ella.
-        Route::post('tomas-inventario/{toma}/lineas/{linea}', [TomaInventarioController::class, 'contar'])
-            ->scopeBindings()
-            ->name('tomas.contar');
-        Route::post('tomas-inventario/{toma}/cerrar', [TomaInventarioController::class, 'cerrar'])->name('tomas.cerrar');
-        Route::post('tomas-inventario/{toma}/cancelar', [TomaInventarioController::class, 'cancelar'])->name('tomas.cancelar');
-    });
-
-    // ---- Vencimientos: qué caduca y cuándo ----
-    // Se mira con los mismos permisos que el inventario: es la misma pregunta
-    // sobre el mismo stock, solo que partido por fecha.
-    Route::middleware('permiso:inventario.ingresar,inventario.ajustar,reportes.ver')->group(function () {
-        Route::get('vencimientos', [VencimientoController::class, 'index'])->name('vencimientos.index');
-        Route::get('vencimientos/{producto}', [VencimientoController::class, 'producto'])
-            ->name('vencimientos.producto');
-    });
-
-    // Dar de baja una tanda vencida es un ajuste de inventario, así que pide el
-    // permiso de ajustar y no el de mirar.
-    Route::post('vencimientos/{lote}/baja', [VencimientoController::class, 'baja'])
-        ->middleware('permiso:inventario.ajustar')
-        ->name('vencimientos.baja');
-
-    // ---- Compras: la factura del proveedor, entera ----
-    // Sin permiso propio: registrar la compra ES ingresar mercadería, solo que
-    // de muchas líneas a la vez. El listado lo abre además quien ve reportes,
-    // igual que el inventario.
-    Route::middleware('permiso:inventario.ingresar,reportes.ver')->group(function () {
-        Route::get('compras', [CompraController::class, 'index'])->name('compras.index');
-    });
-
-    Route::middleware('permiso:inventario.ingresar')->group(function () {
-        Route::get('compras/nueva', [CompraController::class, 'create'])->name('compras.create');
-        Route::get('compras/productos', [CompraController::class, 'buscar'])
-            ->middleware('throttle:60,1')
-            ->name('compras.productos');
-        Route::post('compras', [CompraController::class, 'store'])->middleware('un.envio')->name('compras.store');
-    });
-
-    // ---- Devoluciones al proveedor: lo que se va de vuelta ----
-    // Se registra desde la compra por la que entró la mercadería: una
-    // devolución siempre es «de esta factura», y arrancar eligiendo la factura
-    // evita devolver contra el proveedor equivocado. El listado general es para
-    // lo otro: mirar cuánto se devolvió y por qué.
-    Route::get('devoluciones-compra', [DevolucionCompraController::class, 'index'])
-        ->middleware('permiso:inventario.ingresar,reportes.ver')
-        ->name('devoluciones-compra.index');
-
-    // Antes del comodín de abajo: `devoluciones-compra/{devolucionCompra}` se
-    // tragaría `nueva` y contestaría 404 buscando una devolución con ese id.
-    Route::get('devoluciones-compra/nueva', [DevolucionCompraController::class, 'elegirCompra'])
-        ->middleware('permiso:inventario.ingresar')
-        ->name('devoluciones-compra.elegir');
-
-    Route::get('devoluciones-compra/{devolucionCompra}', [DevolucionCompraController::class, 'show'])
-        ->middleware('permiso:inventario.ingresar,reportes.ver')
-        ->name('devoluciones-compra.show');
-
-    Route::middleware('permiso:inventario.ingresar')->group(function () {
-        Route::get('compras/{compra}/devolucion', [DevolucionCompraController::class, 'create'])
-            ->name('devoluciones-compra.create');
-        Route::post('compras/{compra}/devolucion', [DevolucionCompraController::class, 'store'])
-            ->middleware('un.envio')->name('devoluciones-compra.store');
-
-        // Lo que el proveedor trajo después. Es una entrada de mercadería, así
-        // que pide el mismo permiso que cargar una compra.
-        Route::post('devoluciones-compra/{devolucionCompra}/reposicion',
-            [DevolucionCompraController::class, 'reponer'])
-            ->middleware('un.envio')->name('devoluciones-compra.reponer');
-    });
-
-    // Va al final del bloque a propósito: `compras/{compra}` es un comodín y,
-    // declarado antes, se tragaría `compras/nueva` y `compras/productos`.
-    Route::get('compras/{compra}', [CompraController::class, 'show'])
-        ->middleware('permiso:inventario.ingresar,reportes.ver')
-        ->name('compras.show');
 
     // ---- Usuarios y roles ----
     Route::middleware('permiso:usuarios.gestionar')->group(function () {

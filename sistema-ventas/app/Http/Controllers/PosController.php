@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Caja;
 use App\Models\Categoria;
 use App\Models\Cliente;
 use App\Models\MetodoPago;
+use App\Models\Pedido;
 use App\Models\Producto;
-use App\Models\Venta;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Ventas;
+use App\Services\Pedidos;
 use App\Support\Config;
 use App\Support\Mensaje;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,12 @@ use Throwable;
 
 /**
  * La pantalla de venta. Todo el cobro ocurre en una sola página para que una
- * venta simple se complete con el teclado: código de barras, Enter, cobrar.
+ * venta simple se complete con el teclado: código del plato, Enter, cobrar.
+ *
+ * Es por donde entra todo lo que se pide en el local: el cliente pide y paga
+ * aquí, se lleva un ticket con el número del pedido y espera su plato. Por eso
+ * cada venta crea un pedido (para comer aquí o para llevar) que la cocina ve,
+ * y lo cobra en el mismo acto (`Pedidos::venderEnMostrador`).
  */
 class PosController extends Controller
 {
@@ -44,12 +50,20 @@ class PosController extends Controller
             $clientes->push($cliente);
         }
 
+        // Sin caja abierta, el mostrador ofrece abrirla ahí mismo: las cajas
+        // libres y lo que dejó en el cajón el último turno de cada una.
+        $cajasLibres = $sesion ? collect() : Caja::activas()->whereDoesntHave('sesionAbierta')->orderBy('nombre')->get();
+
         return view('pos.index', [
             'title' => 'Punto de venta',
             'sesion' => $sesion,
+            'cajasLibres' => $cajasLibres,
+            'fondos' => $cajasLibres
+                ->mapWithKeys(fn (Caja $c) => [$c->id => Cajas::fondoDejadoEn($c)])
+                ->reject(fn (?float $f) => $f === null),
             'metodosPago' => MetodoPago::activos()->orderBy('id')->get(),
-            // Con el conteo al lado: un desplegable esconde que «Abarrotes»
-            // tiene setenta productos y «Golosinas» dos.
+            // Con el conteo al lado: un desplegable esconde que «Platos de
+            // fondo» tiene treinta y «Postres» dos.
             'categorias' => Categoria::activas()
                 ->withCount(['productos' => fn ($q) => $q->activos()])
                 ->having('productos_count', '>', 0)
@@ -84,19 +98,28 @@ class PosController extends Controller
                     ])->values()
                 : collect(),
             'huboError' => session()->has('error') || session()->has('errors'),
+            // El camino de corrección: los pedidos cuya venta se anuló. El
+            // cliente ya tiene su ticket con el número y la cocina ya los
+            // prepara; se cobran de nuevo —con el mismo número— o se cancelan.
+            'porCobrar' => Pedido::abiertos()
+                ->with(['ultimaVenta.cliente:id,nombre', 'detalle'])
+                ->orderBy('fecha_apertura')
+                ->get(),
+            // Recién cancelado un pedido que la cocina ya tenía en papel: se
+            // ofrece imprimir el aviso (ver `PedidoController::cancelar`).
+            'avisoCocina' => session('comanda_pendiente') ? Pedido::find(session('comanda_pendiente')) : null,
             'qrSimulado' => CobrosQr::estaSimulado(),
             'qrSegundosConsulta' => (int) config('qr.segundos_consulta', 4),
         ]);
     }
 
-    /** Búsqueda incremental del mostrador: nombre, código interno o de barras. */
+    /** Búsqueda incremental del mostrador: nombre o código interno. */
     public function buscar(Request $request): JsonResponse
     {
         $texto = $request->string('q')->toString();
         $categoria = $request->integer('categoria') ?: null;
 
         $productos = Producto::activos()
-            ->with('unidadMedida:id,codigo,permite_decimal')
             ->buscar($texto)
             ->when($categoria, fn ($q, $id) => $q->where('categoria_id', $id))
             ->orderBy('nombre')
@@ -107,31 +130,24 @@ class PosController extends Controller
             $productos->map(fn (Producto $p) => [
                 'id' => $p->id,
                 'codigo' => $p->codigo,
-                'codigo_barras' => $p->codigo_barras,
                 'nombre' => $p->nombre,
                 'precio' => (float) $p->precio_venta,
                 'precio_estante' => $p->precio_estante,
                 'afecto' => (bool) $p->afecto_impuesto,
-                'stock' => (float) $p->stock_actual,
-                // Cuántas cajas quedan. El mostrador vende y descuenta en
-                // unidades; esto es solo para que se vea bajar el empaque.
-                'desglose' => $p->stock_desglosado,
-                'unidad' => $p->unidadMedida?->codigo,
-                'decimal' => (bool) $p->unidadMedida?->permite_decimal,
                 'imagen' => $p->imagen_url,
-                // Tiñe la pieza con la inicial mientras el producto no tenga foto.
+                // Tiñe la pieza con la inicial mientras no tenga foto.
                 'categoria_id' => $p->categoria_id,
             ])
         );
     }
 
     /**
-     * Precio y stock ACTUALES de los productos que ya están en el carrito.
+     * Precios ACTUALES de lo que ya está en el carrito.
      *
      * El carrito vive en Alpine y guarda el precio del momento en que se
-     * agregó cada línea; si alguien edita el producto mientras el cajero
+     * agregó cada línea; si alguien edita el menú mientras el cajero
      * todavía no cobra, la pantalla queda mostrando un total y un vuelto
-     * viejos aunque el servidor siempre cobre el precio de catálogo actual.
+     * viejos aunque el servidor siempre cobre el precio del menú actual.
      * El front llama esto justo antes de cobrar para refrescar el carrito
      * con lo que realmente se va a cobrar, en vez de dejar que el cajero le
      * dé el cambio equivocado a alguien confiando en una cifra desactualizada.
@@ -151,7 +167,6 @@ class PosController extends Controller
                 'id' => $p->id,
                 'precio' => (float) $p->precio_venta,
                 'precio_estante' => $p->precio_estante,
-                'stock' => (float) $p->stock_actual,
                 // El régimen de impuesto también puede cambiar mientras el
                 // carrito está armado, y en modo incluido no mueve el precio.
                 'afecto' => (bool) $p->afecto_impuesto,
@@ -175,15 +190,22 @@ class PosController extends Controller
             // servidor, la venta no se registra.
             'total_esperado' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'observacion' => ['nullable', 'string', 'max:255'],
+            // Comer aquí o para llevar: lo dice el ticket y la cocina. Si no
+            // llega —una pantalla vieja—, para comer aquí, que es lo habitual.
+            'tipo' => ['nullable', Rule::in(Pedido::TIPOS)],
+            // A nombre de quién, para llamarlo cuando esté (opcional).
+            'nombre_cliente' => ['nullable', 'string', 'max:80'],
 
             'lineas' => ['required', 'array', 'min:1'],
-            // Un producto, una línea: el mostrador ya las agrupa, y repetidas
-            // descuadraban el stock al anular con procedimientos.
+            // Un ítem, una línea: el mostrador ya las agrupa, y es lo que
+            // exige el índice único de `venta_detalle`.
             'lineas.*.producto_id' => ['required', 'distinct', Rule::exists('productos', 'id')],
             // Tres decimales como máximo: los que guarda la base.
             'lineas.*.cantidad' => ['required', 'numeric', 'gt:0', 'decimal:0,3'],
-            // El precio SIEMPRE sale del catálogo en `Ventas::registrar`, nunca
-            // de aquí: no se valida ni se usa, aunque el formulario lo mande.
+            // Lo que lee el cocinero: «sin cebolla», «término medio».
+            'lineas.*.nota' => ['nullable', 'string', 'max:255'],
+            // El precio SIEMPRE sale del menú, nunca de aquí: no se valida ni
+            // se usa, aunque el formulario lo mande.
 
             'pagos' => ['required', 'array', 'min:1'],
             'pagos.*.metodo_pago_id' => ['required', Rule::exists('metodos_pago', 'id')->where('activo', 1)],
@@ -196,24 +218,28 @@ class PosController extends Controller
             // `Ventas::registrar`, dentro de la misma transacción de la venta.
             'pagos.*.cobro_qr_id' => ['nullable', 'integer', 'exists:cobros_qr,id'],
         ], [
-            'lineas.required' => 'La venta no tiene productos.',
+            'lineas.required' => 'La venta no tiene nada que cobrar.',
             'pagos.required' => 'Falta indicar cómo se pagó.',
         ]);
 
         $cliente = isset($datos['cliente_id']) ? Cliente::find($datos['cliente_id']) : null;
         $descuento = (float) ($datos['descuento'] ?? 0);
 
-        if ($error = $this->descuentoNoAutorizado($descuento, $datos['lineas'])) {
-            return back()->with('error', $error)->withInput();
-        }
-
         try {
-            $venta = Ventas::registrar(
+            // El pedido y su cobro, juntos: o queda cobrado con su venta y su
+            // comprobante, o no queda nada.
+            $venta = Pedidos::venderEnMostrador(
                 sesion: $sesion,
                 usuario: Auth::user(),
-                lineas: $datos['lineas'],
+                lineas: array_map(fn (array $l) => [
+                    'producto_id' => (int) $l['producto_id'],
+                    'cantidad' => $l['cantidad'],
+                    'nota' => $l['nota'] ?? null,
+                ], $datos['lineas']),
                 pagos: $datos['pagos'],
+                tipo: $datos['tipo'] ?? Pedido::LOCAL,
                 cliente: $cliente,
+                nombreCliente: $datos['nombre_cliente'] ?? null,
                 descuento: $descuento,
                 observacion: $datos['observacion'] ?? null,
                 totalEsperado: isset($datos['total_esperado']) ? (float) $datos['total_esperado'] : null,
@@ -225,59 +251,16 @@ class PosController extends Controller
             return back()->with('error', $this->mensajeDeBase($e))->withInput();
         }
 
+        $pedido = $venta->pedido;
+
         return redirect()->route('ventas.show', $venta)
-            ->with('exito', 'Venta registrada. Comprobante '.$venta->comprobante?->numero_completo.'.');
-    }
-
-    /**
-     * El descuento por encima del umbral necesita autorización (O4).
-     *
-     * La base se calcula con el precio del catálogo, nunca con lo que venga
-     * en el request: si se confiara en `precio_unitario` del cliente, bastaría
-     * mandarlo en 0 para que esta función no viera ningún descuento y dejara
-     * pasar una venta regalada sin pedir autorización.
-     *
-     * @param  array<int, array<string, mixed>>  $lineas
-     */
-    private function descuentoNoAutorizado(float $descuento, array $lineas): ?string
-    {
-        if ($descuento <= 0 || Auth::user()->tienePermiso('ventas.descuento')) {
-            return null;
-        }
-
-        $precios = Producto::whereIn('id', array_column($lineas, 'producto_id'))
-            ->pluck('precio_venta', 'id');
-
-        // En centavos enteros y con cada línea redondeada, igual que el subtotal
-        // del mostrador. En coma flotante, 10,89 sobre 108,90 da
-        // 10,000000000000002 %, y el descuento de exactamente el máximo —el que
-        // pone el botón «10 %»— se rechazaba.
-        $base = array_sum(array_map(
-            // Enteros antes de multiplicar, igual que ROUND de MySQL: en coma
-            // flotante 1.45 × 1.5 da 2.1749999… y redondeaba a 2.17.
-            fn ($l) => intdiv(
-                (int) round((float) ($precios[$l['producto_id']] ?? 0) * 100) * (int) round((float) $l['cantidad'] * 1000) + 500,
-                1000,
-            ),
-            $lineas,
-        ));
-
-        $umbral = (int) Config::get('descuento_max_cajero', '0');
-        $centavos = (int) round($descuento * 100);
-
-        if ($centavos * 100 > $umbral * $base) {
-            $porcentaje = $base > 0 ? $centavos / $base * 100 : 0;
-
-            return 'Un descuento del '.round($porcentaje, 1).'% supera el máximo de '.$umbral.
-                '% permitido sin autorización. Pide a un administrador que registre la venta.';
-        }
-
-        return null;
+            ->with('exito', ($pedido ? "{$pedido->etiqueta}: cobrado. " : 'Venta registrada. ')
+                .'Comprobante '.$venta->comprobante?->numero_completo.'.');
     }
 
     /** Extrae el texto del SIGNAL de MySQL, que llega envuelto en ruido. */
     private function mensajeDeBase(Throwable $e): string
     {
-        return Mensaje::deLaBase($e, 'No se pudo registrar la venta. Revisa el stock y los importes e inténtalo de nuevo.');
+        return Mensaje::deLaBase($e, 'No se pudo registrar la venta. Revisa los importes e inténtalo de nuevo.');
     }
 }

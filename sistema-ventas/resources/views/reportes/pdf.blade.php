@@ -54,11 +54,11 @@
             left: 0;
             right: 0;
             height: 62px;
-            border-bottom: 2px solid #465fff;
+            border-bottom: 2px solid #0a5cff;
             padding-bottom: 6px;
         }
 
-        .negocio { font-size: 17px; font-weight: bold; color: #465fff; }
+        .negocio { font-size: 17px; font-weight: bold; color: #0a5cff; }
         .datos-negocio { font-size: 8.5px; color: #667085; margin-top: 2px; }
 
         .titulo-doc {
@@ -93,7 +93,7 @@
             color: #2a31d8;
             margin: 0 0 6px;
             padding-bottom: 3px;
-            border-bottom: 1.5px solid #465fff;
+            border-bottom: 1.5px solid #0a5cff;
         }
 
         table.indicadores { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
@@ -114,12 +114,12 @@
 
         table.datos { width: 100%; border-collapse: collapse; }
         table.datos thead th {
-            background: #465fff;
+            background: #0a5cff;
             color: #fff;
             font-size: 8.5px;
             text-align: left;
             padding: 6px 7px;
-            border: 1px solid #465fff;
+            border: 1px solid #0a5cff;
         }
         table.datos tbody td {
             padding: 5px 7px;
@@ -130,7 +130,7 @@
             padding: 6px 7px;
             font-weight: bold;
             border: 1px solid #e4e7ec;
-            border-top: 2px solid #465fff;
+            border-top: 2px solid #0a5cff;
             background: #ecf3ff;
         }
         .der { text-align: right; }

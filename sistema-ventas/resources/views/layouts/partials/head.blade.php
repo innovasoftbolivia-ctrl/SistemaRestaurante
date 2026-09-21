@@ -4,13 +4,13 @@
 
 {{-- Color de la barra del navegador en móvil. Arranca según la preferencia del
      sistema y lo reajusta el store `theme` al cambiar de tema a mano.
-     #f9fafb es gray-50 (fondo claro) y #101828 gray-900 (fondo oscuro). --}}
+     #f9fafb es gray-50 (fondo claro) y #060d24 el gray-900 del modo oscuro (el azul marino). --}}
 <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101828" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#060d24" media="(prefers-color-scheme: dark)">
 
 <title>{{ isset($title) ? $title.' | ' : '' }}{{ config('app.name') }}</title>
 
-<link rel="icon" href="/images/logo/logo-icon.svg" type="image/svg+xml">
+<link rel="icon" href="/images/logo/logo-icon.svg?v=innovadevs" type="image/svg+xml">
 
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 
@@ -42,7 +42,7 @@
                 // Los <meta theme-color> del head van por preferencia del
                 // sistema; si el tema se cambia a mano hay que reescribirlos o
                 // la barra del navegador se queda del color contrario.
-                const color = this.theme === 'dark' ? '#101828' : '#f9fafb';
+                const color = this.theme === 'dark' ? '#060d24' : '#f9fafb';
                 document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
                     m.setAttribute('content', color);
                 });
@@ -87,3 +87,7 @@
         }
     })();
 </script>
+
+{{-- Lo que una pantalla necesita decidir antes de la primera pintura (la
+     cocina: si arranca en pantalla completa, sin barra lateral). --}}
+@stack('antes-de-pintar')

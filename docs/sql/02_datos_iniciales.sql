@@ -1,5 +1,5 @@
 -- =============================================================================
---  SISTEMA DE VENTA DE PRODUCTOS
+--  SISTEMA DEL RESTAURANTE
 --  Script 02 - Datos iniciales (catálogos base y ejemplo)
 --  Ejecutar después de 01_schema_mysql.sql
 -- =============================================================================
@@ -13,53 +13,53 @@ USE ventas_db;
 INSERT INTO cargos (id, nombre, descripcion) VALUES
     (1, 'Gerente',        'Dueño o administrador del negocio'),
     (2, 'Cajero',         'Atiende al público y maneja la caja'),
-    (3, 'Almacenero',     'Recibe mercadería y controla el inventario'),
-    (4, 'Ayudante',       'Apoyo general en tienda y almacén');
+    (4, 'Ayudante',       'Apoyo general en el local'),
+    (5, 'Cocinero',       'Prepara los platos en la cocina');
 
 -- ------------------------------ Roles y permisos -----------------------------
 -- El rol define qué puede hacer la cuenta dentro del sistema.
 INSERT INTO roles (id, nombre, descripcion) VALUES
     (1, 'Administrador', 'Acceso total al sistema'),
     (2, 'Cajero',        'Registra ventas y maneja su caja'),
-    (3, 'Almacenero',    'Gestiona inventario y productos');
+    (4, 'Cocina',        'Ve los pedidos y su preparación');
 
 INSERT INTO permisos (codigo, modulo, descripcion) VALUES
     ('usuarios.gestionar',   'Usuarios',   'Crear, editar y desactivar usuarios'),
     ('empleados.gestionar',  'Personal',   'Registrar empleados, cargos, ingresos y ceses'),
-    ('productos.gestionar',  'Catálogo',   'Crear y editar productos y precios'),
+    ('productos.gestionar',  'Menú',       'Crear y editar los platos del menú y sus precios'),
     ('ventas.registrar',     'Ventas',     'Registrar una venta'),
     ('ventas.anular',        'Ventas',     'Anular una venta'),
     ('ventas.descuento',     'Ventas',     'Aplicar descuentos sobre el umbral'),
-    ('devoluciones.registrar','Devoluciones','Registrar devoluciones'),
-    ('inventario.ingresar',  'Inventario', 'Registrar ingresos de mercadería'),
-    ('inventario.ajustar',   'Inventario', 'Registrar ajustes de inventario'),
+    ('pedidos.registrar',    'Pedidos',    'Cancelar un pedido por cobrar o uno de sus platos'),
+    ('cocina.ver',           'Cocina',     'Ver y actualizar el estado de preparación'),
     ('caja.abrir',           'Caja',       'Abrir sesión de caja'),
     ('caja.cerrar',          'Caja',       'Cerrar sesión de caja'),
     ('reportes.ver',         'Reportes',   'Consultar reportes y dashboard'),
     ('configuracion.editar', 'Sistema',    'Editar parámetros del sistema'),
     ('bitacora.ver',         'Sistema',    'Consultar la bitácora de operaciones'),
-    ('respaldos.gestionar',  'Sistema',    'Hacer y descargar respaldos de la base'),
     ('clientes.editar',      'Ventas',     'Editar los datos de un cliente ya registrado'),
-    ('registros.eliminar',   'Sistema',    'Eliminar productos, categorías, unidades, proveedores, clientes y personal');
+    ('registros.eliminar',   'Sistema',    'Eliminar productos, categorías, clientes y personal');
 
 -- Administrador: todos los permisos
 INSERT INTO rol_permiso (rol_id, permiso_id) SELECT 1, id FROM permisos;
 -- Cajero: abre su turno y vende, pero NO lo cierra — el cierre lo hace un
 -- administrador, que cuenta el efectivo junto al cajero y deja el resumen
 -- firmado. Es control, no desconfianza porque sí: el arqueo lo hace quien no
--- tuvo la mano en el cajón durante el turno.
+-- tuvo la mano en el cajón durante el turno. También toma los pedidos: el
+-- local no tiene mozos, y el que está en la caja es quien atiende al cliente.
 INSERT INTO rol_permiso (rol_id, permiso_id)
 SELECT 2, id FROM permisos
- WHERE codigo IN ('ventas.registrar','caja.abrir');
--- Almacenero
-INSERT INTO rol_permiso (rol_id, permiso_id)
-SELECT 3, id FROM permisos
- WHERE codigo IN ('productos.gestionar','inventario.ingresar','inventario.ajustar');
--- Sin `reportes.ver`: los reportes, las ventas, las cajas y las devoluciones son
--- de todos los cajeros, y eso solo lo ve el administrador. Tampoco
--- `registros.eliminar`: el almacenero da de alta y corrige, no elimina.
+ WHERE codigo IN ('ventas.registrar','caja.abrir','pedidos.registrar');
 
--- Nótese que los roles (Administrador, Cajero, Almacenero) no tienen por qué
+-- Cocina: ve lo que hay que preparar y mueve su estado. Nada de dinero.
+INSERT INTO rol_permiso (rol_id, permiso_id)
+SELECT 4, id FROM permisos WHERE codigo IN ('cocina.ver');
+
+-- El rol 3 (Mozo) y el cargo 3 (Mesero) existieron hasta el 2026-09-18: el
+-- local no trabaja con mozos. Sus números quedan sin usar para que los de los
+-- demás sigan siendo los mismos en todas las bases.
+
+-- Nótese que los roles (Administrador, Cajero, Cocina) no tienen por qué
 -- coincidir con los cargos: el gerente Ana tiene rol Administrador, pero un
 -- cajero de confianza podría tener rol Administrador sin dejar de ser cajero.
 
@@ -68,14 +68,14 @@ SELECT 3, id FROM permisos
 -- pero no tiene cuenta en el sistema, algo que antes era imposible representar.
 INSERT INTO empleados (id, cargo_id, tipo_documento, documento, nombres, apellidos,
                        telefono, email, fecha_ingreso, tipo_contrato, estado) VALUES
-    (1, 1, 'CI', '10000001', 'Ana',   'Quispe Torres',  '987000111', 'ana@tienda.com',   '2024-01-15', 'INDEFINIDO', 'ACTIVO'),
-    (2, 2, 'CI', '10000002', 'Luis',  'Ramos Vega',     '987000222', 'luis@tienda.com',  '2025-03-01', 'INDEFINIDO', 'ACTIVO'),
-    (3, 3, 'CI', '10000003', 'Marta', 'Flores Díaz',    '987000333', 'marta@tienda.com', '2025-06-10', 'PLAZO_FIJO', 'ACTIVO'),
-    (4, 4, 'CI', '10000004', 'Jorge', 'Ccama Mamani',   '987000444', NULL,               '2026-02-01', 'PARCIAL',    'ACTIVO');
+    (1, 1, 'CI', '10000001', 'Ana',   'Quispe Torres',  '987000111', 'ana@elfogon.com',   '2024-01-15', 'INDEFINIDO', 'ACTIVO'),
+    (2, 2, 'CI', '10000002', 'Luis',  'Ramos Vega',     '987000222', 'luis@elfogon.com',  '2025-03-01', 'INDEFINIDO', 'ACTIVO'),
+    (4, 4, 'CI', '10000004', 'Jorge', 'Ccama Mamani',   '987000444', NULL,                '2026-02-01', 'PARCIAL',    'ACTIVO'),
+    (5, 5, 'CI', '10000005', 'Raúl',  'Choque Apaza',   '987000555', NULL,                '2026-03-01', 'INDEFINIDO', 'ACTIVO');
 
 -- Ejemplo de empleado cesado (el trigger le desactiva la cuenta automáticamente):
 -- UPDATE empleados SET estado = 'CESADO', fecha_cese = CURDATE(),
---        motivo_cese = 'Renuncia voluntaria' WHERE id = 3;
+--        motivo_cese = 'Renuncia voluntaria' WHERE id = 2;
 
 -- ---------------------------------- Usuarios ---------------------------------
 -- Solo las credenciales y el rol de acceso. Los datos de la persona están arriba.
@@ -83,23 +83,18 @@ INSERT INTO empleados (id, cargo_id, tipo_documento, documento, nombres, apellid
 INSERT INTO usuarios (empleado_id, rol_id, usuario, password_hash) VALUES
     (1, 1, 'admin',   '$2y$10$abcdefghijklmnopqrstuv0123456789ABCDEFGHIJKLMNOPQRSTU'),
     (2, 2, 'cajero1', '$2y$10$abcdefghijklmnopqrstuv0123456789ABCDEFGHIJKLMNOPQRSTU'),
-    (3, 3, 'almacen', '$2y$10$abcdefghijklmnopqrstuv0123456789ABCDEFGHIJKLMNOPQRSTU');
+    (5, 4, 'cocina1', '$2y$10$abcdefghijklmnopqrstuv0123456789ABCDEFGHIJKLMNOPQRSTU');
 -- El empleado 4 (Jorge, ayudante) no tiene usuario: trabaja sin usar el sistema.
 
 -- ------------------------------- Catálogos base ------------------------------
-INSERT INTO unidades_medida (id, codigo, nombre, permite_decimal) VALUES
-    (1, 'UND',  'Unidad',     0),
-    (2, 'KG',   'Kilogramo',  1),
-    (3, 'LT',   'Litro',      1),
-    (4, 'CAJA', 'Caja',       0),
-    (5, 'PQT',  'Paquete',    0);
-
-INSERT INTO categorias (id, nombre, descripcion) VALUES
-    (1, 'Abarrotes',    'Productos secos de consumo diario'),
-    (2, 'Bebidas',      'Gaseosas, aguas y jugos'),
-    (3, 'Limpieza',     'Artículos de limpieza del hogar'),
-    (4, 'Higiene',      'Cuidado personal'),
-    (5, 'Golosinas',    'Dulces y snacks');
+-- Las secciones de la carta.
+-- Las bebidas no pasan por la cocina: se cobran, pero no van a su pantalla
+-- ni a la comanda. Se cambia en Menú → Categorías.
+INSERT INTO categorias (id, nombre, descripcion, pasa_por_cocina) VALUES
+    (1, 'Entradas',         'Para picar mientras llega el plato', 1),
+    (2, 'Platos de fondo',  'El plato principal',                 1),
+    (3, 'Bebidas',          'Refrescos, jugos y gaseosas',        0),
+    (4, 'Postres',          'Para terminar',                      1);
 
 -- Factura -> persona jurídica (exige cliente con NIT). Recibo -> persona natural.
 INSERT INTO tipos_comprobante (id, codigo, nombre, aplica_persona, exige_cliente, exige_documento) VALUES
@@ -112,6 +107,14 @@ INSERT INTO series_comprobante (tipo_comprobante_id, serie, correlativo_actual, 
     (2, 'R001', 0, 6),
     (3, 'NV01', 0, 6);
 
+-- La serie con que se numera cada tipo de documento. Hasta el 2026-09-19 eran
+-- `configuracion.serie_factura` y `serie_recibo`, y la de la nota de venta salía
+-- de otra consulta; ahora es una FK que la base obliga a ser del mismo tipo.
+UPDATE tipos_comprobante t
+  JOIN series_comprobante s ON s.tipo_comprobante_id = t.id
+   SET t.serie_por_omision_id = s.id
+ WHERE s.serie IN ('F001', 'R001', 'NV01');
+
 INSERT INTO metodos_pago (id, codigo, nombre, afecta_caja) VALUES
     (1, 'EFECTIVO', 'Efectivo',            1),
     (2, 'TARJETA',  'Tarjeta débito/crédito', 0),
@@ -122,10 +125,6 @@ INSERT INTO metodos_pago (id, codigo, nombre, afecta_caja) VALUES
 
 INSERT INTO cajas (id, nombre, ubicacion) VALUES
     (1, 'Caja 1', 'Mostrador principal');
-
-INSERT INTO proveedores (id, razon_social, documento, telefono) VALUES
-    (1, 'Distribuidora del Norte S.A.C.', '20100000001', '987654321'),
-    (2, 'Comercial Andina E.I.R.L.',      '20100000002', '987654322');
 
 -- --------------------------------- Clientes ----------------------------------
 -- NO existe un registro "Cliente varios": la venta al paso se guarda con
@@ -146,36 +145,34 @@ INSERT INTO clientes (id, tipo_persona, tipo_documento, documento, razon_social,
         'Pedro Cárdenas Loza', 'Av. Grigotá 233, Santa Cruz', '33561231', 'admin@elfogon.com');
 
 -- --------------------------------- Productos ---------------------------------
--- Importante: precio_compra y precio_venta se registran SIN impuesto.
--- El impuesto (el IVA boliviano, 13%) se agrega sobre la base al calcular el
--- total de la venta. Los precios base se eligieron de modo que el precio final
--- por unidad quede redondo:
+-- Importante: el plato tiene un solo precio, `precio_venta`, y se registra SIN
+-- impuesto. El impuesto (el IVA boliviano, 13%) se agrega sobre la base al
+-- calcular el total de la venta. Los precios base se eligieron de modo que el
+-- precio final por porción quede redondo:
 --     precio_venta = ROUND(precio_estante / 1.13, 2)
 --     ROUND(precio_venta * 1.13, 2) = precio_estante
 -- Hasta septiembre de 2026 la tasa sembrada era el 18% del IGV peruano, y las
 -- bases estaban calculadas para ese 18%. Los precios de estante son los mismos.
 --
--- `contenido_empaque` / `nombre_empaque`: cómo llega del proveedor. Solo lo
--- llevan los que de verdad vienen en caja; el arroz por kilo o el aceite
--- suelto van en NULL, que es como se ve un producto sin empaque. Ojo: el
--- stock y los precios siguen siendo POR UNIDAD DE VENTA en todos los casos.
+-- Todo va por porción: no hay unidad de medida que elegir, y tampoco código de
+-- barras: un plato no se escanea. El código interno es lo que se teclea para
+-- encontrarlo rápido.
 INSERT INTO productos
-    (categoria_id, unidad_medida_id, contenido_empaque, nombre_empaque, proveedor_id,
-     codigo, codigo_barras, nombre,
-     precio_compra, precio_venta, stock_actual, stock_minimo) VALUES
-    --                                                                    costo  base   stock min   -- estante c/imp.
-    (1, 2, NULL, NULL,      1, 'P-0001', '7790001000019', 'Arroz extra 1 kg',      3.20,  3.98,  120, 20),  --  4.50
-    (1, 3, NULL, NULL,      1, 'P-0002', '7790001000026', 'Aceite vegetal 1 L',    6.10,  7.26,   60, 12),  --  8.20
-    (1, 2, NULL, NULL,      1, 'P-0003', '7790001000033', 'Azúcar rubia 1 kg',     3.00,  3.72,   45, 15),  --  4.20
-    (1, 1,   24, 'Caja',    2, 'P-0004', '7790001000040', 'Leche evaporada 400 g', 2.80,  3.54,   90, 24),  --  4.00
-    (2, 3,   12, 'Caja',    2, 'P-0005', '7790001000057', 'Gaseosa 1.5 L',         4.00,  5.75,   75, 18),  --  6.50
-    (2, 3,   15, 'Paquete', 2, 'P-0006', '7790001000064', 'Agua mineral 625 ml',   0.90,  1.33,  150, 30),  --  1.50
-    (3, 2, NULL, NULL,      1, 'P-0007', '7790001000071', 'Detergente 1 kg',       7.50,  9.65,   40, 10),  -- 10.90
-    (3, 3, NULL, NULL,      1, 'P-0008', '7790001000088', 'Lejía 1 L',             2.20,  3.10,   35, 10),  --  3.50
-    (4, 1,   72, 'Caja',    2, 'P-0009', '7790001000095', 'Jabón de tocador',      1.60,  2.48,   80, 20),  --  2.80
-    (4, 1, NULL, NULL,      2, 'P-0010', '7790001000101', 'Papel higiénico x4',    4.20,  5.75,   55, 12),  --  6.50
-    (5, 1,   50, 'Caja',    2, 'P-0011', '7790001000118', 'Galletas surtidas',     0.70,  1.06,  200, 40),  --  1.20
-    (5, 1,   24, 'Caja',    2, 'P-0012', '7790001000125', 'Chocolate barra 40 g',  1.10,  2.21,  110, 25);  --  2.50
+    (categoria_id, codigo, nombre,
+     precio_venta) VALUES
+    --                                    base   -- carta c/imp.
+    (2, 'P-0001', 'Pollo a la parrilla',    3.98),  --  4.50
+    (3, 'P-0002', 'Jugo de frutas',         7.26),  --  8.20
+    (1, 'P-0003', 'Papas fritas',           3.72),  --  4.20
+    (2, 'P-0004', 'Milanesa de pollo',      3.54),  --  4.00
+    (3, 'P-0005', 'Refresco de la casa',    5.75),  --  6.50
+    (3, 'P-0006', 'Mocochinchi',            1.33),  --  1.50
+    (2, 'P-0007', 'Lomo a la plancha',      9.65),  -- 10.90
+    (4, 'P-0008', 'Helado de canela',       3.10),  --  3.50
+    (1, 'P-0009', 'Empanada de queso',      2.48),  --  2.80
+    (2, 'P-0010', 'Pique macho',            5.75),  --  6.50
+    (1, 'P-0011', 'Pan al ajo',             1.06),  --  1.20
+    (4, 'P-0012', 'Flan de vainilla',       2.21);  --  2.50
 
 -- Verificación: esta consulta debe devolver el precio de estante redondo de cada producto.
 -- SELECT codigo, nombre, precio_venta,
@@ -183,30 +180,21 @@ INSERT INTO productos
 --                                     FROM configuracion WHERE clave = 'tasa_impuesto')), 2) AS precio_estante
 --   FROM productos ORDER BY codigo;
 
--- Movimiento de inventario inicial (carga de stock físico contado)
-INSERT INTO movimientos_inventario
-    (producto_id, usuario_id, tipo, origen, cantidad, stock_anterior, stock_resultante, motivo)
-SELECT id, 1, 'ENTRADA', 'INICIAL', stock_actual, 0, stock_actual, 'Carga inicial de inventario'
-  FROM productos;
-
 -- ------------------------------- Configuración -------------------------------
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
-    ('negocio_nombre',      'Minimarket El Ahorro',  'Nombre comercial del negocio'),
+    ('negocio_nombre',      'Restaurante El Buen Sabor', 'Nombre comercial del negocio'),
     ('negocio_documento',   '1023456789',            'NIT del negocio'),
     ('negocio_direccion',   'Av. Grigotá 1420, Santa Cruz', 'Dirección del local'),
     ('negocio_telefono',    '33561200',              'Teléfono de contacto'),
-    ('moneda_simbolo',      'Bs',                    'Símbolo de la moneda'),
     ('moneda_codigo',       'BOB',                   'Código ISO de la moneda'),
     ('tasa_impuesto',       '0.1300',                'Tasa del IVA (en Bolivia, 13 %)'),
     ('precios_incluyen_impuesto', '0',               'Los precios de venta ya incluyen el impuesto (1 = sí; 0 = se suma encima)'),
     ('descuento_max_cajero','10',                    'Descuento máximo (%) sin autorización'),
     ('egreso_max_cajero',   '200.00',                'Egreso máximo (Bs) que el cajero registra sin autorización'),
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
-    ('dias_max_devolucion', '7',                     'Días máximos tras la venta para aceptar una devolución'),
     ('exigir_referencia_pago', '1',                  'Pedir el número de operación en pagos con tarjeta, billetera o transferencia (1 = sí)'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
-    ('serie_factura',       '1',                     'ID de serie F001 usada para facturas (persona jurídica)'),
-    ('serie_recibo',        '2',                     'ID de serie R001 usada para recibos (persona natural)');
+    ('hora_corte_jornada',  '5',                     'Hora (0 a 12) en que empieza la jornada: lo pedido antes cuenta para la noche anterior');
 
 -- =============================================================================
 --  EJEMPLO A: VENTA A PERSONA NATURAL -> se emite RECIBO
@@ -221,7 +209,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- INSERT INTO ventas (cliente_id, usuario_id, sesion_caja_id) VALUES (1, 2, @sesion);
 -- SET @venta = LAST_INSERT_ID();
 --
--- -- 2) detalle: el trigger copia el régimen de impuesto del producto y descuenta stock
+-- -- 2) detalle: el trigger copia del producto el régimen de impuesto
 -- -- OJO: el detalle se inserta con VALUES, nunca con INSERT ... SELECT FROM productos.
 -- -- El trigger actualiza `productos`, y MySQL prohíbe que un trigger modifique una tabla
 -- -- que la sentencia invocante está leyendo (error 1442). La aplicación ya tiene estos
@@ -251,8 +239,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 --
 -- COMMIT;
 --
--- SELECT * FROM v_ventas_comprobante WHERE venta_id = @venta;
--- SELECT * FROM v_kardex WHERE venta_id = @venta;
+-- SELECT numero_completo, cliente_nombre, total FROM comprobantes WHERE venta_id = @venta;
 
 -- =============================================================================
 --  EJEMPLO B: VENTA A PERSONA JURÍDICA -> se emite FACTURA
@@ -319,7 +306,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- =============================================================================
 -- La venta @venta3 se cobró al paso y salió con recibo R001-000002.
 -- El cliente regresa: era una empresa y necesita factura.
--- No se anula la venta ni se toca el stock; solo se reemplaza el documento.
+-- No se anula la venta; solo se reemplaza el documento.
 --
 -- START TRANSACTION;
 --
@@ -339,31 +326,7 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- -- R001-000002 | SUSTITUIDO | NULL     | 2026-...
 -- -- F001-000002 | EMITIDO    | <recibo> | NULL
 --
--- SELECT * FROM v_comprobantes_sustituidos WHERE venta_id = @venta3;
-
--- =============================================================================
---  EJEMPLO E: INGRESO DE MERCADERÍA Y AJUSTE DE INVENTARIO (HU-19, HU-20)
--- =============================================================================
--- Cada movimiento del kardex referencia su documento con una FK, según el origen.
---
--- -- COMPRA: entrada de 50 unidades con la guía del proveedor 1
--- -- (movimientos_inventario no tiene trigger, así que aquí SELECT sí es válido)
--- INSERT INTO movimientos_inventario
---     (producto_id, usuario_id, tipo, origen, proveedor_id, documento_externo,
---      cantidad, stock_anterior, stock_resultante, costo_unitario, motivo)
--- SELECT id, 3, 'ENTRADA', 'COMPRA', 1, 'G001-004512',
---        50, stock_actual, stock_actual + 50, precio_compra, 'Reposición de stock'
---   FROM productos WHERE codigo = 'P-0001';
--- UPDATE productos SET stock_actual = stock_actual + 50 WHERE codigo = 'P-0001';
---
--- -- AJUSTE: merma detectada en el conteo físico. El motivo es obligatorio.
--- INSERT INTO movimientos_inventario
---     (producto_id, usuario_id, tipo, origen, cantidad,
---      stock_anterior, stock_resultante, motivo)
--- SELECT id, 3, 'AJUSTE', 'AJUSTE', 2, stock_actual, stock_actual - 2,
---        'Merma por producto vencido - acta 2026-08'
---   FROM productos WHERE codigo = 'P-0004';
--- UPDATE productos SET stock_actual = stock_actual - 2 WHERE codigo = 'P-0004';
+-- SELECT numero_completo, estado, sustituye_a, motivo_emision FROM comprobantes WHERE venta_id = @venta3;
 
 -- =============================================================================
 --  EJEMPLO F: LO QUE EL MODELO RECHAZA
@@ -392,12 +355,3 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 -- --   "La venta excede el plazo permitido para sustituir su comprobante"
 -- --   (el plazo se configura en configuracion.dias_max_sustitucion)
 --
--- -- Movimiento de kardex con origen VENTA pero sin venta -> ERROR 3819 (ck_movinv_origen)
--- -- INSERT INTO movimientos_inventario
--- --     (producto_id, tipo, origen, cantidad, stock_anterior, stock_resultante)
--- -- VALUES (1, 'SALIDA', 'VENTA', 1, 10, 9);
---
--- -- Movimiento con origen COMPRA pero apuntando a una venta -> ERROR 3819
--- -- (cada origen admite exactamente su referencia y ninguna otra)
---
--- -- Ajuste de inventario sin motivo -> ERROR 3819 (ck_movinv_motivo)

@@ -38,14 +38,14 @@
           existe, así que estas de aquí perdían en silencio y las pruebas
           terminaban corriendo —y escribiendo— sobre la base de desarrollo en
           vez de la de pruebas. Correr `php artisan test` desde DENTRO del
-          contenedor sigue sin funcionar (127.0.0.1:13310 no es alcanzable
+          contenedor sigue sin funcionar (127.0.0.1:13311 no es alcanzable
           ahí), pero ahora falla con un error de conexión en vez de ensuciar
           `ventas_db` sin avisar. Desde el host sí conecta: por eso las
           pruebas se corren con el PHP del host, como documenta el README.
         -->
         <env name="DB_CONNECTION" value="mysql" force="true"/>
         <env name="DB_HOST" value="127.0.0.1" force="true"/>
-        <env name="DB_PORT" value="13310" force="true"/>
+        <env name="DB_PORT" value="13311" force="true"/>
         <env name="DB_DATABASE" value="ventas_db_test" force="true"/>
         <env name="DB_USERNAME" value="root" force="true"/>
         <env name="DB_PASSWORD" value="ventas123" force="true"/>

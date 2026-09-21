@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Revisión de salud del Sistema de Ventas, pensada para correr desde cron.
+# Revisión de salud del Sistema de Restaurante, pensada para correr desde cron.
 #
 #   ./scripts/revisar-salud.sh
 #
@@ -48,10 +48,19 @@ anotar() { LINEAS+=("$1"); echo "$1"; }
 fallar() { PROBLEMAS+=("$1"); anotar "FALLA  $1"; }
 pasar()  { anotar "ok     $1"; }
 
-# Mismo criterio que backup-db.sh: producción primero.
+# Mismo criterio que backup-db.sh: producción primero, después el stack de
+# desarrollo del restaurante. Nunca el del sistema de ventas (ventas_mysql).
 detectar() {
     local explicito="$1"; shift
     if [ -n "$explicito" ]; then echo "$explicito"; return 0; fi
+    # Primero uno que esté CORRIENDO, en el orden de la lista: `docker inspect`
+    # también responde por un contenedor detenido, y en una máquina con los
+    # dos stacks de desarrollo el de ventas parado le ganaba al de restaurante
+    # levantado. Si ninguno corre, el primero que exista, para que el aviso
+    # diga de cuál se trata.
+    for nombre in "$@"; do
+        if [ "$(docker inspect -f '{{.State.Running}}' "$nombre" 2>/dev/null)" = "true" ]; then echo "$nombre"; return 0; fi
+    done
     for nombre in "$@"; do
         if docker inspect "$nombre" >/dev/null 2>&1; then echo "$nombre"; return 0; fi
     done
@@ -62,13 +71,13 @@ echo "Revisión de salud — $(date '+%Y-%m-%d %H:%M:%S')"
 echo
 
 # --- 1. Contenedores ----------------------------------------------------------
-for par in "MySQL:${VENTAS_MYSQL:-}:ventas_mysql_prod:ventas_mysql" \
-           "aplicación:${VENTAS_APP:-}:ventas_app_prod:ventas_app" \
-           "nginx:${VENTAS_NGINX:-}:ventas_nginx_prod:ventas_nginx"; do
-    IFS=':' read -r etiqueta explicito n1 n2 <<< "$par"
+for par in "MySQL:${VENTAS_MYSQL:-}:ventas_mysql_prod:restaurante_mysql" \
+           "aplicación:${VENTAS_APP:-}:ventas_app_prod:restaurante_app:ventas_app" \
+           "nginx:${VENTAS_NGINX:-}:ventas_nginx_prod:restaurante_nginx:ventas_nginx"; do
+    IFS=':' read -r etiqueta explicito n1 n2 n3 <<< "$par"
 
-    if ! nombre="$(detectar "$explicito" "$n1" "$n2")"; then
-        fallar "no encuentro el contenedor de $etiqueta ($n1 ni $n2)"
+    if ! nombre="$(detectar "$explicito" "$n1" "$n2" "$n3")"; then
+        fallar "no encuentro el contenedor de $etiqueta ($n1, $n2 ni $n3)"
         continue
     fi
 
@@ -120,7 +129,7 @@ ULTIMO="$(find "$DESTINO" -maxdepth 1 -name 'ventas_db_*.sql.gz' -mmin "-$((BACK
 # Los respaldos nocturnos del programador viven en el volumen de la aplicación,
 # no en backups/. Antes el chequeo solo miraba aquí y, sin un cron aparte,
 # avisaba siempre «no hay respaldos» aunque se hicieran todas las noches.
-if [ -z "$ULTIMO" ] && APP_RESPALDOS="$(detectar "${VENTAS_APP:-}" ventas_app_prod ventas_app)"; then
+if [ -z "$ULTIMO" ] && APP_RESPALDOS="$(detectar "${VENTAS_APP:-}" ventas_app_prod restaurante_app ventas_app)"; then
     EN_APP="$(docker exec "$APP_RESPALDOS" find storage/app/respaldos -maxdepth 1 -name 'ventas_db_*.sql.gz' -size +1k -mmin "-$((BACKUP_MAX_HORAS * 60))" 2>/dev/null | sort | tail -1)"
     if [ -n "$EN_APP" ]; then
         pasar "respaldo reciente del programador: $(basename "$EN_APP")"
@@ -153,7 +162,7 @@ if [ ${#PROBLEMAS[@]} -eq 0 ]; then
     exit 0
 fi
 
-RESUMEN="Sistema de Ventas — ${#PROBLEMAS[@]} problema(s) el $(date '+%Y-%m-%d %H:%M'):"
+RESUMEN="Sistema de Restaurante — ${#PROBLEMAS[@]} problema(s) el $(date '+%Y-%m-%d %H:%M'):"
 for p in "${PROBLEMAS[@]}"; do
     RESUMEN="${RESUMEN}"$'\n'"- ${p}"
 done

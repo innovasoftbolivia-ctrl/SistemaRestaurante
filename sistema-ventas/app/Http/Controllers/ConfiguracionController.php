@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SerieComprobante;
+use App\Models\TipoComprobante;
 use App\Services\Auditor;
 use App\Services\Precios;
 use App\Support\Config;
@@ -40,6 +41,15 @@ class ConfiguracionController extends Controller
         'USD' => 'Dólar estadounidense — $',
     ];
 
+    /**
+     * Los campos de la pantalla que eligen la serie de cada tipo. No viven en
+     * `configuracion`: son `tipos_comprobante.serie_por_omision_id`.
+     */
+    private const SERIES = [
+        'serie_factura' => 'FAC',
+        'serie_recibo' => 'REC',
+    ];
+
     public function edit(): View
     {
         $actual = $this->actuales();
@@ -64,7 +74,7 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-    /** Deshace la última conversión de precios: el catálogo y el modo vuelven a como estaban. */
+    /** Deshace la última conversión de precios: el menú y el modo vuelven a como estaban. */
     public function deshacerConversion(Request $request): RedirectResponse
     {
         try {
@@ -73,7 +83,7 @@ class ConfiguracionController extends Controller
             return redirect()->route('configuracion.edit')->with('error', Mensaje::de($e));
         }
 
-        $mensaje = "Se restauró el precio de {$resultado['restaurados']} producto(s) y el modo de precios anterior.";
+        $mensaje = "Se restauró el precio de {$resultado['restaurados']} ítem(s) del menú y el modo de precios anterior.";
 
         if ($resultado['omitidos'] > 0) {
             $mensaje .= " {$resultado['omitidos']} ya se habían editado a mano y se dejaron como están.";
@@ -102,8 +112,10 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => ['required', 'numeric', 'min:0', 'max:99999999', 'decimal:0,2'],
             'cliente_generico_nombre' => ['required', 'string', 'max:60'],
             'dias_max_sustitucion' => ['required', 'integer', 'min:0', 'max:30'],
-            'dias_max_devolucion' => ['required', 'integer', 'min:0', 'max:365'],
             'exigir_referencia_pago' => ['boolean'],
+            // Opcional para quien guarda otra parte de la pantalla: sin él, la
+            // hora de corte se queda como está.
+            'hora_corte_jornada' => ['sometimes', 'required', 'integer', 'min:0', 'max:'.Config::HORA_CORTE_MAXIMA],
             'serie_factura' => ['required', 'integer', $this->serieDeTipo('FAC')],
             'serie_recibo' => ['required', 'integer', $this->serieDeTipo('REC')],
         ], [
@@ -122,7 +134,7 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => 'egreso máximo del cajero',
             'cliente_generico_nombre' => 'nombre del cliente sin registrar',
             'dias_max_sustitucion' => 'días para sustituir un comprobante',
-            'dias_max_devolucion' => 'días para aceptar una devolución',
+            'hora_corte_jornada' => 'hora en que empieza la jornada',
             'serie_factura' => 'serie de facturas',
             'serie_recibo' => 'serie de recibos',
         ]);
@@ -135,20 +147,24 @@ class ConfiguracionController extends Controller
             'negocio_direccion' => trim((string) ($datos['negocio_direccion'] ?? '')),
             'negocio_telefono' => trim((string) ($datos['negocio_telefono'] ?? '')),
             'moneda_codigo' => $datos['moneda_codigo'],
-            'moneda_simbolo' => Config::simbolo($datos['moneda_codigo']),
             'tasa_impuesto' => number_format($request->boolean('cobra_impuesto') ? (float) $datos['tasa_impuesto'] / 100 : 0, 4, '.', ''),
             'precios_incluyen_impuesto' => $datos['precios_incluyen_impuesto'],
             'descuento_max_cajero' => (string) (int) $datos['descuento_max_cajero'],
             'egreso_max_cajero' => number_format((float) $datos['egreso_max_cajero'], 2, '.', ''),
             'cliente_generico_nombre' => trim($datos['cliente_generico_nombre']),
             'dias_max_sustitucion' => (string) (int) $datos['dias_max_sustitucion'],
-            'dias_max_devolucion' => (string) (int) $datos['dias_max_devolucion'],
             'exigir_referencia_pago' => $request->boolean('exigir_referencia_pago') ? '1' : '0',
             'serie_factura' => (string) (int) $datos['serie_factura'],
             'serie_recibo' => (string) (int) $datos['serie_recibo'],
         ];
 
-        $antes = DB::table('configuracion')->pluck('valor', 'clave')->all();
+        // Rige para los pedidos que se abran de ahora en adelante: los ya
+        // abiertos conservan su jornada y su número.
+        if (array_key_exists('hora_corte_jornada', $datos)) {
+            $nuevos['hora_corte_jornada'] = (string) (int) $datos['hora_corte_jornada'];
+        }
+
+        $antes = DB::table('configuracion')->pluck('valor', 'clave')->all() + $this->seriesActuales();
         $cambios = [];
 
         foreach ($nuevos as $clave => $valor) {
@@ -165,7 +181,7 @@ class ConfiguracionController extends Controller
                 ->with('aviso', 'No había nada que cambiar.');
         }
 
-        // Al cambiar de modo, el catálogo se ajusta para que el cliente siga
+        // Al cambiar de modo, el menú se ajusta para que el cliente siga
         // pagando lo mismo (ver Precios). En la misma transacción: nunca
         // quedan la configuración nueva con los precios viejos.
         $convertir = isset($cambios['precios_incluyen_impuesto']) && $request->boolean('convertir_precios');
@@ -174,38 +190,49 @@ class ConfiguracionController extends Controller
 
         $convertidos = DB::transaction(function () use ($cambios, $convertir, $nuevos, $tasaAnterior, $tasaNueva) {
             foreach ($cambios as $clave => $valor) {
+                if (isset(self::SERIES[$clave])) {
+                    TipoComprobante::where('codigo', self::SERIES[$clave])
+                        ->update(['serie_por_omision_id' => (int) $valor['despues']]);
+
+                    continue;
+                }
+
                 DB::table('configuracion')->updateOrInsert(
                     ['clave' => $clave],
                     ['valor' => $valor['despues']],
                 );
             }
 
-            return $convertir
+            $convertidos = $convertir
                 ? Precios::convertirAlModo($nuevos['precios_incluyen_impuesto'] === '1', $tasaAnterior, $tasaNueva)
                 : [];
+
+            // La bitácora dentro de la transacción: el registro de la
+            // conversión, con el precio anterior de cada producto, es lo único
+            // que permite deshacerla (Precios::deshacerUltimaConversion). Si
+            // no se pudiera escribir, tampoco quedan los precios cambiados.
+            Auditor::registrar('CONFIGURACION_ACTUALIZADA', 'configuracion', null, $cambios);
+
+            if ($convertidos) {
+                Auditor::registrar('PRECIOS_CONVERTIDOS', 'productos', null, [
+                    'productos' => count($convertidos),
+                    'precios_incluyen_impuesto' => $nuevos['precios_incluyen_impuesto'],
+                    'tasa_anterior' => $tasaAnterior,
+                    'tasa_nueva' => $tasaNueva,
+                    'precios' => $convertidos,
+                ]);
+            }
+
+            return $convertidos;
         });
 
         Config::olvidar();
-
-        Auditor::registrar('CONFIGURACION_ACTUALIZADA', 'configuracion', null, $cambios);
-
-        if ($convertidos) {
-            // Con el precio anterior de cada producto: es lo que permite
-            // deshacer la conversión (Precios::deshacerUltimaConversion).
-            Auditor::registrar('PRECIOS_CONVERTIDOS', 'productos', null, [
-                'productos' => count($convertidos),
-                'precios_incluyen_impuesto' => $nuevos['precios_incluyen_impuesto'],
-                'tasa_anterior' => $tasaAnterior,
-                'tasa_nueva' => $tasaNueva,
-                'precios' => $convertidos,
-            ]);
-        }
 
         $cuantos = count($cambios);
         $mensaje = $cuantos === 1 ? 'Se guardó 1 cambio.' : "Se guardaron {$cuantos} cambios.";
 
         if ($convertidos) {
-            $mensaje .= ' Se ajustó el precio de '.count($convertidos).' producto(s) para que el cliente siga pagando lo mismo.';
+            $mensaje .= ' Se ajustó el precio de '.count($convertidos).' ítem(s) del menú para que el cliente siga pagando lo mismo.';
         }
 
         return redirect()->route('configuracion.edit')->with('exito', $mensaje);
@@ -235,11 +262,21 @@ class ConfiguracionController extends Controller
             'egreso_max_cajero' => (string) Config::get('egreso_max_cajero', '0'),
             'cliente_generico_nombre' => (string) Config::get('cliente_generico_nombre', 'Cliente varios'),
             'dias_max_sustitucion' => (string) Config::get('dias_max_sustitucion', '1'),
-            'dias_max_devolucion' => (string) Config::get('dias_max_devolucion', '7'),
             'exigir_referencia_pago' => (string) Config::get('exigir_referencia_pago', '1'),
-            'serie_factura' => (string) Config::get('serie_factura', ''),
-            'serie_recibo' => (string) Config::get('serie_recibo', ''),
-        ];
+            'hora_corte_jornada' => (string) Config::horaCorteJornada(),
+        ] + $this->seriesActuales();
+    }
+
+    /**
+     * La serie de cada tipo, como la escribe la pantalla.
+     *
+     * @return array<string, string>
+     */
+    private function seriesActuales(): array
+    {
+        $porCodigo = TipoComprobante::whereIn('codigo', self::SERIES)->pluck('serie_por_omision_id', 'codigo');
+
+        return array_map(fn (string $codigo) => (string) ($porCodigo[$codigo] ?? ''), self::SERIES);
     }
 
     /** @return array<int|string, string> id => «F001 · va por el 000123» */

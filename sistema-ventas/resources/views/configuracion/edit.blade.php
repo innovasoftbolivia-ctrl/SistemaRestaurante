@@ -16,7 +16,7 @@
             incluidoAntes: @js($actual['precios_incluyen_impuesto']),
             convertir: @js((bool) old('convertir_precios', true)),
             ejemplo: 10,
-            /* Lo que ve el mostrador con un producto de ejemplo, en centavos
+            /* Lo que ve el mostrador con un plato de ejemplo, en centavos
                enteros y con la misma cuenta que la base. */
             get tasaEfectiva() { return this.cobra ? Math.max(Number(this.tasa) || 0, 0) / 100 : 0; },
             get ivaEjemplo() {
@@ -107,7 +107,7 @@
                             <span>
                                 <span class="block text-sm font-medium text-gray-800 dark:text-white/90">Ya incluyen el IVA</span>
                                 <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
-                                    El precio del producto es lo que paga el cliente. El IVA se separa por dentro para la factura.
+                                    El precio que pones en el menú es lo que paga el cliente. El IVA se separa por dentro para la factura.
                                     Es lo habitual en Bolivia.
                                 </span>
                             </span>
@@ -119,7 +119,7 @@
                             <span>
                                 <span class="block text-sm font-medium text-gray-800 dark:text-white/90">No incluyen el IVA: se suma al cobrar</span>
                                 <span class="block text-theme-xs text-gray-500 dark:text-gray-400">
-                                    El precio del producto es la base y el mostrador le agrega el impuesto.
+                                    El precio que pones en el menú es la base y el mostrador le agrega el impuesto.
                                 </span>
                             </span>
                         </label>
@@ -127,7 +127,7 @@
 
                     {{-- Ejemplo en vivo: lo que el cajero cobraría con esta configuración. --}}
                     <div class="rounded-xl bg-gray-50 px-4 py-3 text-theme-sm dark:bg-white/[0.03]" data-ejemplo-precio>
-                        Un producto con precio {{ App\Support\Config::moneda() }} <b x-text="ejemplo.toFixed(2)"></b>:
+                        Un plato con precio {{ App\Support\Config::moneda() }} <b x-text="ejemplo.toFixed(2)"></b>:
                         el cliente paga <b class="text-gray-800 dark:text-white/90">{{ App\Support\Config::moneda() }} <span x-text="pagaEjemplo.toFixed(2)"></span></b><span x-show="tasaEfectiva > 0">,
                         de los que {{ App\Support\Config::moneda() }} <span x-text="ivaEjemplo.toFixed(2)"></span> son IVA</span>.
                     </div>
@@ -135,11 +135,11 @@
                     {{-- Cambiar de modo sin convertir le cambiaría el precio a todo el mostrador. --}}
                     <div x-show="cambiaModo" x-cloak class="rounded-xl bg-warning-50 px-4 py-3 dark:bg-orange-500/10">
                         <x-form.check name="convertir_precios" model="convertir"
-                            label="Ajustar los precios del catálogo para que el cliente siga pagando lo mismo" />
+                            label="Ajustar los precios del menú para que el cliente siga pagando lo mismo" />
                         <p class="mt-1.5 text-theme-xs text-warning-700 dark:text-orange-400">
                             <span x-show="incluido === '1'">Cada precio pasa a ser el que hoy paga el cliente, con el IVA ya adentro.</span>
                             <span x-show="incluido === '0'">Cada precio pasa a ser la base sin IVA; el mostrador le suma el impuesto al cobrar.</span>
-                            Solo los productos afectos al impuesto. Sin ajustar, todos los precios del mostrador cambian.
+                            Solo lo que está afecto al impuesto. Sin ajustar, todos los precios del mostrador cambian.
                         </p>
                     </div>
 
@@ -153,7 +153,7 @@
                         <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800" data-deshacer-conversion>
                             <p class="text-theme-xs text-gray-500 dark:text-gray-400">
                                 El {{ $conversion->fecha->format('d/m/Y H:i') }} se ajustó el precio de
-                                {{ count($conversion->detalle['precios']) }} producto(s) al cambiar de modo.
+                                {{ count($conversion->detalle['precios']) }} ítem(s) del menú al cambiar de modo.
                             </p>
                             <button type="submit" form="deshacer-conversion"
                                 onclick="return confirm('¿Volver los precios y el modo a como estaban antes de ese ajuste?')"
@@ -199,13 +199,6 @@
                     </x-form.campo>
                     @endfacturacion
 
-                    <x-form.campo label="Días para aceptar una devolución" for="dias_max_devolucion"
-                        name="dias_max_devolucion" required
-                        help="Pasado este plazo desde la venta, el sistema ya no registra devoluciones. 0 = solo el mismo día.">
-                        <x-form.input id="dias_max_devolucion" name="dias_max_devolucion" type="number" step="1"
-                            min="0" max="365" inputmode="numeric" :value="$actual['dias_max_devolucion']" required />
-                    </x-form.campo>
-
                     <div class="sm:col-span-2">
                         <x-form.check name="exigir_referencia_pago" :checked="$actual['exigir_referencia_pago'] === '1'"
                             label="Pedir el número de operación en pagos con tarjeta, billetera o transferencia" />
@@ -220,6 +213,23 @@
                         <x-form.input id="cliente_generico_nombre" name="cliente_generico_nombre"
                             :value="$actual['cliente_generico_nombre']" maxlength="60" required />
                     </x-form.campo>
+                </div>
+            </x-common.component-card>
+
+            <x-common.component-card title="Número del pedido"
+                desc="El número que se canta al entregar el plato empieza en 1 cada jornada. Como el local cierra pasada la medianoche, la jornada no cambia a las 00:00 sino a la hora que se indica aquí.">
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <x-form.campo label="La jornada empieza a las (hora)" for="hora_corte_jornada"
+                        name="hora_corte_jornada" required
+                        help="De 0 a 12. Con 5, un pedido de la 01:30 sigue la numeración de la noche anterior, y el primero de las 05:00 en adelante vuelve a ser el 1. Con 0, la numeración vuelve a 1 a medianoche.">
+                        <x-form.input id="hora_corte_jornada" name="hora_corte_jornada" type="number" step="1"
+                            min="0" max="{{ \App\Support\Config::HORA_CORTE_MAXIMA }}" inputmode="numeric"
+                            :value="$actual['hora_corte_jornada']" required />
+                    </x-form.campo>
+                    <p class="self-center text-theme-sm text-gray-500 dark:text-gray-400">
+                        Pon una hora en la que el local ya esté cerrado: si cae en pleno servicio, en la misma noche
+                        habría dos «pedido 1». Los pedidos ya abiertos conservan su número.
+                    </p>
                 </div>
             </x-common.component-card>
 

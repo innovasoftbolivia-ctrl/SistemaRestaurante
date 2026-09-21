@@ -3,17 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
-use App\Models\Lote;
 use App\Models\MetodoPago;
+use App\Models\Pedido;
 use App\Models\Producto;
-use App\Models\Proveedor;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Compras;
-use App\Services\Devoluciones;
-use App\Services\DevolucionesCompra;
-use App\Services\TomasInventario;
+use App\Services\Pedidos;
 use App\Services\Ventas;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -24,8 +20,8 @@ use Tests\TestCase;
  * Auditoría: ¿el portero de permisos deja pasar a quien no debe?
  *
  * Las pruebas normales verifican los caminos que el sistema SÍ hace. Esta hace
- * lo contrario: recorre TODAS las rutas que escriben —51— y las golpea con
- * cada rol, incluidos los que no tienen nada que hacer ahí.
+ * lo contrario: recorre TODAS las rutas que escriben y las golpea con cada rol,
+ * incluidos los que no tienen nada que hacer ahí.
  *
  * No manda datos válidos a propósito: lo que se mide es el portero, no la
  * validación. Si contesta 403, cortó. Si contesta 422 o redirige, dejó pasar
@@ -39,7 +35,7 @@ class AuditoriaPermisosTest extends TestCase
     /**
      * Un id real por cada parámetro, para que la ruta resuelva.
      *
-     * Las ventas, turnos, comprobantes y devoluciones se CREAN acá. La base de
+     * Las ventas, turnos y comprobantes se CREAN acá. La base de
      * pruebas arranca solo con catálogos, y sin esos registros el enlace de
      * modelos contesta 404 antes de que el portero de permisos llegue a
      * opinar: la prueba pasaría en verde sin haber medido nada.
@@ -50,7 +46,7 @@ class AuditoriaPermisosTest extends TestCase
         $sesion = Cajas::sesionDe($cajero)
             ?? Cajas::abrir(Caja::firstOrFail(), $cajero, 100);
 
-        $producto = Producto::activos()->where('stock_actual', '>', 5)->firstOrFail();
+        $producto = Producto::activos()->firstOrFail();
 
         $venta = Ventas::registrar(
             sesion: $sesion,
@@ -60,63 +56,22 @@ class AuditoriaPermisosTest extends TestCase
                 ->value('id'), 'monto' => null]],
         );
 
-        $devolucion = Devoluciones::registrar(
-            venta: $venta->fresh(),
-            usuario: $cajero,
-            sesion: $sesion->fresh(),
-            lineas: [['venta_detalle_id' => $venta->detalle()->value('id'), 'cantidad' => 1,
-                'reingresa_stock' => true]],
-            motivo: 'Auditoría de permisos',
-        );
-
         $cobro = CobrosQr::generar($sesion->fresh(), $cajero, 10.0);
 
-        // Y una tanda, por lo mismo: de ella cuelga la baja por vencimiento.
-        $lote = Lote::create([
-            'producto_id' => $producto->id,
-            'fecha_vencimiento' => now()->subDay()->toDateString(),
-            'cantidad_inicial' => 1,
-            'cantidad_actual' => 1,
-        ]);
-
-        // La compra también se crea aquí: de ella cuelga la devolución al
-        // proveedor, y sin una factura real esa ruta contestaría 404 antes de
-        // que el portero llegara a opinar.
-        $compra = Compras::registrar(
-            usuario: Usuario::where('usuario', 'almacen')->firstOrFail(),
-            proveedor: Proveedor::activos()->firstOrFail(),
-            lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'costo_unitario' => 1]],
-        );
-
-        // Y una devolución al proveedor que espera reposición: de ella cuelga
-        // la ruta que registra lo que el proveedor trae después.
-        $devolucionCompra = DevolucionesCompra::registrar(
-            usuario: Usuario::where('usuario', 'almacen')->firstOrFail(),
-            compra: $compra,
-            lineas: [['compra_detalle_id' => $compra->detalle->first()->id, 'cantidad' => 1]],
-            motivo: 'DEFECTO',
-            espera: 'PENDIENTE',
-        );
-
-        // Y una toma de inventario abierta: de ella cuelgan contar, cerrar y
-        // cancelar, y de ella sale la línea que se cuenta.
-        $toma = TomasInventario::abrir(Usuario::where('usuario', 'almacen')->firstOrFail());
+        // Un pedido abierto con una línea: sin ellos, las rutas de pedidos y de
+        // cocina contestan 404 antes de que el portero llegue a opinar.
+        $pedido = Pedidos::abrir(Pedido::LOCAL, $cajero);
+        $linea = Pedidos::agregarLinea($pedido, $producto, 1, null, $cajero);
 
         return [
             'venta' => $venta->id,
-            'toma' => $toma->id,
-            'linea' => $toma->lineas()->value('id'),
+            'pedido' => $pedido->id,
+            'linea' => $linea->id,
             'sesion' => $sesion->id,
             'comprobante' => $venta->comprobante->id,
-            'devolucion' => $devolucion->id,
             'cobro' => $cobro->id,
-            'compra' => $compra->id,
-            'lote' => $lote->id,
-            'devolucionCompra' => $devolucionCompra->id,
             'producto' => DB::table('productos')->max('id'),
             'categoria' => DB::table('categorias')->max('id'),
-            'unidad' => DB::table('unidades_medida')->max('id'),
-            'proveedor' => DB::table('proveedores')->max('id'),
             'cliente' => DB::table('clientes')->max('id'),
             'caja' => DB::table('cajas')->max('id'),
             'cargo' => DB::table('cargos')->max('id'),
@@ -162,13 +117,13 @@ class AuditoriaPermisosTest extends TestCase
     public function test_ningun_rol_atraviesa_una_puerta_que_no_le_corresponde(): void
     {
         $rutas = $this->rutasDeEscritura();
-        $this->assertGreaterThan(40, count($rutas), 'se esperaban unas 51 rutas de escritura');
+        $this->assertGreaterThan(25, count($rutas), 'se esperaban unas 30 rutas de escritura');
 
         $colados = [];
         $sinMedir = [];
         $revisadas = 0;
 
-        foreach (['admin', 'cajero1', 'almacen'] as $quien) {
+        foreach (['admin', 'cajero1', 'cocina1'] as $quien) {
             $usuario = Usuario::where('usuario', $quien)->firstOrFail();
 
             foreach ($rutas as [$metodo, $uri, $middleware]) {

@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
 @php
+    use App\Services\Pedidos;
     use App\Support\Config;
 
     $abierta = $sesion->estaAbierta();
@@ -172,7 +173,7 @@
                                             </a>
                                         </td>
                                         <td class="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
-                                            {{ $venta->cliente?->nombre ?? 'Cliente varios' }}
+                                            {{ $venta->cliente?->nombre ?? Config::get('cliente_generico_nombre', 'Cliente varios') }}
                                         </td>
                                         <td class="px-5 py-4">
                                             <x-ui.estado :estado="$venta->estado === 'ANULADA' ? 'CESADO' : 'ACTIVO'"
@@ -257,7 +258,7 @@
 
                             <x-form.campo label="Concepto" for="concepto" name="concepto" required>
                                 <x-form.input id="concepto" name="concepto"
-                                    placeholder="Compra de bolsas, adelanto a proveedor…" required />
+                                    placeholder="Compra de hielo, gas para la cocina, adelanto al personal…" required />
                             </x-form.campo>
 
                             <x-form.campo label="Monto" for="monto" name="monto" required>
@@ -294,6 +295,38 @@
                             {{-- El estado del turno cuando se empezó a contar: si al confirmar
                                  ya cambió, el cierre se detiene y pide revisar. --}}
                             <input type="hidden" name="huella" value="{{ $sesion->huella() }}">
+
+                            {{-- Los pedidos con el cobro anulado (su venta se anuló y no
+                                 se volvió a cobrar). Cerrar con ellos pendientes se
+                                 puede —el turno siguiente los cobra—, pero sabiéndolo y
+                                 dejándolo dicho. --}}
+                            @if ($cuentasAbiertas->isNotEmpty())
+                                <div class="rounded-xl border border-warning-200 bg-warning-50 p-4 dark:border-orange-500/30 dark:bg-orange-500/10" data-cuentas-abiertas>
+                                    <p class="text-theme-sm font-medium text-warning-700 dark:text-orange-400">
+                                        {{ $cuentasAbiertas->count() }} pedido(s) con el cobro anulado, sin volver a cobrar
+                                    </p>
+                                    <ul class="mt-2 space-y-1 text-theme-xs text-warning-700 dark:text-orange-400">
+                                        @foreach ($cuentasAbiertas as $cuenta)
+                                            @php
+                                                $minutos = (int) $cuenta->fecha_apertura?->diffInMinutes(now());
+                                                $hace = $minutos >= 60 ? intdiv($minutos, 60).' h '.($minutos % 60).' min' : $minutos.' min';
+                                            @endphp
+                                            <li class="flex justify-between gap-3">
+                                                <a href="{{ route('pedidos.cobrar', $cuenta) }}" class="underline-offset-2 hover:underline">{{ $cuenta->etiqueta }}</a>
+                                                <span class="whitespace-nowrap">{{ Config::importe(Pedidos::totalDe($cuenta)) }} · hace {{ $hace }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                    <p class="mt-2 text-theme-xs text-warning-700 dark:text-orange-400">
+                                        Cóbralos o cancélalos antes de cerrar. Si no, el turno siguiente los cobra.
+                                    </p>
+                                    <label class="mt-3 flex items-start gap-2 text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                                        <input type="checkbox" name="con_cuentas_abiertas" value="1" required
+                                            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-500 dark:border-gray-700" />
+                                        Cierro sin volver a cobrarlos
+                                    </label>
+                                </div>
+                            @endif
 
                             {{-- El esperado aparece recién después de contar: primero se
                                  cuenta el cajón, después se compara. --}}

@@ -5,18 +5,14 @@ namespace Tests\Feature;
 use App\Models\Caja;
 use App\Models\Categoria;
 use App\Models\CobroQr;
-use App\Models\Compra;
-use App\Models\Devolucion;
 use App\Models\MetodoPago;
+use App\Models\Permiso;
 use App\Models\Producto;
-use App\Models\Proveedor;
+use App\Models\Rol;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Services\CobrosQr;
-use App\Services\Costos;
-use App\Services\Devoluciones;
-use App\Services\Inventario;
 use App\Services\ReglasEnPhp;
 use App\Services\Respaldos;
 use App\Services\Ventas;
@@ -49,13 +45,9 @@ class AuditoriaFinalTest extends TestCase
         return (int) MetodoPago::where('codigo', 'EFECTIVO')->value('id');
     }
 
-    private function comun(float $stock = 50): Producto
+    private function comun(): Producto
     {
-        $p = Producto::activos()->where('controla_vencimiento', 0)
-            ->whereHas('unidadMedida', fn ($q) => $q->where('permite_decimal', 0))->orderBy('id')->firstOrFail();
-        $p->forceFill(['stock_actual' => $stock, 'contenido_empaque' => null, 'nombre_empaque' => null])->save();
-
-        return $p->fresh();
+        return Producto::activos()->orderBy('id')->firstOrFail();
     }
 
     private function archivo(string $relativo): string
@@ -81,17 +73,42 @@ class AuditoriaFinalTest extends TestCase
         $this->assertStringContainsString('"${APP_PUERTO:-8100}:80"', $compose);
     }
 
-    public function test_el_script_de_parches_encuentra_el_contenedor_de_produccion_y_deja_fuera_el_catalogo(): void
+    /**
+     * El catálogo del minimarket no entra nunca: usa columnas que ya no
+     * existen y metería abarrotes en el menú. `--catalogo` se rechaza antes
+     * de buscar el contenedor, y los archivos siguen ahí, porque son historia.
+     */
+    public function test_el_script_de_parches_encuentra_el_contenedor_de_produccion_y_nunca_aplica_el_catalogo(): void
     {
         $script = $this->archivo('scripts/aplicar-parches.sh');
 
-        $this->assertStringContainsString('detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod ventas_mysql', $script);
+        // Producción primero, después el stack del restaurante; y de esos, el
+        // que esté corriendo. El del sistema de ventas anterior ya no está en
+        // la lista: los parches del restaurante no tienen nada que hacer en
+        // esa base, y con los dos stacks levantados podía caer ahí.
+        $this->assertStringContainsString('detectar "${VENTAS_MYSQL:-}" ventas_mysql_prod restaurante_mysql)', $script);
+        $this->assertStringContainsString('{{.State.Running}}', $script);
         $this->assertStringNotContainsString('CONTENEDOR="ventas_mysql"', $script);
 
+        // Con BASE=otra, el `USE ventas_db;` de los parches se cambia por esa
+        // base: si no, el parche se aplicaba a ventas_db y se anotaba en la otra.
+        $this->assertStringContainsString('sed "s/^USE ventas_db;/USE \`$BASE\`;/"', $script);
+
+        $this->assertMatchesRegularExpression('/PARCHES_DEL_MINIMARKET=\(\s*(\S+\.sql\s*)+\)/', $script);
         foreach (['abarrotes_catalogo_real', 'bebidas_catalogo_real', 'categoria_cigarrillos', 'sin_impuesto'] as $catalogo) {
-            $this->assertStringContainsString("2026_08_23_{$catalogo}.sql", $script);
+            $this->assertStringContainsString("    2026_08_23_{$catalogo}.sql\n", $script);
+            $this->assertFileExists(base_path("../docs/sql/parches/2026_08_23_{$catalogo}.sql"));
         }
-        $this->assertStringContainsString('--catalogo', $script);
+
+        // Se salta sin condiciones, y pedirlo corta el script con su porqué.
+        $this->assertStringContainsString("if es_del_minimarket \"\$archivo\"; then\n        continue", $script);
+        $this->assertMatchesRegularExpression('/--catalogo\)\s*\n(\s*echo [^\n]*sistema de ventas anterior[^\n]*\n)(\s*echo[^\n]*\n)*\s*exit 1/', $script);
+        $this->assertLessThan(
+            strpos($script, 'if ! CONTENEDOR='),
+            strpos($script, '--catalogo)'),
+            'el rechazo tiene que llegar antes de buscar la base',
+        );
+        $this->assertStringNotContainsString('CATALOGO=1', $script);
     }
 
     public function test_todos_los_parches_fijan_la_codificacion(): void
@@ -168,72 +185,79 @@ class AuditoriaFinalTest extends TestCase
         ])->assertRedirect();
         $this->actingAs($cajero)->get(route('pos.index'))->assertViewHas('huboError', true);
 
-        // Otro cajero no ve ese QR.
-        $this->assertTrue(true);
+        // Otro cajero, en su propio turno, no ve ese QR: no lo puede usar.
+        $otro = $this->u('admin');
+        Cajas::abrir(Caja::create(['nombre' => 'Caja de la barra', 'activo' => 1]), $otro, 50);
+
+        $this->actingAs($otro)->get(route('pos.index'))->assertOk()
+            ->assertViewHas('qrSinVenta', fn ($lista) => $lista->isEmpty());
     }
 
     // ================================================================ dinero
 
-    public function test_devolver_una_venta_entera_devuelve_lo_cobrado_al_centavo(): void
+    /** Anular una venta con descuento deja el cajón como estaba antes de cobrarla. */
+    public function test_anular_una_venta_saca_del_arqueo_lo_que_habia_metido(): void
     {
         DB::table('configuracion')->where('clave', 'tasa_impuesto')->update(['valor' => '0.0000']);
         Config::olvidar();
         $admin = $this->u('admin');
-        $p = $this->comun(500);
+        $p = $this->comun();
         $p->forceFill(['precio_venta' => '0.50'])->save();
         $turno = $this->turno($admin);
+        $antes = $turno->fresh()->efectivoEsperado();
 
         $venta = Ventas::registrar(sesion: $turno, usuario: $admin,
             lineas: [['producto_id' => $p->id, 'cantidad' => 300]],
             pagos: [['metodo_pago_id' => $this->efectivo(), 'monto' => null]], descuento: 2.00);
 
-        $devolucion = Devoluciones::registrar($venta->fresh(), $admin, $turno->fresh(), [
-            ['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 300, 'reingresa_stock' => true],
-        ], 'Devuelve todo', Devolucion::EFECTIVO);
-
         $this->assertSame('148.00', $venta->fresh()->total);
-        $this->assertSame('148.00', $devolucion->fresh()->total);
-        $this->assertSame('148.00', $devolucion->fresh()->efectivo);
-        $this->assertSame('DEVUELTA', $venta->fresh()->estado);
+        $this->assertSame(round($antes + 148.00, 2), round($turno->fresh()->efectivoEsperado(), 2));
+
+        Ventas::anular($venta->fresh(), $admin, 'Se cobró de más');
+
+        $this->assertSame('ANULADA', $venta->fresh()->estado);
+        $this->assertSame(round($antes, 2), round($turno->fresh()->efectivoEsperado(), 2));
     }
 
-    // ================================================================ inventario
+    // ================================================================ catálogo
 
-    public function test_actualizar_el_costo_no_pisa_el_stock_de_una_venta_simultanea(): void
+    /**
+     * Quien mantiene la carta, sin el permiso de eliminar. En el restaurante
+     * eso es el administrador, pero el rol se puede acotar y hay que
+     * comprobar que el acotado no descatalogue por la puerta de atrás.
+     */
+    private function encargadoDeCarta(): Usuario
     {
-        $this->actingAs($this->u('almacen'));
-        $p = $this->comun(10);
-        $p->forceFill(['precio_compra' => '2.00'])->save();
-        $p = $p->fresh();
+        $rol = Rol::create(['nombre' => 'Encargado de la carta', 'activo' => 1]);
+        $rol->permisos()->sync(Permiso::where('codigo', 'productos.gestionar')->pluck('id'));
 
-        Inventario::ingreso($p, 5, costoUnitario: 3.00);
-        DB::table('productos')->where('id', $p->id)->update(['stock_actual' => 14]); // una venta confirmó en medio
-        Costos::aplicar($p, 3.00, 'prueba');
-
-        $this->assertSame('14.000', $p->fresh()->stock_actual);
-        $this->assertSame('3.00', $p->fresh()->precio_compra);
+        return Usuario::create([
+            'empleado_id' => 4,
+            'rol_id' => $rol->id,
+            'usuario' => 'carta1',
+            'password_hash' => Hash::make('carta-de-prueba'),
+            'debe_cambiar_password' => 0,
+            'activo' => 1,
+        ]);
     }
 
-    /** Desactivar es eliminar: el almacenero edita pero no descataloga. */
-    public function test_el_almacenero_no_desactiva_editando(): void
+    /** Desactivar es eliminar: quien edita la carta no descataloga. */
+    public function test_quien_edita_la_carta_no_desactiva_editando(): void
     {
+        $encargado = $this->encargadoDeCarta();
         $p = Producto::where('codigo', 'P-0004')->firstOrFail();
-        $datos = $p->only(['categoria_id', 'unidad_medida_id', 'proveedor_id', 'codigo', 'codigo_barras', 'precio_compra', 'precio_venta', 'afecto_impuesto', 'stock_minimo']);
+        $datos = $p->only(['categoria_id', 'codigo', 'precio_venta', 'afecto_impuesto']);
 
-        $this->actingAs($this->u('almacen'))->put(route('productos.update', $p), ['nombre' => $p->nombre.' editado', 'activo' => 0] + $datos)
+        $this->actingAs($encargado)->put(route('productos.update', $p), ['nombre' => $p->nombre.' editado', 'activo' => 0] + $datos)
             ->assertSessionHasNoErrors();
         $this->assertTrue($p->fresh()->activo);
         $this->assertStringEndsWith('editado', $p->fresh()->nombre);
 
         $categoria = Categoria::where('activo', 1)->firstOrFail();
-        $this->actingAs($this->u('almacen'))->put(route('categorias.update', $categoria), ['nombre' => $categoria->nombre, 'activo' => 0]);
+        $this->actingAs($encargado)->put(route('categorias.update', $categoria), ['nombre' => $categoria->nombre, 'activo' => 0]);
         $this->assertTrue((bool) $categoria->fresh()->activo);
 
-        $proveedor = Proveedor::where('activo', 1)->firstOrFail();
-        $this->actingAs($this->u('almacen'))->put(route('proveedores.update', $proveedor), $proveedor->only(['razon_social', 'documento', 'telefono', 'email', 'direccion']) + ['activo' => 0]);
-        $this->assertTrue((bool) $proveedor->fresh()->activo);
-
-        $this->actingAs($this->u('almacen'))->get(route('productos.edit', $p))->assertOk()->assertDontSee('Producto disponible para la venta');
+        $this->actingAs($encargado)->get(route('productos.edit', $p))->assertOk()->assertDontSee('Disponible en el menú');
 
         // El administrador sí.
         $this->flushSession();
@@ -243,30 +267,20 @@ class AuditoriaFinalTest extends TestCase
         $this->assertFalse($p->fresh()->activo);
     }
 
-    /** Un doble clic manda dos veces el mismo número de envío: la compra entra una sola vez. */
-    public function test_un_doble_envio_registra_la_compra_una_sola_vez(): void
+    /**
+     * El formulario que mueve dinero lleva su número de envío único.
+     *
+     * Que el número funcione se prueba donde más importa, en el cobro de una
+     * cuenta (`CobroDePedidoTest`): ahí detrás hay una venta y un comprobante.
+     * Aquí solo se comprueba que la pantalla de caja lo sigue emitiendo.
+     */
+    public function test_el_formulario_de_caja_lleva_su_numero_de_envio(): void
     {
-        $almacen = $this->u('almacen');
-        $p = $this->comun(0);
-        $envio = 'envio-de-prueba-1';
-        $datos = ['proveedor_id' => Proveedor::firstOrFail()->id, 'documento_externo' => 'F-DOBLE', '_envio' => $envio,
-            'lineas' => [['producto_id' => $p->id, 'cantidad' => 4, 'costo_unitario' => 2]]];
+        $admin = $this->u('admin');
+        $turno = $this->turno($admin);
 
-        $this->actingAs($almacen)->get(route('compras.create'))->assertOk()->assertSee('name="_envio"', false);
-
-        $this->actingAs($almacen)->post(route('compras.store'), $datos)->assertSessionHasNoErrors();
-        $this->actingAs($almacen)->post(route('compras.store'), $datos)->assertSessionHas('aviso');
-
-        $this->assertSame(1, Compra::where('documento_externo', 'F-DOBLE')->count());
-        $this->assertSame('4.000', $p->fresh()->stock_actual);
-
-        // Si el primer envío no pasó la validación, el mismo formulario se corrige y se reenvía.
-        $envio2 = ['_envio' => 'envio-de-prueba-2'] + $datos;
-        $sinLineas = $envio2;
-        unset($sinLineas['lineas']);
-        $this->actingAs($almacen)->post(route('compras.store'), $sinLineas)->assertSessionHasErrors('lineas');
-        $this->actingAs($almacen)->post(route('compras.store'), ['documento_externo' => 'F-DOBLE-2'] + $envio2)->assertSessionHasNoErrors();
-        $this->assertSame(1, Compra::where('documento_externo', 'F-DOBLE-2')->count());
+        $this->actingAs($admin)->get(route('caja.show', $turno))->assertOk()
+            ->assertSee('name="_envio"', false);
     }
 
     // ================================================================ ingreso

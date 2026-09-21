@@ -32,9 +32,9 @@ class ClientesTest extends TestCase
         return Usuario::where('usuario', 'admin')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function cajero(): Usuario
@@ -44,11 +44,10 @@ class ClientesTest extends TestCase
 
     // ------------------------------------------------------------- permisos
 
-    /** Ve a los clientes por su `reportes.ver`, aunque no venda desde el mostrador. */
-    /** Los clientes son del mostrador y de la administración, no del almacén. */
-    public function test_el_almacenero_no_entra_a_clientes(): void
+    /** Los clientes son del mostrador y de la administración, no de la cocina. */
+    public function test_la_cocina_no_entra_a_clientes(): void
     {
-        $this->actingAs($this->almacenero())->get('/clientes')->assertForbidden();
+        $this->actingAs($this->cocina())->get('/clientes')->assertForbidden();
     }
 
     public function test_el_cajero_entra_a_clientes(): void
@@ -57,16 +56,15 @@ class ClientesTest extends TestCase
     }
 
     /**
-     * Ver clientes y crear/editar/borrar clientes son cosas distintas: el
-     * almacenero entra a la pantalla por `reportes.ver` (arriba), pero eso no
-     * debería alcanzar para mutar clientes — esa es una acción de venta
-     * (`ventas.registrar`), no de reportes.
+     * Crear, editar o borrar un cliente es una acción de venta
+     * (`ventas.registrar`) o de administración: quien no vende no lo hace,
+     * ni siquiera llamando a la ruta directamente.
      */
-    public function test_el_almacenero_no_puede_mutar_clientes(): void
+    public function test_la_cocina_no_puede_mutar_clientes(): void
     {
         $cliente = Cliente::where('tipo_persona', 'NATURAL')->firstOrFail();
 
-        $this->actingAs($this->almacenero())
+        $this->actingAs($this->cocina())
             ->post('/clientes', [
                 'tipo_persona' => 'NATURAL',
                 'tipo_documento' => 'CI',
@@ -76,7 +74,7 @@ class ClientesTest extends TestCase
             ])
             ->assertForbidden();
 
-        $this->actingAs($this->almacenero())
+        $this->actingAs($this->cocina())
             ->put("/clientes/{$cliente->id}", [
                 'tipo_persona' => 'NATURAL',
                 'tipo_documento' => $cliente->tipo_documento,
@@ -86,7 +84,7 @@ class ClientesTest extends TestCase
             ])
             ->assertForbidden();
 
-        $this->actingAs($this->almacenero())
+        $this->actingAs($this->cocina())
             ->delete("/clientes/{$cliente->id}")
             ->assertForbidden();
     }

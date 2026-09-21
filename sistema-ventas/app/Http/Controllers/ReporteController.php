@@ -21,8 +21,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * Reportes de gestión (objetivo O5).
  *
  * Los agregados salen de las vistas que ya define `docs/sql`
- * (`v_ventas_por_dia`, `v_ventas_por_metodo_pago`, `v_alertas_stock`): son la
+ * (`v_ventas_por_dia`, `v_ventas_por_metodo_pago`): son la
  * definición oficial de cada cifra y no se reescriben aquí.
+ *
+ * Todo va por JORNADA, no por día de calendario: el local cierra pasada la
+ * medianoche y la venta de la 01:30 es de la noche anterior, igual que el
+ * número de su pedido (`Config::jornadaDe`). El período elige jornadas, y se
+ * filtra con `Config::momentosDeJornadas` y se agrupa con `Config::jornadaSql`.
  */
 class ReporteController extends Controller
 {
@@ -47,12 +52,10 @@ class ReporteController extends Controller
         [$desde, $hasta] = $this->rango($request);
 
         return view('reportes.productos', [
-            'title' => 'Reporte de productos e inventario',
+            'title' => 'Reporte del menú',
             'desde' => $desde,
             'hasta' => $hasta,
             'masVendidos' => $this->masVendidos($desde, $hasta),
-            'alertas' => Producto::alertasDeStock()->orderByDesc('faltante')->get(),
-            'inventario' => $this->valorInventario(),
         ]);
     }
 
@@ -135,12 +138,10 @@ class ReporteController extends Controller
 
         $indicadores = [
             ['etiqueta' => 'Operaciones', 'valor' => $resumen['operaciones'], 'formato' => 'entero', 'nota' => 'ventas cobradas, sin contar anuladas'],
-            ['etiqueta' => 'Vendido', 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'],
-            ['etiqueta' => 'Devuelto', 'valor' => $resumen['devuelto'], 'formato' => 'moneda', 'nota' => 'devoluciones registradas en el período, en efectivo o por el mismo medio del pago; lo que salió del cajón está en «Efectivo en cajas»'],
-            ['etiqueta' => 'Neto', 'valor' => $resumen['neto'], 'formato' => 'moneda', 'nota' => 'lo vendido en el período menos lo que se devolvió de esas ventas, aunque se haya devuelto después', 'destacar' => true],
-            ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas y devoluciones en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
+            ['etiqueta' => self::rotuloVendidoConImpuesto(), 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'.($tasa > 0 ? ', con el impuesto' : '')],
+            ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas cobradas en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
-            ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'revirtieron su stock'],
+            ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'no cuentan en lo vendido'],
         ];
 
         if ($tasa > 0 && Config::facturacionVisible()) {
@@ -149,9 +150,9 @@ class ReporteController extends Controller
 
         return $this->documento('Reporte de ventas', $desde, $hasta, $indicadores, [
             [
-                'nombre' => 'Ventas por día',
-                'nota' => 'Solo los días con movimiento.',
-                'cabeceras' => ['Día', 'Ventas', 'Ticket promedio', 'Monto'],
+                'nombre' => 'Ventas por jornada',
+                'nota' => 'Solo las jornadas con movimiento. '.self::notaJornada(),
+                'cabeceras' => ['Jornada', 'Ventas', 'Ticket promedio', self::rotuloVendidoConImpuesto()],
                 'formatos' => ['fecha', 'entero', 'moneda', 'moneda'],
                 'alineacion' => ['izq', 'der', 'der', 'der'],
                 'filas' => $dias->map(fn ($d) => [$d['dia'], $d['ventas'], $d['ticket'], $d['monto']])->all(),
@@ -193,53 +194,32 @@ class ReporteController extends Controller
     }
 
     /**
-     * Qué lleva el reporte de productos: qué hay que reponer y qué se vende.
+     * Qué lleva el reporte del menú: qué se vende y cuánto se vendió.
      *
      * @return array<string, mixed>
      */
     private function documentoProductos(Carbon $desde, Carbon $hasta): array
     {
-        $inventario = $this->valorInventario();
-        $alertas = Producto::alertasDeStock()->orderByDesc('faltante')->get();
         $ranking = $this->masVendidos($desde, $hasta)->values();
 
         // El porcentaje, contra todo lo vendido en el período y no contra los
-        // veinte de la tabla: con cientos de productos, esos veinte sumaban
+        // veinte de la tabla: con cientos de ítems, esos veinte sumaban
         // siempre 100 %.
         $totalVendido = $this->totalVendidoNeto($desde, $hasta);
 
         $indicadores = [
-            ['etiqueta' => 'Productos activos', 'valor' => $inventario['productos'], 'formato' => 'entero', 'nota' => 'en catálogo'],
-            ['etiqueta' => 'Inventario a costo', 'valor' => $inventario['costo'], 'formato' => 'moneda', 'nota' => $inventario['inactivos_con_stock'] > 0
-                ? "lo que costó lo que hay en estante, con {$inventario['inactivos_con_stock']} producto(s) dado(s) de baja que aún tienen stock"
-                : 'lo que costó lo que hay en estante'],
-            ['etiqueta' => 'Inventario a venta', 'valor' => $inventario['venta'], 'formato' => 'moneda', 'nota' => 'lo que se cobraría por todo'],
-            ['etiqueta' => 'Margen potencial', 'valor' => $inventario['margen'], 'formato' => 'moneda', 'nota' => 'diferencia entre ambos', 'destacar' => true],
-            ['etiqueta' => 'Productos por reponer', 'valor' => $alertas->count(), 'formato' => 'entero', 'nota' => 'en su stock mínimo o por debajo'],
+            ['etiqueta' => 'Ítems en el menú', 'valor' => Producto::where('activo', 1)->count(), 'formato' => 'entero', 'nota' => 'disponibles hoy'],
+            ['etiqueta' => 'Ítems vendidos', 'valor' => $ranking->count(), 'formato' => 'entero', 'nota' => 'distintos, entre los veinte primeros del período'],
+            ['etiqueta' => self::rotuloVendidoSinImpuesto(), 'valor' => $totalVendido, 'formato' => 'moneda', 'nota' => 'neto de descuentos'.(Config::tasaImpuesto() > 0 ? ', antes del impuesto: no es el «Vendido (con impuesto)» del reporte de ventas' : ''), 'destacar' => true],
         ];
 
-        $doc = $this->documento('Reporte de productos e inventario', $desde, $hasta, $indicadores, [
-            [
-                'nombre' => 'Reponer',
-                'nota' => 'Productos en su stock mínimo o por debajo. Es la foto de ahora mismo, no depende del rango.',
-                'cabeceras' => ['Producto', 'Categoría', 'Stock', 'Mínimo', 'Faltante'],
-                'formatos' => [null, null, 'decimal', 'decimal', 'decimal'],
-                'alineacion' => ['izq', 'izq', 'der', 'der', 'der'],
-                'filas' => $alertas->map(fn ($a) => [
-                    $a->nombre,
-                    $a->categoria,
-                    (float) $a->stock_actual,
-                    (float) $a->stock_minimo,
-                    (float) $a->faltante,
-                ])->all(),
-                'vacia' => 'Nada por reponer: ningún producto está bajo su mínimo.',
-            ],
+        $doc = $this->documento('Reporte del menú', $desde, $hasta, $indicadores, [
             [
                 'nombre' => 'Más vendidos',
-                'nota' => 'Los veinte primeros por importe. Las unidades ya descuentan lo devuelto.',
-                'cabeceras' => ['#', 'Código', 'Producto', 'Categoría', 'Unidades', 'Vendido', '% del total', 'Margen estimado'],
-                'formatos' => ['entero', null, null, null, 'decimal', 'moneda', 'porcentaje', 'moneda'],
-                'alineacion' => ['der', 'izq', 'izq', 'izq', 'der', 'der', 'der', 'der'],
+                'nota' => 'Los veinte primeros por importe, sin contar las ventas anuladas.',
+                'cabeceras' => ['#', 'Código', 'Ítem del menú', 'Categoría', 'Unidades', self::rotuloVendidoSinImpuesto(), '% del total'],
+                'formatos' => ['entero', null, null, null, 'decimal', 'moneda', 'porcentaje'],
+                'alineacion' => ['der', 'izq', 'izq', 'izq', 'der', 'der', 'der'],
                 'filas' => $ranking->map(fn ($p, $i) => [
                     $i + 1,
                     $p->codigo,
@@ -248,14 +228,13 @@ class ReporteController extends Controller
                     (float) $p->unidades_vendidas,
                     (float) $p->monto_vendido,
                     $totalVendido > 0 ? (float) $p->monto_vendido / $totalVendido : 0,
-                    (float) $p->margen_estimado,
                 ])->all(),
-                'totales' => [null, null, 'Total de los listados', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0, (float) $ranking->sum('margen_estimado')],
-                'vacia' => 'No se vendió ningún producto en el período.',
+                'totales' => [null, null, 'Total de los listados', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0],
+                'vacia' => 'No se vendió nada del menú en el período.',
             ],
         ]);
 
-        // Ocho columnas no caben de pie en un A4.
+        // Siete columnas no caben de pie en un A4.
         $doc['orientacion'] = 'landscape';
 
         return $doc;
@@ -287,6 +266,31 @@ class ReporteController extends Controller
         ];
     }
 
+    /**
+     * «Vendido» dice dos cosas distintas en los dos reportes: en el de ventas
+     * es lo que pagó el cliente, con el impuesto; en el ranking del menú, la
+     * base neta de descuentos, sin él. Con tasa cero coinciden y basta la
+     * palabra; con impuesto, el rótulo dice cuál es cuál.
+     */
+    public static function rotuloVendidoConImpuesto(): string
+    {
+        return Config::tasaImpuesto() > 0 ? 'Vendido (con impuesto)' : 'Vendido';
+    }
+
+    public static function rotuloVendidoSinImpuesto(): string
+    {
+        return Config::tasaImpuesto() > 0 ? 'Vendido sin impuesto' : 'Vendido';
+    }
+
+    /** Qué es una jornada, para quien lee el reporte: el día no termina a medianoche. */
+    public static function notaJornada(): string
+    {
+        return sprintf(
+            'Cada jornada va de las %1$02d:00 a las %1$02d:00 del día siguiente: lo vendido pasada la medianoche cuenta para la noche anterior.',
+            Config::horaCorteJornada(),
+        );
+    }
+
     /** Nombre con el rango dentro, para que dos descargas no se pisen. */
     private function nombreFichero(string $reporte, Carbon $desde, Carbon $hasta, string $extension): string
     {
@@ -302,14 +306,16 @@ class ReporteController extends Controller
     // ------------------------------------------------------------------ rango
 
     /**
-     * Por defecto, los últimos 30 días. El rango se toma completo: `hasta`
-     * incluye todo ese día.
+     * Por defecto, las últimas 30 jornadas. Las fechas son jornadas: `hasta`
+     * incluye todo lo vendido en esa jornada, también lo de pasada la
+     * medianoche. Y la de hoy es la jornada en curso: a la 01:30 todavía es
+     * la de ayer.
      *
      * @return array{0: Carbon, 1: Carbon}
      */
     private function rango(Request $request): array
     {
-        $hasta = $request->date('hasta')?->endOfDay() ?? now()->endOfDay();
+        $hasta = $request->date('hasta')?->endOfDay() ?? Carbon::parse(Config::jornadaActual())->endOfDay();
         $desde = $request->date('desde')?->startOfDay() ?? $hasta->copy()->subDays(29)->startOfDay();
 
         // Un rango al revés no dice nada: se endereza en vez de devolver vacío.
@@ -322,77 +328,12 @@ class ReporteController extends Controller
     private function resumenVentas(Carbon $desde, Carbon $hasta): array
     {
         $ventas = DB::table('ventas')
-            ->whereBetween('fecha', [$desde, $hasta])
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
             ->selectRaw("SUM(estado <> 'ANULADA') AS operaciones")
             ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', total, 0)), 0) AS vendido")
             ->selectRaw("COALESCE(SUM(IF(estado <> 'ANULADA', impuesto, 0)), 0) AS impuesto")
             ->selectRaw("SUM(estado = 'ANULADA') AS anuladas")
             ->first();
-
-        // Dos cuentas distintas, y cada una responde a una pregunta:
-        //   - lo devuelto REGISTRADO en el período es lo que salió del cajón
-        //     estos días, y es lo que cuadra con los arqueos;
-        //   - lo devuelto DE LAS VENTAS del período es lo que hay que restarle
-        //     a lo vendido para saber qué quedó de verdad. Antes el «neto» de
-        //     esta pantalla usaba el primero y el ranking de productos el
-        //     segundo: dos cifras con el mismo nombre que no coincidían.
-        $devuelto = (float) DB::table('devoluciones')
-            ->whereBetween('fecha', [$desde, $hasta])
-            ->sum('total');
-
-        $devueltoDeLasVentas = (float) DB::table('devoluciones as d')
-            ->join('ventas as v', 'v.id', '=', 'd.venta_id')
-            ->whereBetween('v.fecha', [$desde, $hasta])
-            ->sum('d.total');
-
-        /*
-         * La ganancia, con un solo criterio de fecha y sin impuesto:
-         *
-         *   (ventas del período − devoluciones del período, las dos sin IVA)
-         *   − (costo de lo vendido en el período − costo de lo que volvió al
-         *      estante en el período)
-         *
-         * El IVA cobrado no es del negocio. Antes: se restaba con impuesto, el
-         * costo de lo devuelto se descontaba por la fecha de la VENTA (junio
-         * subía cada vez que se registraba en julio una devolución de junio) y
-         * la mercadería dañada que no reingresó contaba como recuperada. El
-         * costo es el del día de la venta (`costo_unitario`), no el de hoy.
-         */
-        $base = (float) DB::table('ventas')
-            ->whereBetween('fecha', [$desde, $hasta])
-            ->where('estado', '<>', 'ANULADA')
-            ->selectRaw('COALESCE(SUM(total - impuesto), 0) AS base')
-            ->value('base');
-
-        $devuelta = DB::table('devolucion_detalle as dd')
-            ->join('devoluciones as dv', 'dv.id', '=', 'dd.devolucion_id')
-            ->join('venta_detalle as vd', 'vd.id', '=', 'dd.venta_detalle_id')
-            ->join('productos as p', 'p.id', '=', 'dd.producto_id')
-            ->whereBetween('dv.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM(dd.importe), 0) AS base')
-            ->selectRaw('COALESCE(SUM(dd.total_linea), 0) AS cobrado')
-            ->selectRaw('COALESCE(SUM(IF(dd.reingresa_stock = 1, dd.cantidad * COALESCE(vd.costo_unitario, p.precio_compra), 0)), 0) AS costo')
-            ->first();
-
-        // Al devolver una venta completa, `Devoluciones::cuadrarAlCentavo` ajusta
-        // el total de la devolución y no sus líneas: ese centavo también es
-        // base que vuelve, repartido en la misma proporción base / cobrado.
-        $ajuste = (float) DB::table('devoluciones as dv')
-            ->whereBetween('dv.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM(dv.total), 0) AS total')
-            ->value('total') - (float) $devuelta->cobrado;
-
-        if (abs($ajuste) >= 0.005 && (float) $devuelta->cobrado > 0) {
-            $devuelta->base = round((float) $devuelta->base + $ajuste * (float) $devuelta->base / (float) $devuelta->cobrado, 2);
-        }
-
-        $costo = (float) DB::table('venta_detalle as vd')
-            ->join('ventas as v', 'v.id', '=', 'vd.venta_id')
-            ->join('productos as p', 'p.id', '=', 'vd.producto_id')
-            ->where('v.estado', '<>', 'ANULADA')
-            ->whereBetween('v.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM(vd.cantidad * COALESCE(vd.costo_unitario, p.precio_compra)), 0) AS costo')
-            ->value('costo');
 
         $operaciones = (int) $ventas->operaciones;
         $vendido = (float) $ventas->vendido;
@@ -403,18 +344,14 @@ class ReporteController extends Controller
             'vendido' => $vendido,
             'impuesto' => (float) $ventas->impuesto,
             'anuladas' => (int) $ventas->anuladas,
-            'devuelto' => $devuelto,
-            'devuelto_de_las_ventas' => $devueltoDeLasVentas,
-            'neto' => round($vendido - $devueltoDeLasVentas, 2),
             'efectivo' => $efectivo,
-            'ganancia' => round(($base - (float) $devuelta->base) - ($costo - (float) $devuelta->costo), 2),
             'ticket' => $operaciones > 0 ? round($vendido / $operaciones, 2) : 0.0,
         ];
     }
 
     /**
      * El efectivo que pasó por las cajas en el período: ventas cobradas en
-     * efectivo − devoluciones pagadas del cajón + ingresos − egresos de caja.
+     * efectivo + ingresos − egresos de caja.
      *
      * Es la cuenta del arqueo sin el monto inicial (ver sp_cerrar_caja y
      * SesionCaja::desgloseDelEfectivo): con turnos que empiezan y terminan
@@ -427,28 +364,18 @@ class ReporteController extends Controller
         $ventas = (float) DB::table('venta_pagos as vp')
             ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
             ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
             ->where('v.estado', '<>', 'ANULADA')
             ->where('mp.afecta_caja', 1)
             ->sum('vp.monto');
 
         $movimientos = DB::table('movimientos_caja')
-            ->whereBetween('fecha', [$desde, $hasta])
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
             ->selectRaw("COALESCE(SUM(IF(tipo = 'INGRESO', monto, 0)), 0) AS ingresos")
             ->selectRaw("COALESCE(SUM(IF(tipo = 'EGRESO', monto, 0)), 0) AS egresos")
             ->first();
 
-        $devuelto = (float) DB::table('devoluciones as d')
-            ->join('ventas as v', 'v.id', '=', 'd.venta_id')
-            ->whereBetween('d.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM(IFNULL(d.efectivo, ROUND(d.total * IFNULL((
-                    SELECT SUM(vp.monto) FROM venta_pagos vp
-                      JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
-                     WHERE vp.venta_id = d.venta_id AND mp.afecta_caja = 1
-                 ) / NULLIF(v.total, 0), 0), 2))), 0) AS devuelto')
-            ->value('devuelto');
-
-        return round($ventas + (float) $movimientos->ingresos - (float) $movimientos->egresos - $devuelto, 2);
+        return round($ventas + (float) $movimientos->ingresos - (float) $movimientos->egresos, 2);
     }
 
     /**
@@ -460,11 +387,11 @@ class ReporteController extends Controller
     private function variacionVendido(Carbon $desde, Carbon $hasta): ?float
     {
         $dias = (int) $desde->copy()->startOfDay()->diffInDays($hasta->copy()->startOfDay()) + 1;
-        $hastaAnterior = $desde->copy()->subSecond();
-        $desdeAnterior = $hastaAnterior->copy()->subDays($dias - 1)->startOfDay();
+        $hastaAnterior = $desde->copy()->subDay();
+        $desdeAnterior = $hastaAnterior->copy()->subDays($dias - 1);
 
         $vendidoAnterior = (float) DB::table('ventas')
-            ->whereBetween('fecha', [$desdeAnterior, $hastaAnterior])
+            ->whereBetween('fecha', Config::momentosDeJornadas($desdeAnterior, $hastaAnterior))
             ->where('estado', '<>', 'ANULADA')
             ->sum('total');
 
@@ -473,7 +400,7 @@ class ReporteController extends Controller
         }
 
         $vendidoActual = (float) DB::table('ventas')
-            ->whereBetween('fecha', [$desde, $hasta])
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
             ->where('estado', '<>', 'ANULADA')
             ->sum('total');
 
@@ -481,10 +408,10 @@ class ReporteController extends Controller
     }
 
     /**
-     * Serie diaria, con los días sin ventas rellenados en cero.
+     * Serie por jornada, con las jornadas sin ventas rellenadas en cero.
      *
      * `v_ventas_por_dia` es la definición oficial, pero agrupa por
-     * `DATE(fecha)` y no admite rango: filtrar por `dia` después de agrupar
+     * jornada y no admite rango: filtrar por `dia` después de agrupar
      * obliga a MySQL a recorrer la tabla `ventas` completa en cada consulta
      * (confirmado con EXPLAIN — ni el índice de fecha ni el de estado sirven
      * contra un `WHERE` sobre una columna ya calculada). Se repite la misma
@@ -495,10 +422,10 @@ class ReporteController extends Controller
     private function porDia(Carbon $desde, Carbon $hasta): array
     {
         $filas = DB::table('ventas')
-            ->whereBetween('fecha', [$desde, $hasta])
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
             ->where('estado', '<>', 'ANULADA')
-            ->groupBy(DB::raw('DATE(fecha)'))
-            ->selectRaw('DATE(fecha) AS dia')
+            ->groupBy(DB::raw(Config::jornadaSql('fecha')))
+            ->selectRaw(Config::jornadaSql('fecha').' AS dia')
             ->selectRaw('COUNT(*) AS cantidad_ventas')
             ->selectRaw('SUM(total) AS monto_total')
             ->selectRaw('ROUND(AVG(total), 2) AS ticket_promedio')
@@ -507,8 +434,8 @@ class ReporteController extends Controller
 
         $serie = [];
 
-        // Sin rellenar los huecos, el gráfico uniría dos días lejanos con una
-        // recta y aparentaría ventas que no existieron.
+        // Sin rellenar los huecos, el gráfico uniría dos jornadas lejanas con
+        // una recta y aparentaría ventas que no existieron.
         for ($dia = $desde->copy()->startOfDay(); $dia->lte($hasta); $dia->addDay()) {
             $clave = $dia->toDateString();
             $fila = $filas->get($clave);
@@ -539,7 +466,7 @@ class ReporteController extends Controller
                 $join->on('v.id', '=', 'vp.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
             ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
             ->groupBy('mp.nombre')
             ->selectRaw('mp.nombre AS metodo_pago')
             ->selectRaw('COUNT(DISTINCT v.id) AS ventas')
@@ -554,7 +481,7 @@ class ReporteController extends Controller
         return DB::table('ventas as v')
             ->join('usuarios as u', 'u.id', '=', 'v.usuario_id')
             ->join('empleados as e', 'e.id', '=', 'u.empleado_id')
-            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
             ->where('v.estado', '<>', 'ANULADA')
             ->groupBy('u.id', 'u.usuario', 'e.nombre_completo')
             ->selectRaw('u.usuario, e.nombre_completo AS empleado')
@@ -563,7 +490,7 @@ class ReporteController extends Controller
             ->get();
     }
 
-    // -------------------------------------------------------------- productos
+    // ------------------------------------------------------------ el menú
 
     /**
      * Ranking del período. Es `v_productos_mas_vendidos` con un filtro de
@@ -571,28 +498,25 @@ class ReporteController extends Controller
      * consulta se repite aquí con **las mismas fórmulas**. Una prueba compara
      * ambas sin filtro para que no se separen con el tiempo.
      */
-    /** Lo vendido en el período por todos los productos, con el mismo neto que el ranking. */
+    /** Lo vendido en el período por todo el menú, con la misma cuenta que el ranking. */
     private function totalVendidoNeto(Carbon $desde, Carbon $hasta): float
     {
         return (float) DB::table('venta_detalle as d')
             ->join('ventas as v', function ($join) {
                 $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
-            ->whereBetween('v.fecha', [$desde, $hasta])
-            ->selectRaw('COALESCE(SUM(ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)'
-                .' * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2)), 0) AS total')
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->selectRaw('COALESCE(SUM(ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2)), 0) AS total')
             ->value('total');
     }
 
     private function masVendidos(Carbon $desde, Carbon $hasta): Collection
     {
         // Neto del descuento de la venta —repartido entre sus líneas: ahí vive
-        // el descuento del mostrador— y de lo devuelto, igual que la vista
-        // `v_productos_mas_vendidos`. El margen, con el costo del día de la venta.
-        $neto = 'ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)'
-            .' * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2)';
-        $unidades = '(d.cantidad - d.cantidad_devuelta)';
-        $costo = 'COALESCE(d.costo_unitario, p.precio_compra)';
+        // el descuento del mostrador—, igual que la vista
+        // `v_productos_mas_vendidos`.
+        $neto = 'ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2)';
+        $unidades = 'd.cantidad';
 
         return DB::table('venta_detalle as d')
             ->join('ventas as v', function ($join) {
@@ -600,47 +524,13 @@ class ReporteController extends Controller
             })
             ->join('productos as p', 'p.id', '=', 'd.producto_id')
             ->join('categorias as c', 'c.id', '=', 'p.categoria_id')
-            ->whereBetween('v.fecha', [$desde, $hasta])
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
             ->groupBy('p.id', 'p.codigo', 'p.nombre', 'c.nombre')
             ->selectRaw('p.id, p.codigo, p.nombre, c.nombre AS categoria')
             ->selectRaw("SUM({$unidades}) AS unidades_vendidas")
             ->selectRaw("SUM({$neto}) AS monto_vendido")
-            ->selectRaw("SUM({$neto} - ROUND({$unidades} * {$costo}, 2)) AS margen_estimado")
-            // Columna añadida, fuera de la vista: deja ver cuánto se devolvió
-            // de un producto sin tener que abrir su ficha.
-            ->selectRaw('SUM(d.cantidad_devuelta) AS unidades_devueltas')
             ->orderByDesc('monto_vendido')
             ->limit(20)
             ->get();
-    }
-
-    /** @return array<string, float|int> */
-    private function valorInventario(): array
-    {
-        // El precio de venta sin el impuesto: con los precios que ya lo
-        // incluyen, «lo que se cobraría por todo» traía el IVA adentro y el
-        // margen salía casi al triple. El IVA no es del negocio.
-        $tasa = number_format(Config::tasaImpuesto(), 4, '.', '');
-        $sinImpuesto = Config::preciosIncluyenImpuesto()
-            ? "IF(afecto_impuesto = 1, precio_venta - ROUND(precio_venta * {$tasa} / (1 + {$tasa}), 2), precio_venta)"
-            : 'precio_venta';
-
-        // Sobre todo lo que hay en estante, activo o no: dar de baja un
-        // producto con stock no hace desaparecer lo que costó.
-        $totales = DB::table('productos')
-            ->selectRaw('COALESCE(SUM(activo = 1), 0) AS productos')
-            ->selectRaw('COALESCE(SUM(activo = 0 AND stock_actual > 0), 0) AS inactivos_con_stock')
-            ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS costo')
-            ->selectRaw("COALESCE(SUM(stock_actual * {$sinImpuesto}), 0) AS venta")
-            ->first();
-
-        return [
-            'productos' => (int) $totales->productos,
-            'inactivos_con_stock' => (int) $totales->inactivos_con_stock,
-            'costo' => (float) $totales->costo,
-            'venta' => (float) $totales->venta,
-            'margen' => round((float) $totales->venta - (float) $totales->costo, 2),
-            'moneda' => Config::moneda(),
-        ];
     }
 }

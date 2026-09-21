@@ -31,7 +31,6 @@ class FacturacionOcultaTest extends TestCase
         'recibe factura',
         '— factura',
         'IVA incluido',
-        'Libro de Ventas',
         'Régimen tributario',
         'Impuesto y precios',
         'Serie de facturas',
@@ -136,7 +135,6 @@ class FacturacionOcultaTest extends TestCase
             'descuento_max_cajero' => $valor('descuento_max_cajero'),
             'egreso_max_cajero' => $valor('egreso_max_cajero'),
             'cliente_generico_nombre' => $valor('cliente_generico_nombre'),
-            'dias_max_devolucion' => $valor('dias_max_devolucion'),
             'exigir_referencia_pago' => $valor('exigir_referencia_pago'),
         ])->assertSessionHasNoErrors();
 

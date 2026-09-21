@@ -30,11 +30,8 @@
 
         {{-- La frase responde lo que de verdad se pregunta un dueño de
              negocio ("¿cómo me fue?"), antes que la grilla de cifras sueltas.
-             La ganancia va sin impuesto y con el costo del día de cada venta
-             (las ventas anteriores al 15/09/2026 quedaron con el costo que
-             tenía el producto ese 15/09). Antes descontaba el costo de HOY de cada
-             producto vendido, no el que tenía el día de la venta (misma
-             salvedad que ya lleva el "margen estimado" de Productos). --}}
+             Dice cuánto se vendió, no cuánto se ganó: el plato se hace en la
+             casa y no hay costo de compra con el que calcular la ganancia. --}}
         <div class="rounded-2xl border border-brand-200 bg-brand-50 p-6 dark:border-brand-800 dark:bg-brand-500/10">
             @php
                 // `diffInDays` entre un `startOfDay` y un `endOfDay` no cae en un
@@ -43,12 +40,17 @@
                 $diasPeriodo = (int) $desde->copy()->startOfDay()->diffInDays($hasta->copy()->startOfDay()) + 1;
             @endphp
             <p class="text-theme-sm text-gray-600 dark:text-gray-300">
-                Del {{ $desde->format('d/m/Y') }} al {{ $hasta->format('d/m/Y') }}
-                ({{ $diasPeriodo }} {{ $diasPeriodo === 1 ? 'día' : 'días' }})
+                Jornadas del {{ $desde->format('d/m/Y') }} al {{ $hasta->format('d/m/Y') }}
+                ({{ $diasPeriodo }} {{ $diasPeriodo === 1 ? 'jornada' : 'jornadas' }})
             </p>
             <p class="mt-1 text-title-md font-bold text-gray-800 dark:text-white/90">
                 Vendiste <span class="text-brand-600 dark:text-brand-400">{{ Config::importe($resumen['vendido']) }}</span>
-                y ganaste aproximadamente <span class="text-success-600 dark:text-success-500">{{ Config::importe($resumen['ganancia']) }}</span>
+                @if (Config::tasaImpuesto() > 0)
+                    <span class="text-theme-sm font-medium text-gray-500 dark:text-gray-400" data-rotulo-vendido>con impuesto</span>
+                @endif
+            </p>
+            <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400" data-nota-jornada>
+                {{ \App\Http\Controllers\ReporteController::notaJornada() }}
             </p>
             @if ($variacion !== null)
                 <p class="mt-2 flex items-center gap-1.5 text-theme-sm {{ $variacion >= 0 ? 'text-success-700 dark:text-success-500' : 'text-error-600 dark:text-error-400' }}">
@@ -76,11 +78,6 @@
                 <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">por venta</p>
             </div>
             <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-                <p class="mb-1 text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Devoluciones</p>
-                <p class="text-title-sm font-semibold text-error-600 dark:text-error-400">{{ Config::importe($resumen['devuelto']) }}</p>
-                <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">ya restado de lo que ganaste</p>
-            </div>
-            <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
                 <p class="mb-1 text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Ventas anuladas</p>
                 <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">{{ number_format($resumen['anuladas']) }}</p>
                 <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">no afectan estas cifras</p>
@@ -93,7 +90,7 @@
             Efectivo que pasó por las cajas:
             <b class="text-gray-800 dark:text-white/90">{{ Config::importe($resumen['efectivo']) }}</b>
             <span class="text-theme-xs text-gray-500 dark:text-gray-400">
-                — ventas y devoluciones en efectivo, más ingresos y menos egresos de caja. Cuadra con los arqueos
+                — ventas cobradas en efectivo, más ingresos y menos egresos de caja. Cuadra con los arqueos
                 de los turnos del período, sin su monto inicial.
             </span>
         </p>
@@ -107,10 +104,10 @@
         {{-- Evolución diaria --}}
         <div class="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
             <div class="px-6 py-5">
-                <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ventas por día</h2>
+                <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ventas por jornada</h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Los días sin ventas se dibujan en cero: unir dos días lejanos con una recta aparentaría ventas que
-                    no existieron.
+                    Las jornadas sin ventas se dibujan en cero: unir dos jornadas lejanas con una recta aparentaría
+                    ventas que no existieron.
                 </p>
             </div>
             <div class="px-3 pb-3">
@@ -213,17 +210,17 @@
         {{-- Detalle diario --}}
         <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
             <div class="px-6 py-5">
-                <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Detalle por día</h2>
+                <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Detalle por jornada</h2>
             </div>
 
             <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
-                            <th class="px-6 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Día</th>
+                            <th class="px-6 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Jornada</th>
                             <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Ventas</th>
                             <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Ticket promedio</th>
-                            <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Monto</th>
+                            <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">{{ \App\Http\Controllers\ReporteController::rotuloVendidoConImpuesto() }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 dark:divide-gray-800">

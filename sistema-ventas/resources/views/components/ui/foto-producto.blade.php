@@ -11,6 +11,17 @@
     $imagen = $url ?? $producto?->imagen_url;
     $titulo = $nombre ?? $producto?->nombre ?? '';
 
+    // Sin foto: las iniciales del plato sobre el color de su categoría, el
+    // mismo del mostrador. Se reconoce de un vistazo y no parece que falte algo.
+    // Sin las palabras de enlace: «Empanada de queso» es EQ, no ED.
+    $enlaces = ['de', 'del', 'la', 'las', 'el', 'los', 'a', 'al', 'y', 'e', 'con', 'en', 'para', 'sin'];
+    $palabras = array_values(array_filter(
+        preg_split('/\s+/', trim($titulo)) ?: [],
+        fn (string $p) => ! in_array(mb_strtolower($p), $enlaces, true),
+    ));
+    $iniciales = mb_strtoupper(mb_substr($palabras[0] ?? $titulo ?: '?', 0, 1).mb_substr($palabras[1] ?? '', 0, 1));
+    $tamanoLetra = ['sm' => 'text-sm', 'md' => 'text-lg', 'lg' => 'text-3xl', 'xl' => 'text-5xl'][$size] ?? 'text-lg';
+
     // El recuadro tiene medida fija para que la cuadrícula no se descuadre;
     // la foto se acomoda dentro, sin importar su proporción.
     $sizeMap = [
@@ -48,15 +59,10 @@
     {{-- Marcador: la misma caja, para que la fila no se descuadre sin foto. --}}
     <span
         {{ $attributes->merge([
-            'class' => $marco.' border-dashed border-gray-200 bg-gray-50 text-gray-300 '
-                .'dark:border-gray-700 dark:bg-white/[0.02] dark:text-gray-600',
+            'class' => $marco.' border-transparent font-semibold text-gray-800 ring-1 ring-inset dark:text-white/90 '
+                .$tamanoLetra.' '.\App\Support\ColorCategoria::suave($producto?->categoria_id),
         ]) }}
-        title="{{ $titulo ? $titulo.' — sin foto' : 'Sin foto' }}">
-        <svg aria-hidden="true" class="{{ $medida['icono'] }}" viewBox="0 0 24 24" fill="none">
-            <path d="M3.75 7.25 12 3.5l8.25 3.75-8.25 3.75L3.75 7.25Z" stroke="currentColor" stroke-width="1.5"
-                stroke-linejoin="round" />
-            <path d="M3.75 12 12 15.75 20.25 12M3.75 16.75 12 20.5l8.25-3.75" stroke="currentColor"
-                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        title="{{ $titulo ? $titulo.' — sin foto' : 'Sin foto' }}" data-sin-foto>
+        <span aria-hidden="true">{{ $iniciales }}</span>
     </span>
 @endif

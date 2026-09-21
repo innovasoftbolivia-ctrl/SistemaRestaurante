@@ -13,7 +13,7 @@ import { iniciarGraficos } from './graficos';
 // Igual que los gráficos: el dibujante de QR se trae solo donde se usa.
 import './qr';
 
-// Importes exactos, igual que la base: los usan el mostrador y las devoluciones.
+// Importes exactos, igual que la base: los usan el mostrador y el cobro de pedidos.
 import './montos';
 
 window.Alpine = Alpine;
@@ -37,7 +37,7 @@ Alpine.start();
  * se gira la rueda estando el campo enfocado. En una pantalla de cobro eso es
  * una trampa: se escribe una cantidad, se rueda para seguir leyendo la página,
  * y el número cambia sin que nadie lo note. No hay aviso, no hay deshacer, y
- * el error viaja hasta el kardex.
+ * el error viaja hasta el cobro o el arqueo.
  *
  * Se quita el foco en vez de cancelar el evento. Cancelarlo evitaría el cambio
  * pero también dejaría la página sin desplazarse, que es justo lo que la
@@ -45,7 +45,7 @@ Alpine.start();
  * rueda como en cualquier otro sitio.
  *
  * Va en `document` y no campo por campo porque hay campos numéricos en el
- * mostrador, en las compras, en los ajustes y en cada formulario del catálogo
+ * mostrador, en la caja, en la configuración y en cada formulario del menú
  * —y los hay que Alpine crea después de cargar la página.
  */
 document.addEventListener(

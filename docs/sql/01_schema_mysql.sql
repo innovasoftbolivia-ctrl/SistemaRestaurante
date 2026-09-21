@@ -1,5 +1,5 @@
 -- =============================================================================
---  SISTEMA DE VENTA DE PRODUCTOS
+--  SISTEMA DEL RESTAURANTE (pedidos de mostrador, cocina, caja y comprobantes)
 --  Script 01 - Esquema de base de datos
 --  Motor: MySQL 8.0+ / InnoDB / utf8mb4
 -- =============================================================================
@@ -20,15 +20,46 @@ SET FOREIGN_KEY_CHECKS = 1;
 --  1. PERSONAL, SEGURIDAD Y USUARIOS
 -- =============================================================================
 -- Tres conceptos distintos, tres tablas:
---   cargo     -> qué hace la persona en el negocio (Cajero, Almacenero, Administrador)
+--   cargo     -> qué hace la persona en el negocio (Cajero, Cocinero, Gerente)
 --   empleado  -> la persona y su vínculo laboral (ingreso, cese, contrato)
 --   usuario   -> la cuenta con la que entra al sistema, y su rol de acceso
 -- Un empleado puede no tener usuario (trabaja pero no usa el sistema).
 -- Un usuario siempre pertenece a un empleado.
 
+-- Los documentos de identidad: CI, NIT, carné de extranjería... Hasta el
+-- 2026-09-19 eran tres ENUM repetidos (clientes, empleados y comprobantes).
+-- La clave es el código, el mismo que se imprime y se busca: clientes y
+-- empleados siguen guardando `CI` o `NIT`, y un documento nuevo es una fila y
+-- no un ALTER. `aplica_*` dice para quién vale cada uno, y clientes y empleados
+-- lo exigen con una FK compuesta contra (codigo, aplica_*) —ver sus columnas
+-- `tipodoc_*`—: la regla vive en esta tabla y en ningún otro lado.
+-- `comprobantes.cliente_tipo_documento` NO apunta aquí: es la foto del código
+-- tal como era al emitir.
+CREATE TABLE tipos_documento (
+    codigo          VARCHAR(5)   NOT NULL,
+    nombre          VARCHAR(60)  NOT NULL,              -- como se ofrece en pantalla
+    aplica_natural  TINYINT(1)   NOT NULL DEFAULT 0,    -- cliente persona natural
+    aplica_juridica TINYINT(1)   NOT NULL DEFAULT 0,    -- cliente persona jurídica
+    aplica_empleado TINYINT(1)   NOT NULL DEFAULT 0,
+    orden           TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (codigo),
+    UNIQUE KEY uq_tipodoc_natural  (codigo, aplica_natural),
+    UNIQUE KEY uq_tipodoc_juridica (codigo, aplica_juridica),
+    UNIQUE KEY uq_tipodoc_empleado (codigo, aplica_empleado)
+) ENGINE=InnoDB;
+
+-- Los de Bolivia. El NIT vale también para la persona natural unipersonal
+-- (recibe factura a su nombre); la empresa solo se identifica con NIT.
+INSERT INTO tipos_documento (codigo, nombre, aplica_natural, aplica_juridica, aplica_empleado, orden) VALUES
+    ('CI',  'CI (cédula de identidad)', 1, 0, 1, 1),
+    ('NIT', 'NIT',                      1, 1, 0, 2),
+    ('CE',  'Carné de extranjería',     1, 0, 1, 3),
+    ('PAS', 'Pasaporte',                1, 0, 1, 4),
+    ('SIN', 'Sin documento',            1, 0, 0, 5);
+
 CREATE TABLE cargos (
-    id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    nombre          VARCHAR(50)  NOT NULL,      -- Cajero, Almacenero, Administrador...
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    nombre          VARCHAR(50)  NOT NULL,      -- Cajero, Cocinero, Ayudante...
     descripcion     VARCHAR(150) NULL,
     activo          TINYINT(1)   NOT NULL DEFAULT 1,
     PRIMARY KEY (id),
@@ -37,8 +68,8 @@ CREATE TABLE cargos (
 
 CREATE TABLE empleados (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    cargo_id            TINYINT UNSIGNED NOT NULL,
-    tipo_documento      ENUM('CI','CE','PAS') NOT NULL DEFAULT 'CI',
+    cargo_id            INT UNSIGNED NOT NULL,
+    tipo_documento      VARCHAR(5)   NOT NULL DEFAULT 'CI',
     documento           VARCHAR(20)  NOT NULL,
     nombres             VARCHAR(60)  NOT NULL,
     apellidos           VARCHAR(60)  NOT NULL,
@@ -56,12 +87,18 @@ CREATE TABLE empleados (
     actualizado_en      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     nombre_completo     VARCHAR(130) GENERATED ALWAYS AS
                         (TRIM(CONCAT_WS(' ', nombres, apellidos))) STORED,
+    -- Siempre 1: con `tipo_documento` forma la FK que exige un documento que
+    -- valga para empleados (`tipos_documento.aplica_empleado`).
+    tipodoc_empleado    TINYINT(1)   GENERATED ALWAYS AS (1) STORED,
     PRIMARY KEY (id),
     UNIQUE KEY uq_empleados_documento (tipo_documento, documento),
     KEY ix_empleados_cargo  (cargo_id),
     KEY ix_empleados_estado (estado),
     KEY ix_empleados_nombre (nombre_completo),
+    KEY ix_empleados_tipodoc (tipo_documento, tipodoc_empleado),
     CONSTRAINT fk_empleados_cargo FOREIGN KEY (cargo_id) REFERENCES cargos (id),
+    CONSTRAINT fk_empleados_tipodoc FOREIGN KEY (tipo_documento, tipodoc_empleado)
+        REFERENCES tipos_documento (codigo, aplica_empleado),
     -- cesado exige fecha de cese, y una fecha de cese exige estado cesado
     CONSTRAINT ck_empleados_cese CHECK (
         (estado =  'CESADO' AND fecha_cese IS NOT NULL) OR
@@ -71,7 +108,7 @@ CREATE TABLE empleados (
 ) ENGINE=InnoDB;
 
 CREATE TABLE roles (
-    id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
     nombre          VARCHAR(40)  NOT NULL,
     descripcion     VARCHAR(150) NULL,
     activo          TINYINT(1)   NOT NULL DEFAULT 1,
@@ -90,7 +127,7 @@ CREATE TABLE permisos (
 ) ENGINE=InnoDB;
 
 CREATE TABLE rol_permiso (
-    rol_id          TINYINT  UNSIGNED NOT NULL,
+    rol_id          INT  UNSIGNED NOT NULL,
     permiso_id      SMALLINT UNSIGNED NOT NULL,
     PRIMARY KEY (rol_id, permiso_id),
     CONSTRAINT fk_rolperm_rol     FOREIGN KEY (rol_id)     REFERENCES roles (id)    ON DELETE CASCADE,
@@ -103,7 +140,7 @@ CREATE TABLE rol_permiso (
 CREATE TABLE usuarios (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     empleado_id         INT UNSIGNED NOT NULL,
-    rol_id              TINYINT UNSIGNED NOT NULL,
+    rol_id              INT UNSIGNED NOT NULL,
     usuario             VARCHAR(40)  NOT NULL,
     password_hash       VARCHAR(255) NOT NULL,
     password_actualizado_en DATETIME NULL,
@@ -127,90 +164,56 @@ CREATE TABLE usuarios (
 --  2. CATÁLOGO
 -- =============================================================================
 
+-- `pasa_por_cocina`: si lo de esta categoría se prepara en la cocina. Las
+-- bebidas no: se cobran igual, pero no van a la pantalla de la cocina ni a la
+-- comanda. Cada línea del pedido lo copia al pedirse (`pedido_detalle`), así
+-- que cambiarlo no mueve lo ya pedido.
 CREATE TABLE categorias (
     id              SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
     nombre          VARCHAR(60)  NOT NULL,
     descripcion     VARCHAR(200) NULL,
     activo          TINYINT(1)   NOT NULL DEFAULT 1,
+    pasa_por_cocina TINYINT(1)   NOT NULL DEFAULT 1,
     creado_en       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_categorias_nombre (nombre)
 ) ENGINE=InnoDB;
 
-CREATE TABLE unidades_medida (
-    id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    codigo          VARCHAR(10) NOT NULL,   -- UND, KG, LT, CAJA
-    nombre          VARCHAR(40) NOT NULL,
-    permite_decimal TINYINT(1)  NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_unidades_codigo (codigo)
-) ENGINE=InnoDB;
-
-CREATE TABLE proveedores (
-    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    razon_social    VARCHAR(120) NOT NULL,
-    documento       VARCHAR(20)  NULL,
-    telefono        VARCHAR(20)  NULL,
-    email           VARCHAR(120) NULL,
-    direccion       VARCHAR(200) NULL,
-    activo          TINYINT(1)   NOT NULL DEFAULT 1,
-    creado_en       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_proveedores_documento (documento),
-    KEY ix_proveedores_razon (razon_social)
-) ENGINE=InnoDB;
-
+-- El negocio no lleva inventario: no hay stock, ni lotes, ni proveedores. Un
+-- producto es lo que se sirve y a qué precio, y ese precio es uno solo: el
+-- plato se hace en la casa, no se compra, así que no hay costo que registrar
+-- ni margen que calcular.
+--
+-- Tampoco lleva código de barras: nadie escanea un plato. Lo que se teclea
+-- para encontrarlo rápido es el código interno, y por eso ese sí se queda.
+--
+-- Tampoco lleva unidad de medida: todo se despacha por porción, así que la
+-- cantidad es siempre entera y la valida la aplicación (ver `Ventas` y
+-- `Pedidos`). Una unidad por producto solo obligaba a elegir «UND» en cada
+-- plato de la carta para no volver a mirarla nunca.
 CREATE TABLE productos (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     categoria_id        SMALLINT UNSIGNED NOT NULL,
-    unidad_medida_id    TINYINT  UNSIGNED NOT NULL,       -- la unidad en la que se VENDE
-    -- El empaque en el que llega del proveedor, cuando llega en empaque.
-    -- `stock_actual` se cuenta SIEMPRE en la unidad de venta: esto no es una
-    -- segunda unidad de stock, es cuántas unidades trae una caja para poder
-    -- ingresar «3 cajas y 5 sueltas» sin sacar la calculadora.
-    -- Decimal y no entero: sirve tanto para «la caja trae 24 gaseosas» como
-    -- para «el galón trae 3.785 litros». Con un entero, quien compra por galón
-    -- tendría que redondear, y el redondeo se le iría derecho al stock.
-    contenido_empaque   DECIMAL(10,3) UNSIGNED NULL,      -- 24 = la caja trae 24 unidades
-    nombre_empaque      VARCHAR(20)  NULL,                -- Caja, Paquete, Plancha…
-    -- 1 = el stock de este producto se lleva por lotes con fecha (ver `lotes`).
-    -- Se decide producto por producto: el detergente no vence, y pedirle una
-    -- fecha cada vez que llega es la forma más rápida de que alguien escriba
-    -- cualquier cosa con tal de seguir.
-    controla_vencimiento TINYINT(1)  NOT NULL DEFAULT 0,
-    proveedor_id        INT UNSIGNED NULL,
     codigo              VARCHAR(30)  NOT NULL,          -- código interno / SKU
-    codigo_barras       VARCHAR(50)  NULL,
     nombre              VARCHAR(120) NOT NULL,
     descripcion         VARCHAR(255) NULL,
-    precio_compra       DECIMAL(12,2) NOT NULL DEFAULT 0.00,  -- costo, sin impuesto
-    precio_venta        DECIMAL(12,2) NOT NULL,                -- precio SIN impuesto (base imponible)
+    -- Lo que significa depende de `configuracion.precios_incluyen_impuesto`:
+    -- con 0 es la base SIN impuesto (el impuesto se suma encima al vender);
+    -- con 1 es el precio final, con el impuesto ya dentro. Cada venta guarda
+    -- el modo con que se calculó (`ventas.impuesto_incluido`).
+    precio_venta        DECIMAL(12,2) NOT NULL,
     afecto_impuesto     TINYINT(1)   NOT NULL DEFAULT 1,       -- 1 = se le agrega el impuesto al vender
-    stock_actual        DECIMAL(12,3) NOT NULL DEFAULT 0.000,
-    stock_minimo        DECIMAL(12,3) NOT NULL DEFAULT 0.000,
     imagen              VARCHAR(255) NULL,
     activo              TINYINT(1)   NOT NULL DEFAULT 1,
     creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actualizado_en      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_productos_codigo  (codigo),
-    UNIQUE KEY uq_productos_barras  (codigo_barras),
     KEY ix_productos_categoria (categoria_id),
-    KEY ix_productos_proveedor (proveedor_id),
     KEY ix_productos_nombre    (nombre),
     KEY ix_productos_activo    (activo),
     CONSTRAINT fk_productos_categoria FOREIGN KEY (categoria_id)     REFERENCES categorias (id),
-    CONSTRAINT fk_productos_unidad    FOREIGN KEY (unidad_medida_id) REFERENCES unidades_medida (id),
-    CONSTRAINT fk_productos_proveedor FOREIGN KEY (proveedor_id)     REFERENCES proveedores (id) ON DELETE SET NULL,
-    CONSTRAINT ck_productos_precios   CHECK (precio_venta >= 0 AND precio_compra >= 0),
-    CONSTRAINT ck_productos_stock     CHECK (stock_actual >= 0 AND stock_minimo >= 0),
-    -- O el producto no viene en empaque (las dos columnas en NULL), o viene en
-    -- uno con nombre y con más de una unidad dentro. Un empaque de 1 no ahorra
-    -- ninguna cuenta: solo ensucia la pantalla de ingreso.
-    CONSTRAINT ck_productos_empaque   CHECK (
-        (contenido_empaque IS NULL AND nombre_empaque IS NULL)
-        OR (contenido_empaque > 1 AND nombre_empaque IS NOT NULL)
-    )
+    CONSTRAINT ck_productos_precios   CHECK (precio_venta >= 0)
 ) ENGINE=InnoDB;
 
 -- =============================================================================
@@ -225,7 +228,7 @@ CREATE TABLE productos (
 CREATE TABLE clientes (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     tipo_persona        ENUM('NATURAL','JURIDICA') NOT NULL DEFAULT 'NATURAL',
-    tipo_documento      ENUM('CI','CE','PAS','NIT','SIN') NOT NULL DEFAULT 'CI',
+    tipo_documento      VARCHAR(5)   NOT NULL DEFAULT 'CI',
     documento           VARCHAR(20)  NULL,
     -- persona natural
     nombres             VARCHAR(60)  NULL,
@@ -248,18 +251,31 @@ CREATE TABLE clientes (
                                razon_social,
                                TRIM(CONCAT_WS(' ', nombres, apellidos)))
                         ) STORED,
+    -- 1 en la columna de su tipo de persona y NULL en la otra: con
+    -- `tipo_documento` forman las FK que exigen un documento que valga para
+    -- ese tipo (`tipos_documento.aplica_natural` / `aplica_juridica`). La FK
+    -- con NULL no se comprueba, así que cada cliente pasa por la suya.
+    tipodoc_natural     TINYINT(1)   GENERATED ALWAYS AS (IF(tipo_persona = 'NATURAL', 1, NULL)) STORED,
+    tipodoc_juridica    TINYINT(1)   GENERATED ALWAYS AS (IF(tipo_persona = 'JURIDICA', 1, NULL)) STORED,
     PRIMARY KEY (id),
     UNIQUE KEY uq_clientes_documento (tipo_documento, documento),
     KEY ix_clientes_nombre  (nombre),
     KEY ix_clientes_persona (tipo_persona),
+    KEY ix_clientes_tipodoc_natural  (tipo_documento, tipodoc_natural),
+    KEY ix_clientes_tipodoc_juridica (tipo_documento, tipodoc_juridica),
+    CONSTRAINT fk_clientes_tipodoc_natural  FOREIGN KEY (tipo_documento, tipodoc_natural)
+        REFERENCES tipos_documento (codigo, aplica_natural),
+    CONSTRAINT fk_clientes_tipodoc_juridica FOREIGN KEY (tipo_documento, tipodoc_juridica)
+        REFERENCES tipos_documento (codigo, aplica_juridica),
+    -- Qué documento vale para cada tipo de persona lo dice `tipos_documento`.
     -- Una persona natural puede tener NIT (unipersonal, profesional
-    -- independiente): con él recibe factura a su nombre.
+    -- independiente): con él recibe factura a su nombre, y entonces el número
+    -- es obligatorio.
     CONSTRAINT ck_clientes_natural CHECK (
         tipo_persona <> 'NATURAL' OR (
             nombres   IS NOT NULL AND
             apellidos IS NOT NULL AND
             razon_social IS NULL  AND
-            tipo_documento IN ('CI','CE','PAS','SIN','NIT') AND
             (tipo_documento <> 'NIT' OR documento IS NOT NULL)
         )
     ),
@@ -269,10 +285,11 @@ CREATE TABLE clientes (
             documento    IS NOT NULL AND
             direccion    IS NOT NULL AND
             nombres      IS NULL     AND
-            apellidos    IS NULL     AND
-            tipo_documento = 'NIT'
+            apellidos    IS NULL
         )
-    )
+    ),
+    -- «Sin documento» es eso: no lleva número.
+    CONSTRAINT ck_clientes_sin_doc CHECK (tipo_documento <> 'SIN' OR documento IS NULL)
 ) ENGINE=InnoDB;
 
 -- =============================================================================
@@ -280,7 +297,7 @@ CREATE TABLE clientes (
 -- =============================================================================
 
 CREATE TABLE cajas (
-    id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
     nombre          VARCHAR(40) NOT NULL,       -- "Caja 1"
     ubicacion       VARCHAR(60) NULL,
     activo          TINYINT(1)  NOT NULL DEFAULT 1,
@@ -290,7 +307,7 @@ CREATE TABLE cajas (
 
 CREATE TABLE sesiones_caja (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    caja_id             TINYINT UNSIGNED NOT NULL,
+    caja_id             INT UNSIGNED NOT NULL,
     usuario_apertura_id INT UNSIGNED NOT NULL,
     usuario_cierre_id   INT UNSIGNED NULL,
     fecha_apertura      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -312,12 +329,21 @@ CREATE TABLE sesiones_caja (
     CONSTRAINT fk_sesion_caja      FOREIGN KEY (caja_id)             REFERENCES cajas (id),
     CONSTRAINT fk_sesion_usr_ap    FOREIGN KEY (usuario_apertura_id) REFERENCES usuarios (id),
     CONSTRAINT fk_sesion_usr_ci    FOREIGN KEY (usuario_cierre_id)   REFERENCES usuarios (id),
-    CONSTRAINT ck_sesion_inicial   CHECK (monto_inicial >= 0)
+    CONSTRAINT ck_sesion_inicial   CHECK (monto_inicial >= 0),
+    -- Abierta es no tener fecha de cierre; cerrada es tener quién cerró y el
+    -- arqueo firmado. Sin triggers (LOGICA_EN_PHP) son la única guarda.
+    CONSTRAINT ck_sesion_cierre    CHECK ((estado = 'ABIERTA') = (fecha_cierre IS NULL)),
+    CONSTRAINT ck_sesion_cerrada   CHECK (estado <> 'CERRADA' OR (usuario_cierre_id IS NOT NULL
+                                          AND monto_esperado IS NOT NULL AND monto_declarado IS NOT NULL)),
+    -- Lo que queda en el cajón sale de lo contado: ni negativo ni más.
+    CONSTRAINT ck_sesion_fondo     CHECK (fondo_dejado IS NULL OR (fondo_dejado >= 0 AND fondo_dejado <= monto_declarado)),
+    -- El efectivo contado al cerrar no puede ser negativo.
+    CONSTRAINT ck_sesion_declarado CHECK (monto_declarado IS NULL OR monto_declarado >= 0)
 ) ENGINE=InnoDB;
 
 -- Solo una sesión ABIERTA por caja: se garantiza con esta columna generada + índice único.
 ALTER TABLE sesiones_caja
-    ADD COLUMN caja_abierta_uk TINYINT UNSIGNED
+    ADD COLUMN caja_abierta_uk INT UNSIGNED
         GENERATED ALWAYS AS (IF(estado = 'ABIERTA', caja_id, NULL)) VIRTUAL,
     ADD UNIQUE KEY uq_sesion_caja_abierta (caja_abierta_uk);
 
@@ -358,6 +384,13 @@ CREATE TABLE movimientos_caja (
 --   FAC (Factura) -> solo persona JURIDICA, exige cliente con NIT y dirección fiscal
 --   REC (Recibo)  -> solo persona NATURAL
 --   NV  (Nota de venta, uso interno) -> AMBAS, sin exigencia de cliente
+--
+-- `serie_por_omision_id`: la serie con que se numera cada tipo. Antes eran dos
+-- claves de texto en `configuracion` (`serie_factura`, `serie_recibo`) —claves
+-- foráneas sin FK— y la de la nota de venta salía de otra consulta. La FK es
+-- compuesta, (serie, tipo) contra `series_comprobante (id, tipo_comprobante_id)`:
+-- así la base impide elegir la serie de los recibos como serie de facturas.
+-- La clave se agrega más abajo, cuando `series_comprobante` ya existe.
 CREATE TABLE tipos_comprobante (
     id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
     codigo          VARCHAR(10) NOT NULL,   -- FAC, REC, NV
@@ -366,6 +399,7 @@ CREATE TABLE tipos_comprobante (
     exige_cliente   TINYINT(1)  NOT NULL DEFAULT 0,
     exige_documento TINYINT(1)  NOT NULL DEFAULT 0,
     activo          TINYINT(1)  NOT NULL DEFAULT 1,
+    serie_por_omision_id SMALLINT UNSIGNED NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_tipocomp_codigo (codigo)
 ) ENGINE=InnoDB;
@@ -379,11 +413,25 @@ CREATE TABLE series_comprobante (
     activo              TINYINT(1)  NOT NULL DEFAULT 1,
     PRIMARY KEY (id),
     UNIQUE KEY uq_series (tipo_comprobante_id, serie),
-    CONSTRAINT fk_series_tipo FOREIGN KEY (tipo_comprobante_id) REFERENCES tipos_comprobante (id)
+    CONSTRAINT fk_series_tipo FOREIGN KEY (tipo_comprobante_id) REFERENCES tipos_comprobante (id),
+    -- El número impreso nunca se corta: LPAD truncaba el 1000000 a 100000, un
+    -- número repetido. Al llegar al tope, emitir falla en vez de repetir.
+    -- serie (6) + guion + número (13) = los 20 de `numero_completo`.
+    CONSTRAINT ck_series_longitud CHECK (longitud BETWEEN 1 AND 13),
+    CONSTRAINT ck_series_serie    CHECK (CHAR_LENGTH(serie) BETWEEN 1 AND 6),
+    CONSTRAINT ck_series_tope     CHECK (correlativo_actual < POW(10, longitud))
 ) ENGINE=InnoDB;
 
+-- La serie por omisión de cada tipo, y que sea de ESE tipo.
+ALTER TABLE series_comprobante
+    ADD UNIQUE KEY uq_series_id_tipo (id, tipo_comprobante_id);
+ALTER TABLE tipos_comprobante
+    ADD KEY ix_tipocomp_serie (serie_por_omision_id, id),
+    ADD CONSTRAINT fk_tipocomp_serie FOREIGN KEY (serie_por_omision_id, id)
+        REFERENCES series_comprobante (id, tipo_comprobante_id);
+
 CREATE TABLE metodos_pago (
-    id              TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
     codigo          VARCHAR(15) NOT NULL,   -- EFECTIVO, TARJETA, YAPE...
     nombre          VARCHAR(40) NOT NULL,
     afecta_caja     TINYINT(1)  NOT NULL DEFAULT 1,  -- 1 = suma al efectivo esperado
@@ -398,11 +446,19 @@ CREATE TABLE metodos_pago (
 
 -- `ventas` guarda la operación comercial. El documento entregado al cliente
 -- (factura o recibo) vive en la tabla `comprobantes`, relación 1 a 1.
+--
+-- `pedido_id` es el pedido que cobró la venta (ver 7. PEDIDOS). La clave vive
+-- aquí y no en `pedidos`, porque un pedido puede tener varias ventas —la que
+-- se anuló y la que lo volvió a cobrar— y la anulada tiene que seguir diciendo
+-- de qué pedido era. Una sola VIGENTE por pedido: lo garantiza
+-- `uq_venta_pedido_cobrado`. NULL solo en las ventas de antes de los pedidos.
+-- El cliente es de la venta: el pedido no guarda uno propio.
 CREATE TABLE ventas (
     id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     cliente_id          INT UNSIGNED NULL,          -- NULL = cliente varios
     usuario_id          INT UNSIGNED NOT NULL,      -- cajero que vendió
     sesion_caja_id      INT UNSIGNED NOT NULL,
+    pedido_id           BIGINT UNSIGNED NULL,       -- el pedido que cobró
     fecha               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- En los dos modos de precio, las columnas guardan lo mismo:
     --   subtotal = base imponible (suma del detalle, sin impuesto)
@@ -419,18 +475,24 @@ CREATE TABLE ventas (
     -- derivada de las tres anteriores: columna generada (3FN)
     total               DECIMAL(12,2) GENERATED ALWAYS AS
                         (ROUND(subtotal - descuento + impuesto, 2)) STORED,
-    total_devuelto      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    estado              ENUM('COMPLETADA','ANULADA','DEVUELTA_PARCIAL','DEVUELTA') NOT NULL DEFAULT 'COMPLETADA',
+    -- Una venta mal cobrada se anula entera, con su motivo y su responsable:
+    -- no hay devoluciones parciales. Es lo que hace un restaurante, donde lo
+    -- que se sirvió no vuelve a la carta.
+    estado              ENUM('COMPLETADA','ANULADA') NOT NULL DEFAULT 'COMPLETADA',
     observacion         VARCHAR(255) NULL,
     -- anulación
     anulada_en          DATETIME     NULL,
     anulada_por         INT UNSIGNED NULL,
     motivo_anulacion    VARCHAR(255) NULL,
     creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Una sola venta vigente por pedido: la columna vale el pedido mientras la
+    -- venta está COMPLETADA y NULL si se anuló (las anuladas no ocupan lugar).
+    pedido_cobrado_uk   BIGINT UNSIGNED
+                        GENERATED ALWAYS AS (IF(estado = 'COMPLETADA', pedido_id, NULL)) VIRTUAL,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_venta_pedido_cobrado (pedido_cobrado_uk),
     KEY ix_ventas_fecha    (fecha),
     KEY ix_ventas_cliente  (cliente_id),
-    KEY ix_ventas_usuario  (usuario_id),
     KEY ix_ventas_sesion   (sesion_caja_id),
     KEY ix_ventas_estado   (estado, fecha),
     CONSTRAINT fk_ventas_cliente FOREIGN KEY (cliente_id)     REFERENCES clientes (id),
@@ -438,7 +500,13 @@ CREATE TABLE ventas (
     CONSTRAINT fk_ventas_sesion  FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id),
     CONSTRAINT fk_ventas_anulada FOREIGN KEY (anulada_por)    REFERENCES usuarios (id),
     CONSTRAINT ck_ventas_montos  CHECK (subtotal >= 0 AND descuento >= 0 AND impuesto >= 0
-                                        AND descuento <= subtotal)
+                                        AND descuento <= subtotal),
+    -- Anulada es tener cuándo, quién y por qué; una completada no tiene nada de eso.
+    CONSTRAINT ck_ventas_anulacion CHECK ((estado = 'ANULADA') = (anulada_en IS NOT NULL)
+                                          AND (anulada_en IS NULL) = (anulada_por IS NULL)
+                                          AND (anulada_en IS NULL) = (motivo_anulacion IS NULL)),
+    -- El descuento sobre el precio final solo existe con el impuesto incluido.
+    CONSTRAINT ck_ventas_precio_final CHECK (impuesto_incluido = 1 OR descuento_precio_final IS NULL)
 ) ENGINE=InnoDB;
 
 CREATE TABLE venta_detalle (
@@ -446,18 +514,15 @@ CREATE TABLE venta_detalle (
     venta_id            BIGINT UNSIGNED NOT NULL,
     producto_id         INT UNSIGNED NOT NULL,
     descripcion         VARCHAR(120)  NOT NULL,      -- copia histórica del nombre
-    unidad              VARCHAR(10)   NULL,          -- copia histórica de la unidad: UND, KG, LT
     cantidad            DECIMAL(12,3) NOT NULL,
     precio_unitario     DECIMAL(12,2) NOT NULL,      -- copia histórica del precio
-    descuento           DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    -- Costo del producto el día de la venta: la ganancia de un mes pasado no
-    -- cambia porque el proveedor subió el precio después. NULL solo en ventas
-    -- anteriores al 15/09/2026 que no se pudieron completar.
-    costo_unitario      DECIMAL(12,2) NULL,
+    -- Sin descuento por línea: el descuento se aplica al total de la venta
+    -- (`ventas.descuento`), nunca por plato. La columna valía siempre 0 y se
+    -- retiró el 2026-09-19.
     -- Base de la línea, sin impuesto. Con el impuesto incluido en el precio,
     -- es lo cobrado menos el impuesto que lleva adentro.
     importe             DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario - descuento, 2) - IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), 0)) STORED,
+                        (ROUND(cantidad * precio_unitario, 2) - IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), 0)) STORED,
     -- Desglose de impuesto por línea: es lo que imprime la FACTURA.
     -- Se copian del producto, de la configuración y de la venta al insertar
     -- (ver trigger BEFORE INSERT).
@@ -466,29 +531,30 @@ CREATE TABLE venta_detalle (
     -- 1 = el precio unitario ya incluye el impuesto (se calcula «por dentro»).
     impuesto_incluido   TINYINT(1)    NOT NULL DEFAULT 0,
     impuesto_linea      DECIMAL(12,2) GENERATED ALWAYS AS
-                        (IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
+                        (IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     -- Lo que paga el cliente por la línea.
     total_linea         DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario - descuento, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario - descuento, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
-    cantidad_devuelta   DECIMAL(12,3) NOT NULL DEFAULT 0.000,
+                        (ROUND(cantidad * precio_unitario, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
     PRIMARY KEY (id),
     -- Un producto, una sola línea por venta. El mostrador ya lo exigía, pero la
-    -- regla vivía solo en la validación HTTP: con dos líneas del mismo producto,
-    -- `sp_anular_venta` reponía el stock de una sola de ellas.
+    -- regla vivía solo en la validación HTTP, y con el mismo producto repetido
+    -- en dos líneas los recuentos por producto (anulación, ranking) contaban una
+    -- sola de ellas.
+    -- (Sin un índice aparte por `venta_id`: este lo cubre, porque empieza por ella.)
     UNIQUE KEY uq_detalle_venta_producto (venta_id, producto_id),
-    KEY ix_detalle_venta    (venta_id),
     KEY ix_detalle_producto (producto_id),
-    CONSTRAINT fk_detalle_venta    FOREIGN KEY (venta_id)    REFERENCES ventas (id) ON DELETE CASCADE,
+    -- RESTRICT y no CASCADE: una venta no se borra nunca (se anula), y sin
+    -- triggers (LOGICA_EN_PHP) nada impediría que un DELETE se llevara el detalle.
+    CONSTRAINT fk_detalle_venta    FOREIGN KEY (venta_id)    REFERENCES ventas (id) ON DELETE RESTRICT,
     CONSTRAINT fk_detalle_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
     CONSTRAINT ck_detalle_cantidad CHECK (cantidad > 0),
-    CONSTRAINT ck_detalle_precio   CHECK (precio_unitario >= 0 AND descuento >= 0),
-    CONSTRAINT ck_detalle_devuelta CHECK (cantidad_devuelta >= 0 AND cantidad_devuelta <= cantidad)
+    CONSTRAINT ck_detalle_precio   CHECK (precio_unitario >= 0)
 ) ENGINE=InnoDB;
 
 CREATE TABLE venta_pagos (
     id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     venta_id        BIGINT UNSIGNED NOT NULL,
-    metodo_pago_id  TINYINT UNSIGNED NOT NULL,
+    metodo_pago_id  INT UNSIGNED NOT NULL,
     monto           DECIMAL(12,2) NOT NULL,   -- lo que se aplica a la venta
     monto_recibido  DECIMAL(12,2) NULL,       -- lo que entregó el cliente (solo efectivo)
     -- derivada de las dos anteriores: columna generada (3FN)
@@ -498,7 +564,7 @@ CREATE TABLE venta_pagos (
     PRIMARY KEY (id),
     KEY ix_pagos_venta  (venta_id),
     KEY ix_pagos_metodo (metodo_pago_id),
-    CONSTRAINT fk_pagos_venta  FOREIGN KEY (venta_id)       REFERENCES ventas (id) ON DELETE CASCADE,
+    CONSTRAINT fk_pagos_venta  FOREIGN KEY (venta_id)       REFERENCES ventas (id) ON DELETE RESTRICT,
     CONSTRAINT fk_pagos_metodo FOREIGN KEY (metodo_pago_id) REFERENCES metodos_pago (id),
     CONSTRAINT ck_pagos_monto  CHECK (monto > 0
                                       AND (monto_recibido IS NULL OR monto_recibido >= monto))
@@ -513,8 +579,8 @@ CREATE TABLE venta_pagos (
 --  `venta_id` es NULL hasta que el pago se confirma, y es deliberado: el QR se
 --  genera contra el CARRITO, antes de que la venta exista. Si colgara de la
 --  venta habría que registrarla primero, y una venta creada antes de cobrar ya
---  descontó stock y ya emitió comprobante; si el cliente entonces no paga,
---  queda una venta fantasma con mercadería que nadie se llevó.
+--  emitió su comprobante y ya entró al arqueo del turno; si el cliente entonces
+--  no paga, queda una venta fantasma que nadie cobró.
 --
 --  `confirmado_por` distingue si lo dio por pagado la pasarela o una persona.
 --  Confirmar a mano es legítimo —la API del banco se cae— pero tiene que
@@ -564,7 +630,11 @@ CREATE TABLE cobros_qr (
     CONSTRAINT ck_cobros_qr_pagado CHECK (
         (estado = 'PAGADO'  AND pagado_en IS NOT NULL AND confirmado_por IS NOT NULL)
      OR (estado <> 'PAGADO' AND pagado_en IS NULL)
-    )
+    ),
+    -- Solo un cobro pagado respalda una venta.
+    CONSTRAINT ck_cobros_qr_venta CHECK (venta_id IS NULL OR estado = 'PAGADO'),
+    -- Lo que se confirmó a mano tiene nombre: es por donde se colaría un cobro que no entró.
+    CONSTRAINT ck_cobros_qr_manual CHECK (confirmado_por <> 'MANUAL' OR confirmado_por_id IS NOT NULL)
 ) ENGINE=InnoDB;
 
 -- =============================================================================
@@ -594,11 +664,19 @@ CREATE TABLE comprobantes (
     numero                  INT UNSIGNED NOT NULL,
     numero_completo         VARCHAR(20)  NOT NULL,      -- "F001-000126" / "R001-000341"
     fecha_emision           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- foto de los datos del negocio al emitir: si mañana cambia el nombre, el
+    -- NIT o la dirección, lo ya emitido se sigue imprimiendo como se entregó
+    emisor_nombre           VARCHAR(120) NULL,
+    emisor_documento        VARCHAR(20)  NULL,
+    emisor_direccion        VARCHAR(200) NULL,
+    emisor_telefono         VARCHAR(30)  NULL,
     -- foto de los datos del cliente al emitir
     cliente_id              INT UNSIGNED NULL,
     tipo_persona            ENUM('NATURAL','JURIDICA') NULL,
     cliente_nombre          VARCHAR(150) NOT NULL,      -- razón social o nombre completo
-    cliente_tipo_documento  ENUM('CI','CE','PAS','NIT','SIN') NOT NULL DEFAULT 'SIN',
+    -- El código tal como era al emitir (CI, NIT...), sin FK a `tipos_documento`:
+    -- es una foto, no una referencia.
+    cliente_tipo_documento  VARCHAR(5)   NOT NULL DEFAULT 'SIN',
     cliente_documento       VARCHAR(20)  NULL,
     cliente_direccion       VARCHAR(200) NULL,          -- dirección fiscal (factura)
     representante_legal     VARCHAR(120) NULL,          -- solo persona jurídica
@@ -617,8 +695,7 @@ CREATE TABLE comprobantes (
     sustituye_a             BIGINT UNSIGNED NULL,       -- documento al que reemplaza
     sustituido_en           DATETIME     NULL,          -- cuándo dejó de ser el vigente
     motivo_emision          VARCHAR(255) NULL,          -- por qué se emitió este reemplazo
-    emitido_por             INT UNSIGNED NULL,          -- usuario que emitió
-    archivo_pdf             VARCHAR(255) NULL,          -- ruta del PDF generado
+    emitido_por             INT UNSIGNED NOT NULL,      -- usuario que emitió
     observacion             VARCHAR(255) NULL,
     creado_en               TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- Solo un comprobante VIGENTE (EMITIDO) por venta. Los sustituidos y los anulados
@@ -633,377 +710,192 @@ CREATE TABLE comprobantes (
     KEY ix_comprobante_cliente   (cliente_id),
     KEY ix_comprobante_documento (cliente_documento),
     KEY ix_comprobante_fecha     (fecha_emision),
-    KEY ix_comprobante_sustituye (sustituye_a),
+    UNIQUE KEY uq_comprobante_sustituye (sustituye_a),  -- se sustituye una sola vez
     CONSTRAINT fk_comprobante_venta   FOREIGN KEY (venta_id)            REFERENCES ventas (id),
     CONSTRAINT fk_comprobante_serie   FOREIGN KEY (serie_id)            REFERENCES series_comprobante (id),
     CONSTRAINT fk_comprobante_cliente FOREIGN KEY (cliente_id)          REFERENCES clientes (id),
     CONSTRAINT fk_comprobante_sustit  FOREIGN KEY (sustituye_a)         REFERENCES comprobantes (id),
     CONSTRAINT fk_comprobante_usuario FOREIGN KEY (emitido_por)         REFERENCES usuarios (id),
     CONSTRAINT ck_comprobante_montos  CHECK (subtotal >= 0 AND descuento >= 0 AND impuesto >= 0
-                                             AND descuento <= subtotal)
+                                             AND descuento <= subtotal),
+    -- El estado y su fecha son lo mismo dicho dos veces: no pueden contradecirse.
+    CONSTRAINT ck_comprobante_anulado    CHECK ((estado = 'ANULADO') = (anulado_en IS NOT NULL)),
+    CONSTRAINT ck_comprobante_sustituido CHECK ((estado = 'SUSTITUIDO') = (sustituido_en IS NOT NULL)),
+    -- El tipo de persona es el del cliente: sin cliente, no hay.
+    CONSTRAINT ck_comprobante_persona CHECK ((cliente_id IS NULL) = (tipo_persona IS NULL))
 ) ENGINE=InnoDB;
 
 -- =============================================================================
---  7. DEVOLUCIONES
+--  7. PEDIDOS
 -- =============================================================================
+--
+--  El local atiende en el mostrador: el cliente pide y paga en la caja, se
+--  lleva un ticket con el número del pedido, se sienta donde quiera (no hay
+--  mesas numeradas) o espera para llevar, la cocina prepara, y quien lleva
+--  los platos canta el número. El pedido se toma y se cobra en el mismo acto
+--  (`App\Services\Pedidos::venderEnMostrador`). Cobrar NO es un circuito
+--  aparte: se traduce el pedido a una venta normal (`Pedidos::cobrar`), con
+--  sus pagos, su comprobante y su efecto en el arqueo.
+--
+--  Hasta el 2026-09-18 había mesas y cuentas que quedaban abiertas para
+--  cobrarse después; se retiraron (parche 2026_09_18_sin_mesas.sql).
 
-CREATE TABLE devoluciones (
+-- Un pedido, para comer aquí (LOCAL) o para llevar.
+--
+-- No guarda su venta: la venta apunta al pedido (`ventas.pedido_id`), porque
+-- un pedido puede tener varias —la anulada y la que lo volvió a cobrar— y una
+-- sola vigente (`uq_venta_pedido_cobrado`): el mismo pedido no se cobra dos
+-- veces ni aunque dos cajeros pulsen a la vez. Tampoco guarda cliente: el
+-- cliente es de la venta, y al pedido le basta un nombre para llamarlo.
+--
+-- «CERRADO ⇔ tiene una venta COMPLETADA» ya no cabe en un CHECK, porque son
+-- dos tablas. Lo garantiza la aplicación (`App\Services\Pedidos`): cierra el
+-- pedido en la misma transacción en que registra su venta y lo reabre en la
+-- misma en que la anula.
+--
+-- Solo queda ABIERTO —por cobrar— el que se reabrió al anular su venta, para
+-- cobrarlo de nuevo con su mismo número (el cliente ya tiene el ticket) o
+-- cancelarlo.
+CREATE TABLE pedidos (
     id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    venta_id            BIGINT UNSIGNED NOT NULL,
-    usuario_id          INT UNSIGNED NOT NULL,      -- quien registra
-    autorizado_por      INT UNSIGNED NULL,          -- administrador que autoriza
-    sesion_caja_id      INT UNSIGNED NULL,
-    fecha               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    tipo                ENUM('TOTAL','PARCIAL') NOT NULL,
-    motivo              VARCHAR(255)  NOT NULL,
-    total               DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    -- Cómo se le devolvió la plata al cliente y cuánto salió del cajón. En un
-    -- minimarket lo pagado por QR o billetera casi siempre se devuelve en
-    -- efectivo: sin esto el arqueo solo restaba la parte cobrada en efectivo y
-    -- el cajero cerraba con faltante. NULL en las anteriores al 14/09/2026.
-    reembolso           ENUM('EFECTIVO','MISMO_MEDIO') NULL,
-    efectivo            DECIMAL(12,2) NULL,
-    PRIMARY KEY (id),
-    KEY ix_devol_venta (venta_id),
-    KEY ix_devol_fecha (fecha),
-    CONSTRAINT fk_devol_venta   FOREIGN KEY (venta_id)       REFERENCES ventas (id),
-    CONSTRAINT fk_devol_usuario FOREIGN KEY (usuario_id)     REFERENCES usuarios (id),
-    CONSTRAINT fk_devol_autoriz FOREIGN KEY (autorizado_por) REFERENCES usuarios (id),
-    CONSTRAINT fk_devol_sesion  FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id),
-    CONSTRAINT ck_devol_efectivo CHECK (efectivo IS NULL OR (efectivo >= 0 AND efectivo <= total))
-) ENGINE=InnoDB;
-
--- Se devuelve lo que el cliente pagó, impuesto incluido. Por eso la línea
--- lleva el mismo desglose que `venta_detalle`: `precio_unitario` es la base,
--- e `impuesto_linea` y `total_linea` salen de la tasa que quedó congelada en
--- la venta original y que copia el trigger BEFORE INSERT.
-CREATE TABLE devolucion_detalle (
-    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    devolucion_id       BIGINT UNSIGNED NOT NULL,
-    venta_detalle_id    BIGINT UNSIGNED NOT NULL,
-    producto_id         INT UNSIGNED NOT NULL,
-    cantidad            DECIMAL(12,3) NOT NULL,
-    -- El precio que pagó el cliente por unidad: sin impuesto si la venta lo
-    -- sumaba encima, CON impuesto adentro si el precio ya lo incluía. El modo
-    -- se copia de la línea de venta (ver trigger BEFORE INSERT), igual que la
-    -- tasa: así se devuelve exactamente lo cobrado, sin inflarlo un 13 %.
-    precio_unitario     DECIMAL(12,2) NOT NULL,
-    importe             DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario, 2) - IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), 0)) STORED,
-    afecto_impuesto     TINYINT(1)    NOT NULL DEFAULT 1,
-    tasa_impuesto       DECIMAL(6,4)  NOT NULL DEFAULT 0.0000,
-    impuesto_incluido   TINYINT(1)    NOT NULL DEFAULT 0,
-    impuesto_linea      DECIMAL(12,2) GENERATED ALWAYS AS
-                        (IF(impuesto_incluido = 1, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0) / (1 + IF(afecto_impuesto = 1, tasa_impuesto, 0)), 2), ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
-    total_linea         DECIMAL(12,2) GENERATED ALWAYS AS
-                        (ROUND(cantidad * precio_unitario, 2) + IF(impuesto_incluido = 1, 0, ROUND(ROUND(cantidad * precio_unitario, 2) * IF(afecto_impuesto = 1, tasa_impuesto, 0), 2))) STORED,
-    reingresa_stock     TINYINT(1) NOT NULL DEFAULT 1,   -- 0 si el producto vino dañado
-    PRIMARY KEY (id),
-    KEY ix_devdet_devolucion (devolucion_id),
-    KEY ix_devdet_vdetalle   (venta_detalle_id),
-    CONSTRAINT fk_devdet_devolucion FOREIGN KEY (devolucion_id)    REFERENCES devoluciones (id) ON DELETE CASCADE,
-    CONSTRAINT fk_devdet_vdetalle   FOREIGN KEY (venta_detalle_id) REFERENCES venta_detalle (id),
-    CONSTRAINT fk_devdet_producto   FOREIGN KEY (producto_id)      REFERENCES productos (id),
-    CONSTRAINT ck_devdet_cantidad   CHECK (cantidad > 0)
-) ENGINE=InnoDB;
-
--- =============================================================================
---  8. INVENTARIO (KARDEX)
--- =============================================================================
-
--- Cabecera de una compra a proveedor (una guía o factura, con varias líneas
--- de producto). `proveedor_id` y `documento_externo` viven aquí, no en cada
--- línea de kardex: son datos de LA COMPRA, no de cada movimiento (2FN). Antes
--- de esta tabla, una compra de 5 productos repetía esos dos datos 5 veces en
--- `movimientos_inventario`.
-CREATE TABLE compras (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    proveedor_id        INT UNSIGNED NOT NULL,
-    usuario_id          INT UNSIGNED NOT NULL,
-    documento_externo   VARCHAR(30)  NULL,       -- guía o factura del proveedor
-    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- LOCAL es «comer aquí», sentado donde quiera; LLEVAR, «para llevar».
+    tipo                ENUM('LOCAL','LLEVAR') NOT NULL DEFAULT 'LOCAL',
+    -- El número que se canta en la barra: 1, 2, 3… y vuelve a 1 en cada
+    -- jornada. El `id` sigue siendo la clave y lo que va en las URLs, pero no
+    -- se le puede leer en voz alta a nadie: a los pocos meses va por «4812».
+    -- Lo asigna `App\Services\Pedidos::abrir()` bajo el bloqueo de
+    -- `uq_pedido_numero_dia`.
+    numero_dia          SMALLINT UNSIGNED NOT NULL,
+    -- La jornada del local a la que pertenece el pedido: la fecha de la
+    -- apertura menos `configuracion.hora_corte_jornada` horas (5 por omisión).
+    -- El local cierra pasada la medianoche, y el pedido de la 01:30 del 19 es
+    -- de la noche del 18: sigue su numeración, no empieza otra. La escribe
+    -- `Pedidos::abrir()`; no es una columna generada porque una columna
+    -- generada no puede leer la configuración.
+    jornada             DATE NOT NULL,
+    usuario_id          INT UNSIGNED NOT NULL,       -- quien lo abrió
+    -- Alcanza con un nombre para llamarlo cuando esté. El cliente registrado,
+    -- si lo hay, es de la venta.
+    nombre_cliente      VARCHAR(80)  NULL,
+    estado              ENUM('ABIERTO','CERRADO','CANCELADO') NOT NULL DEFAULT 'ABIERTO',
     observacion         VARCHAR(255) NULL,
-    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY ix_compras_proveedor (proveedor_id),
-    KEY ix_compras_fecha     (fecha),
-    CONSTRAINT fk_compras_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores (id),
-    CONSTRAINT fk_compras_usuario   FOREIGN KEY (usuario_id)   REFERENCES usuarios (id)
-) ENGINE=InnoDB;
-
-CREATE TABLE compra_detalle (
-    id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    compra_id       INT UNSIGNED NOT NULL,
-    producto_id     INT UNSIGNED NOT NULL,
-    cantidad        DECIMAL(12,3) NOT NULL,
-    -- Lo que de esta línea se le devolvió al proveedor. Se acumula aquí, y no
-    -- se calcula sumando las devoluciones, por el mismo motivo que en
-    -- `venta_detalle`: un CHECK no puede consultar otra tabla, y hace falta
-    -- para impedir que se devuelvan 30 unidades de una línea que trajo 24.
-    cantidad_devuelta DECIMAL(12,3) NOT NULL DEFAULT 0.000,
-    costo_unitario  DECIMAL(12,2) NOT NULL,
-    -- derivada de las dos anteriores: columna generada, no se puede desincronizar (3FN)
-    importe         DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
-    PRIMARY KEY (id),
-    KEY ix_compradet_compra   (compra_id),
-    KEY ix_compradet_producto (producto_id),
-    CONSTRAINT fk_compradet_compra   FOREIGN KEY (compra_id)   REFERENCES compras (id) ON DELETE CASCADE,
-    CONSTRAINT fk_compradet_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
-    CONSTRAINT ck_compradet_cantidad CHECK (cantidad > 0),
-    CONSTRAINT ck_compradet_costo    CHECK (costo_unitario >= 0),
-    CONSTRAINT ck_compradet_devuelta CHECK (cantidad_devuelta >= 0 AND cantidad_devuelta <= cantidad)
-) ENGINE=InnoDB;
-
-CREATE TABLE lotes (
-    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    producto_id         INT UNSIGNED  NOT NULL,
-    codigo              VARCHAR(30)   NULL,          -- el lote impreso por el fabricante
-    -- NULL = stock cuya fecha no se conoce: el que ya estaba cuando se encendió
-    -- el control, y el que devuelve un cliente días después de llevárselo.
-    -- Decir «sin fecha registrada» es más honesto que inventar una.
-    fecha_vencimiento   DATE          NULL,
-    cantidad_inicial    DECIMAL(12,3) NOT NULL,      -- lo que entró; no se toca nunca
-    cantidad_actual     DECIMAL(12,3) NOT NULL,      -- lo que queda
-    compra_detalle_id   BIGINT UNSIGNED NULL,
-    creado_en           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    -- El índice del despacho: se sale por el que vence antes (FEFO).
-    KEY ix_lotes_fefo        (producto_id, fecha_vencimiento),
-    KEY ix_lotes_vencimiento (fecha_vencimiento),
-    KEY ix_lotes_compra      (compra_detalle_id),
-    CONSTRAINT fk_lotes_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
-    -- SET NULL y no CASCADE: si se borrara la compra, el stock que entró por
-    -- ella sigue en el estante y su lote no puede irse con el papel.
-    CONSTRAINT fk_lotes_compra   FOREIGN KEY (compra_detalle_id) REFERENCES compra_detalle (id) ON DELETE SET NULL,
-    CONSTRAINT ck_lotes_cantidades CHECK (
-        cantidad_inicial > 0
-        AND cantidad_actual >= 0
-        AND cantidad_actual <= cantidad_inicial
-    )
-) ENGINE=InnoDB;
-
--- De qué lote salió cada línea de venta. Sin esto, lo anulado o devuelto
--- volvía al lote que vence antes entre los abiertos —o a uno que vence en un
--- año— y las unidades perdían su fecha real: dejaban de aparecer en la alerta
--- de vencimientos. `repuesta` evita devolver dos veces lo mismo.
-CREATE TABLE lote_salidas (
-    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    lote_id             BIGINT UNSIGNED NOT NULL,
-    venta_detalle_id    BIGINT UNSIGNED NOT NULL,
-    cantidad            DECIMAL(12,3)   NOT NULL,
-    repuesta            DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
-    PRIMARY KEY (id),
-    KEY ix_lote_salidas_linea (venta_detalle_id),
-    KEY ix_lote_salidas_lote  (lote_id),
-    CONSTRAINT fk_lote_salidas_lote  FOREIGN KEY (lote_id)          REFERENCES lotes (id),
-    CONSTRAINT fk_lote_salidas_linea FOREIGN KEY (venta_detalle_id) REFERENCES venta_detalle (id),
-    CONSTRAINT ck_lote_salidas CHECK (cantidad > 0 AND repuesta >= 0 AND repuesta <= cantidad)
-) ENGINE=InnoDB;
-
--- Mercadería que se le devuelve al proveedor, colgada de la compra por la que
--- entró. No es lo mismo que `devoluciones`, que es del cliente hacia la tienda:
--- una suma al stock y la otra lo resta, una la firma el cajero y la otra el
--- almacenero, y los reportes tienen que poder contarlas por separado.
---
--- Sin esta tabla la única salida era un ajuste de inventario con el motivo
--- escrito a mano: bajaba el stock, sí, pero quedaba mezclado con la merma y la
--- rotura, y nadie podía responder después «cuánto le devolví a este proveedor».
-CREATE TABLE devoluciones_compra (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    compra_id           INT UNSIGNED NOT NULL,
-    usuario_id          INT UNSIGNED NOT NULL,
-    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- Por qué se devuelve. Separado del texto libre porque es lo que después
-    -- permite contar «cuánto devolví por vencimiento este trimestre», que es
-    -- justo la cifra que dice si hay que comprar menos o rotar mejor.
-    motivo              ENUM('DEFECTO','VENCIMIENTO','ERROR','OTRO') NOT NULL,
-    -- En qué se quedó con el proveedor. Son TRES finales y no dos, que es lo
-    -- que un booleano no podía expresar:
-    --
-    --   REPUESTO      lo cambió en el momento: sale lo fallado y entra lo
-    --                 bueno en este mismo documento, el stock queda igual que
-    --                 antes, pero registrado. El cambio no es un módulo
-    --                 aparte; es este valor.
-    --   PENDIENTE     se llevó la mercadería y traerá el reemplazo. El stock
-    --                 bajó hoy y subirá cuando llegue. Mientras tanto el
-    --                 proveedor DEBE mercadería, y eso hay que poder verlo.
-    --   NOTA_CREDITO  no repone: queda a cuenta.
-    espera              ENUM('REPUESTO','PENDIENTE','NOTA_CREDITO') NOT NULL DEFAULT 'NOTA_CREDITO',
-    documento_externo   VARCHAR(30)  NULL,       -- nota de crédito o guía de devolución
-    observacion         VARCHAR(255) NULL,
-    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY ix_devcompra_compra (compra_id),
-    KEY ix_devcompra_fecha  (fecha),
-    -- «¿Qué me deben todavía?» es una consulta de todos los días en el almacén.
-    KEY ix_devcompra_espera (espera, fecha),
-    CONSTRAINT fk_devcompra_compra  FOREIGN KEY (compra_id)  REFERENCES compras (id),
-    CONSTRAINT fk_devcompra_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
-) ENGINE=InnoDB;
-
-CREATE TABLE devolucion_compra_detalle (
-    id                    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    devolucion_compra_id  INT UNSIGNED    NOT NULL,
-    compra_detalle_id     BIGINT UNSIGNED NOT NULL,
-    producto_id           INT UNSIGNED    NOT NULL,
-    -- La tanda que se devuelve, cuando el producto lleva control de
-    -- vencimiento. Es lo que permite devolver EL lote vencido y no el que
-    -- tocaría por orden de salida.
-    lote_id               BIGINT UNSIGNED NULL,
-    cantidad              DECIMAL(12,3)   NOT NULL,
-    -- Lo que el proveedor ya repuso de esta línea. Mismo motivo que los otros
-    -- acumulados del esquema: el reemplazo puede llegar en partes —trae 6 de
-    -- las 10 que debe— y una restricción no puede consultar otra tabla, así que
-    -- el tope vive en la propia línea.
-    cantidad_repuesta     DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
-    costo_unitario        DECIMAL(12,2)   NOT NULL,
-    importe               DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
-    PRIMARY KEY (id),
-    KEY ix_devcompradet_cabecera (devolucion_compra_id),
-    KEY ix_devcompradet_linea    (compra_detalle_id),
-    KEY ix_devcompradet_producto (producto_id),
-    CONSTRAINT fk_devcompradet_cabecera FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id) ON DELETE CASCADE,
-    CONSTRAINT fk_devcompradet_linea    FOREIGN KEY (compra_detalle_id)    REFERENCES compra_detalle (id),
-    CONSTRAINT fk_devcompradet_producto FOREIGN KEY (producto_id)          REFERENCES productos (id),
-    -- SET NULL y no CASCADE: el lote puede desaparecer del control, pero lo
-    -- que se devolvió pasó y su línea tiene que seguir ahí.
-    CONSTRAINT fk_devcompradet_lote     FOREIGN KEY (lote_id)              REFERENCES lotes (id) ON DELETE SET NULL,
-    CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0),
-    CONSTRAINT ck_devcompradet_repuesta CHECK (cantidad_repuesta >= 0 AND cantidad_repuesta <= cantidad)
-) ENGINE=InnoDB;
-
--- El documento que originó el movimiento se referencia con una FOREIGN KEY por origen,
--- no con un par (tabla, id) sin integridad referencial. Un CHECK garantiza que cada
--- origen traiga exactamente la referencia que le corresponde y ninguna otra.
---
--- `proveedor_id` y `documento_externo` siguen aquí, sueltos, para la pantalla
--- de "Ingresar mercadería" (una línea a la vez, sin compra multi-línea detrás).
--- `compra_id` es para cuando el origen SÍ viene de una compra con cabecera en
--- `compras`; puede convivir con los dos campos sueltos o reemplazarlos según
--- por dónde se haya registrado el ingreso.
-CREATE TABLE movimientos_inventario (
-    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    producto_id         INT UNSIGNED NOT NULL,
-    usuario_id          INT UNSIGNED NULL,
-    tipo                ENUM('ENTRADA','SALIDA','AJUSTE') NOT NULL,
-    origen              ENUM('VENTA','COMPRA','DEVOLUCION','DEVOLUCION_COMPRA','ANULACION','AJUSTE','INICIAL') NOT NULL,
-    -- referencias al documento de origen (una sola según `origen`)
-    venta_id            BIGINT UNSIGNED NULL,   -- VENTA, ANULACION
-    devolucion_id       BIGINT UNSIGNED NULL,   -- DEVOLUCION
-    proveedor_id        INT UNSIGNED NULL,      -- COMPRA, DEVOLUCION_COMPRA
-    compra_id           INT UNSIGNED NULL,      -- COMPRA con cabecera (opcional)
-    devolucion_compra_id INT UNSIGNED NULL,     -- DEVOLUCION_COMPRA
-    documento_externo   VARCHAR(30)  NULL,      -- COMPRA: guía o factura del proveedor
-    cantidad            DECIMAL(12,3) NOT NULL, -- siempre positiva
-    stock_anterior      DECIMAL(12,3) NOT NULL,
-    stock_resultante    DECIMAL(12,3) NOT NULL,
-    costo_unitario      DECIMAL(12,2) NULL,
-    motivo              VARCHAR(255) NULL,
-    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY ix_movinv_producto   (producto_id, fecha),
-    KEY ix_movinv_venta      (venta_id),
-    KEY ix_movinv_devolucion (devolucion_id),
-    KEY ix_movinv_proveedor  (proveedor_id),
-    KEY ix_movinv_compra     (compra_id),
-    KEY ix_movinv_devcompra  (devolucion_compra_id),
-    KEY ix_movinv_fecha      (fecha),
-    CONSTRAINT fk_movinv_producto   FOREIGN KEY (producto_id)   REFERENCES productos (id),
-    CONSTRAINT fk_movinv_usuario    FOREIGN KEY (usuario_id)    REFERENCES usuarios (id),
-    CONSTRAINT fk_movinv_venta      FOREIGN KEY (venta_id)      REFERENCES ventas (id),
-    CONSTRAINT fk_movinv_devolucion FOREIGN KEY (devolucion_id) REFERENCES devoluciones (id),
-    CONSTRAINT fk_movinv_proveedor  FOREIGN KEY (proveedor_id)  REFERENCES proveedores (id),
-    CONSTRAINT fk_movinv_compra     FOREIGN KEY (compra_id)     REFERENCES compras (id),
-    CONSTRAINT fk_movinv_devcompra  FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id),
-    CONSTRAINT ck_movinv_cantidad   CHECK (cantidad > 0),
-    -- cada origen con su referencia, y sin las ajenas
-    CONSTRAINT ck_movinv_origen CHECK (
-        (origen IN ('VENTA','ANULACION')
-             AND venta_id IS NOT NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-             AND devolucion_compra_id IS NULL)
-     OR (origen = 'DEVOLUCION'
-             AND devolucion_id IS NOT NULL AND venta_id IS NULL AND proveedor_id IS NULL
-             AND devolucion_compra_id IS NULL)
-     OR (origen = 'COMPRA'
-             AND venta_id IS NULL AND devolucion_id IS NULL AND devolucion_compra_id IS NULL)
-     OR (origen = 'DEVOLUCION_COMPRA'
-             AND devolucion_compra_id IS NOT NULL AND venta_id IS NULL AND devolucion_id IS NULL)
-     OR (origen IN ('AJUSTE','INICIAL')
-             AND venta_id IS NULL AND devolucion_id IS NULL AND proveedor_id IS NULL
-             AND devolucion_compra_id IS NULL AND documento_externo IS NULL)
-    ),
-    -- un ajuste sin explicación es un descuadre sin responsable
-    CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
-) ENGINE=InnoDB;
-
--- Toma de inventario: contar toda la tienda (o una categoría) de una vez.
---
--- El ajuste de `movimientos_inventario` es de a un producto, y sirve para la
--- rotura de hoy. Contar el local entero producto por producto, abriendo un
--- formulario para cada uno, no lo hace nadie. La toma abre la lista de lo que
--- hay que contar, guarda cada conteo a medida que se hace, y al cerrarla
--- aplica todas las diferencias juntas —como ajustes normales, en el kardex—.
---
--- El local sigue vendiendo mientras se cuenta. Por eso cada línea guarda lo que
--- decía el sistema EN EL MOMENTO de contarla (`stock_sistema`), y el cierre
--- aplica la DIFERENCIA y no el número contado: si se contaron 10 a las 9:00 y
--- a las 11:00 se vendieron 2, el cierre deja 8, no 10.
-CREATE TABLE tomas_inventario (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    categoria_id        SMALLINT UNSIGNED NULL,          -- NULL = toda la tienda
-    estado              ENUM('ABIERTA','CERRADA','CANCELADA') NOT NULL DEFAULT 'ABIERTA',
-    observacion         VARCHAR(255) NULL,
-    usuario_apertura_id INT UNSIGNED NOT NULL,
+    motivo_cancelacion  VARCHAR(255) NULL,
     fecha_apertura      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    usuario_cierre_id   INT UNSIGNED NULL,               -- quien la cerró o la canceló
     fecha_cierre        DATETIME     NULL,
-    -- Una sola toma abierta a la vez: 1 mientras está abierta, NULL después, y
-    -- un índice único admite muchos NULL. Dos tomas abiertas sobre el mismo
-    -- producto aplicarían la misma diferencia dos veces.
-    abierta             TINYINT(1) GENERATED ALWAYS AS (IF(estado = 'ABIERTA', 1, NULL)) STORED,
+    cerrado_por         INT UNSIGNED NULL,
+    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_tomas_una_abierta (abierta),
-    KEY ix_tomas_fecha (fecha_apertura),
-    CONSTRAINT fk_tomas_categoria FOREIGN KEY (categoria_id)        REFERENCES categorias (id),
-    CONSTRAINT fk_tomas_apertura  FOREIGN KEY (usuario_apertura_id) REFERENCES usuarios (id),
-    CONSTRAINT fk_tomas_cierre    FOREIGN KEY (usuario_cierre_id)   REFERENCES usuarios (id),
-    CONSTRAINT ck_tomas_cierre CHECK ((estado = 'ABIERTA') = (fecha_cierre IS NULL))
+    KEY ix_pedidos_estado (estado, fecha_apertura),
+    KEY ix_pedidos_usuario (usuario_id),
+    -- Dos cajeros abriendo un pedido en el mismo segundo no pueden sacar el
+    -- mismo número: quien lo garantiza es este índice, no el SELECT de PHP. El
+    -- servicio toma el siguiente con `FOR UPDATE` y, si aun así choca,
+    -- reintenta —igual que `Ventas::registrar()` ante un deadlock.
+    UNIQUE KEY uq_pedido_numero_dia (jornada, numero_dia),
+    CONSTRAINT fk_pedidos_usuario FOREIGN KEY (usuario_id)  REFERENCES usuarios (id),
+    CONSTRAINT fk_pedidos_cierre  FOREIGN KEY (cerrado_por) REFERENCES usuarios (id),
+    -- Abierto es no tener fecha de cierre: son la misma cosa dicha dos veces.
+    CONSTRAINT ck_pedidos_cierre CHECK ((estado = 'ABIERTO') = (fecha_cierre IS NULL)),
+    -- Y cerrado es tener quién lo cerró.
+    CONSTRAINT ck_pedidos_cerrador CHECK ((estado = 'ABIERTO') = (cerrado_por IS NULL)),
+    CONSTRAINT ck_pedidos_cancel CHECK (estado <> 'CANCELADO' OR motivo_cancelacion IS NOT NULL),
+    -- El contador de la jornada empieza en 1: un «pedido 0» no se canta.
+    CONSTRAINT ck_pedidos_numero CHECK (numero_dia > 0)
 ) ENGINE=InnoDB;
 
-CREATE TABLE toma_inventario_detalle (
+-- La venta apunta a su pedido; la clave se agrega aquí porque `ventas` se crea
+-- antes que `pedidos`.
+ALTER TABLE ventas
+    ADD KEY ix_ventas_pedido (pedido_id),
+    -- La portada y «mis ventas» filtran por quién vendió y cuándo. La FK a
+    -- usuarios usa este mismo índice (su prefijo).
+    ADD KEY ix_ventas_usuario (usuario_id, fecha),
+    ADD CONSTRAINT fk_ventas_pedido FOREIGN KEY (pedido_id) REFERENCES pedidos (id);
+
+-- Lo que se pidió, línea por línea.
+--
+-- A propósito SIN el `UNIQUE (pedido_id, producto_id)` que sí tiene
+-- `venta_detalle`: dos porciones del mismo plato con notas distintas son dos
+-- líneas, cada una con su nota y su estado en cocina. El cobro las agrupa por
+-- producto antes de pasarlas a la venta (ver `Pedidos::cobrar`).
+CREATE TABLE pedido_detalle (
     id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    toma_id             INT UNSIGNED NOT NULL,
+    pedido_id           BIGINT UNSIGNED NOT NULL,
     producto_id         INT UNSIGNED NOT NULL,
-    contado             DECIMAL(12,3) NULL,              -- NULL = todavía no se contó
-    stock_sistema       DECIMAL(12,3) NULL,              -- lo que decía el sistema al contarlo
-    diferencia          DECIMAL(12,3) GENERATED ALWAYS AS (contado - stock_sistema) STORED,
-    costo_unitario      DECIMAL(12,2) NULL,              -- precio de compra al contarlo: valoriza la diferencia
-    usuario_id          INT UNSIGNED NULL,               -- quién lo contó
-    fecha_conteo        DATETIME     NULL,
-    movimiento_id       BIGINT UNSIGNED NULL,            -- el ajuste que aplicó el cierre
+    descripcion         VARCHAR(120)  NOT NULL,      -- copia histórica del nombre
+    cantidad            DECIMAL(12,3) NOT NULL,
+    -- Copiado al pedir: si el precio del menú sube a mitad de turno, el
+    -- pedido conserva el que se le cantó al cliente.
+    precio_unitario     DECIMAL(12,2) NOT NULL,
+    importe             DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * precio_unitario, 2)) STORED,
+    nota                VARCHAR(255)  NULL,          -- "sin cebolla", "término medio"
+    -- Copiado de `categorias.pasa_por_cocina` al pedirse: la gaseosa se cobra
+    -- pero no va a la cocina. Lo que no pasa por ella queda PENDIENTE mientras
+    -- el pedido está abierto y ENTREGADO al cobrarse (se entrega con el
+    -- ticket): nunca «pendiente» para siempre.
+    pasa_por_cocina     TINYINT(1)    NOT NULL DEFAULT 1,
+    estado_cocina       ENUM('PENDIENTE','EN_PREPARACION','LISTO','ENTREGADO','CANCELADO')
+                        NOT NULL DEFAULT 'PENDIENTE',
+    usuario_id          INT UNSIGNED NOT NULL,       -- quién la agregó
+    actualizado_por     INT UNSIGNED NULL,           -- quién movió su estado
+    -- La comanda impresa para la cocina (`App\Services\Comandas`): cuándo salió
+    -- esta línea en papel, y cuándo salió el aviso de que se canceló. Sirven
+    -- para no volver a mandar lo que ya salió y para avisar en papel lo que se
+    -- canceló después de salir: si no, el cocinero lo prepara igual. Una
+    -- reimpresión no los toca.
+    comandado_en        TIMESTAMP     NULL,
+    cancelacion_comandada_en TIMESTAMP NULL,
+    creado_en           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_toma_detalle_producto (toma_id, producto_id),
-    KEY ix_toma_detalle_producto (producto_id),
-    CONSTRAINT fk_toma_detalle_toma       FOREIGN KEY (toma_id)       REFERENCES tomas_inventario (id),
-    CONSTRAINT fk_toma_detalle_producto   FOREIGN KEY (producto_id)   REFERENCES productos (id),
-    CONSTRAINT fk_toma_detalle_usuario    FOREIGN KEY (usuario_id)    REFERENCES usuarios (id),
-    CONSTRAINT fk_toma_detalle_movimiento FOREIGN KEY (movimiento_id) REFERENCES movimientos_inventario (id),
-    CONSTRAINT ck_toma_detalle_contado CHECK (
-        (contado IS NULL AND stock_sistema IS NULL)
-     OR (contado >= 0 AND stock_sistema IS NOT NULL)
-    )
+    KEY ix_pedidodet_pedido   (pedido_id),
+    KEY ix_pedidodet_producto (producto_id),
+    -- La pantalla de cocina lee por estado y en orden de llegada.
+    KEY ix_pedidodet_cocina   (estado_cocina, creado_en),
+    CONSTRAINT fk_pedidodet_pedido    FOREIGN KEY (pedido_id)       REFERENCES pedidos (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_pedidodet_producto  FOREIGN KEY (producto_id)     REFERENCES productos (id),
+    CONSTRAINT fk_pedidodet_usuario   FOREIGN KEY (usuario_id)      REFERENCES usuarios (id),
+    CONSTRAINT fk_pedidodet_actualiza FOREIGN KEY (actualizado_por) REFERENCES usuarios (id),
+    CONSTRAINT ck_pedidodet_cantidad CHECK (cantidad > 0),
+    CONSTRAINT ck_pedidodet_precio   CHECK (precio_unitario >= 0),
+    -- Todo va por porción. La tabla nació con el restaurante, sin historial
+    -- pesado al gramo (a diferencia de `venta_detalle`).
+    CONSTRAINT ck_pedidodet_entera   CHECK (cantidad = FLOOR(cantidad))
 ) ENGINE=InnoDB;
 
 -- =============================================================================
---  9. CONFIGURACIÓN Y AUDITORÍA
+--  8. CONFIGURACIÓN Y AUDITORÍA
 -- =============================================================================
 
+-- Clave y valor, todo como texto. Donde el tipo importa, un CHECK por clave lo
+-- exige: un valor mal escrito a mano (o por un script) no llega a los cálculos.
+-- Las series de los comprobantes ya no viven aquí (ver `tipos_comprobante`),
+-- ni el símbolo de la moneda, que sale del código (`Config::simbolo`).
 CREATE TABLE configuracion (
     clave           VARCHAR(50)  NOT NULL,
     valor           VARCHAR(255) NOT NULL,
     descripcion     VARCHAR(200) NULL,
     actualizado_en  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (clave)
+    PRIMARY KEY (clave),
+    CONSTRAINT ck_config_banderas CHECK (clave NOT IN ('precios_incluyen_impuesto', 'exigir_referencia_pago')
+                                         OR valor IN ('0', '1')),
+    -- Fracción: 0.13 es el 13 %.
+    CONSTRAINT ck_config_tasa     CHECK (clave <> 'tasa_impuesto'
+                                         OR (valor REGEXP '^[0-9]+([.][0-9]+)?$' AND CAST(valor AS DECIMAL(10,4)) <= 1)),
+    CONSTRAINT ck_config_hora     CHECK (clave <> 'hora_corte_jornada'
+                                         OR (valor REGEXP '^[0-9]{1,2}$' AND CAST(valor AS UNSIGNED) <= 12)),
+    CONSTRAINT ck_config_descuento CHECK (clave <> 'descuento_max_cajero'
+                                         OR (valor REGEXP '^[0-9]{1,3}$' AND CAST(valor AS UNSIGNED) <= 100)),
+    CONSTRAINT ck_config_dias     CHECK (clave <> 'dias_max_sustitucion' OR valor REGEXP '^[0-9]{1,3}$'),
+    CONSTRAINT ck_config_egreso   CHECK (clave <> 'egreso_max_cajero' OR valor REGEXP '^[0-9]{1,10}([.][0-9]{1,2})?$'),
+    -- El código ISO, en mayúsculas: es lo que se congela en cada comprobante.
+    CONSTRAINT ck_config_moneda   CHECK (clave <> 'moneda_codigo' OR REGEXP_LIKE(valor, '^[A-Z]{3}$', 'c')),
+    -- Los datos del negocio y del cliente genérico se copian al comprobante:
+    -- tienen que caber en sus columnas, o emitir aborta y no se puede vender.
+    CONSTRAINT ck_config_largo    CHECK (CHAR_LENGTH(valor) <= CASE clave
+        WHEN 'negocio_nombre' THEN 120 WHEN 'negocio_documento' THEN 20
+        WHEN 'negocio_direccion' THEN 200 WHEN 'negocio_telefono' THEN 30
+        WHEN 'cliente_generico_nombre' THEN 150 ELSE 255 END)
 ) ENGINE=InnoDB;
 
 CREATE TABLE auditoria (
@@ -1026,12 +918,12 @@ CREATE TABLE auditoria (
 ) ENGINE=InnoDB;
 
 -- =============================================================================
---  10. TRIGGERS
+--  9. TRIGGERS
 -- =============================================================================
 
 DELIMITER $$
 
--- 10.-1 Al cesar o suspender a un empleado, su cuenta pierde el acceso.
+-- 9.1 Al cesar o suspender a un empleado, su cuenta pierde el acceso.
 --       Separar `empleados.estado` de `usuarios.activo` sirve justamente para esto:
 --       el vínculo laboral manda sobre el acceso, no al revés.
 CREATE TRIGGER trg_empleados_after_update
@@ -1043,146 +935,37 @@ BEGIN
     END IF;
 END$$
 
--- 10.0 Al insertar una línea de venta: copiar del producto el régimen de impuesto
+-- 9.2 Al insertar una línea de venta: copiar del producto el régimen de impuesto
 --      y la tasa vigente, para que la factura tenga su desglose por línea.
---      Si la aplicación envía una tasa explícita (> 0), esa manda.
+--      Siempre: lo que venga en el INSERT no manda. Antes una tasa explícita
+--      (> 0) se respetaba; nadie la usaba y solo servía para que un INSERT a
+--      mano pusiera cualquier tasa.
 CREATE TRIGGER trg_venta_detalle_before_insert
 BEFORE INSERT ON venta_detalle
 FOR EACH ROW
 BEGIN
     DECLARE v_afecto TINYINT(1);
 
+    -- Una venta anulada, o que ya tiene su comprobante, está cerrada: una
+    -- línea más descuadraría el subtotal guardado y lo impreso.
+    IF (SELECT estado FROM ventas WHERE id = NEW.venta_id) <> 'COMPLETADA'
+       OR EXISTS (SELECT 1 FROM comprobantes WHERE venta_id = NEW.venta_id) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La venta ya está cerrada: no admite más líneas.';
+    END IF;
+
     -- La línea sigue el modo de precio de su venta: todas iguales.
     SET NEW.impuesto_incluido = IFNULL((SELECT impuesto_incluido FROM ventas WHERE id = NEW.venta_id), 0);
 
-    IF NEW.tasa_impuesto = 0 THEN
-        SELECT afecto_impuesto INTO v_afecto FROM productos WHERE id = NEW.producto_id;
-        SET NEW.afecto_impuesto = IFNULL(v_afecto, 0);
-        SET NEW.tasa_impuesto = IF(NEW.afecto_impuesto = 1,
-            IFNULL((SELECT CAST(valor AS DECIMAL(6,4)) FROM configuracion
-                     WHERE clave = 'tasa_impuesto'), 0), 0);
-    END IF;
+    SELECT afecto_impuesto INTO v_afecto FROM productos WHERE id = NEW.producto_id;
+    SET NEW.afecto_impuesto = IFNULL(v_afecto, 0);
+    -- NULLIF: un valor vacío cuenta como ausente, igual que en PHP.
+    SET NEW.tasa_impuesto = IF(NEW.afecto_impuesto = 1,
+        IFNULL((SELECT CAST(NULLIF(valor, '') AS DECIMAL(6,4)) FROM configuracion
+                 WHERE clave = 'tasa_impuesto'), 0), 0);
 END$$
 
--- 10.1 Al vender: validar stock, descontarlo y registrar el movimiento (HU-17, HU-18)
-CREATE TRIGGER trg_venta_detalle_after_insert
-AFTER INSERT ON venta_detalle
-FOR EACH ROW
-BEGIN
-    DECLARE v_stock  DECIMAL(12,3);
-    DECLARE v_nombre VARCHAR(120);
-    DECLARE v_usuario INT UNSIGNED;
-
-    SELECT stock_actual, nombre INTO v_stock, v_nombre
-      FROM productos WHERE id = NEW.producto_id FOR UPDATE;
-
-    IF v_stock < NEW.cantidad THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Stock insuficiente para el producto de la venta';
-    END IF;
-
-    UPDATE productos
-       SET stock_actual = stock_actual - NEW.cantidad
-     WHERE id = NEW.producto_id;
-
-    SELECT usuario_id INTO v_usuario FROM ventas WHERE id = NEW.venta_id;
-
-    INSERT INTO movimientos_inventario
-        (producto_id, usuario_id, tipo, origen, venta_id,
-         cantidad, stock_anterior, stock_resultante, motivo)
-    VALUES
-        (NEW.producto_id, v_usuario, 'SALIDA', 'VENTA', NEW.venta_id,
-         NEW.cantidad, v_stock, v_stock - NEW.cantidad, 'Venta de productos');
-END$$
-
--- 10.1.b Al devolver una línea: copiar el régimen de impuesto de la línea de
---        venta original. La tasa vigente hoy puede no ser la de aquel día, y
---        al cliente se le devuelve lo que pagó.
-CREATE TRIGGER trg_devolucion_detalle_before_insert
-BEFORE INSERT ON devolucion_detalle
-FOR EACH ROW
-BEGIN
-    DECLARE v_afecto TINYINT(1);
-    DECLARE v_tasa   DECIMAL(6,4);
-
-    -- El modo de precio de la venta, siempre: si el precio llevaba el impuesto
-    -- adentro, la devolución lo separa igual y devuelve lo mismo que se cobró.
-    SET NEW.impuesto_incluido = IFNULL((SELECT impuesto_incluido FROM venta_detalle
-                                         WHERE id = NEW.venta_detalle_id), 0);
-
-    IF NEW.tasa_impuesto = 0 THEN
-        SELECT afecto_impuesto, tasa_impuesto
-          INTO v_afecto, v_tasa
-          FROM venta_detalle WHERE id = NEW.venta_detalle_id;
-
-        SET NEW.afecto_impuesto = IFNULL(v_afecto, 0);
-        SET NEW.tasa_impuesto   = IF(NEW.afecto_impuesto = 1, IFNULL(v_tasa, 0), 0);
-    END IF;
-END$$
-
--- 10.2 Al devolver: reingresar stock y registrar el movimiento (HU-30)
-CREATE TRIGGER trg_devolucion_detalle_after_insert
-AFTER INSERT ON devolucion_detalle
-FOR EACH ROW
-BEGIN
-    DECLARE v_stock    DECIMAL(12,3);
-    DECLARE v_usuario  INT UNSIGNED;
-    DECLARE v_venta_id BIGINT UNSIGNED;
-    DECLARE v_pend     INT;
-
-    -- acumula lo devuelto en la línea de venta original
-    UPDATE venta_detalle
-       SET cantidad_devuelta = cantidad_devuelta + NEW.cantidad
-     WHERE id = NEW.venta_detalle_id;
-
-    SELECT venta_id INTO v_venta_id FROM devoluciones WHERE id = NEW.devolucion_id;
-
-    -- Total de la devolución = suma de su detalle CON impuesto. Es el dinero
-    -- que sale del cajón, y por eso `sp_cerrar_caja` puede restarlo tal cual
-    -- del efectivo esperado. Comparable con `ventas.total`, que también lo lleva.
-    UPDATE devoluciones
-       SET total = (SELECT IFNULL(SUM(total_linea), 0)
-                      FROM devolucion_detalle WHERE devolucion_id = NEW.devolucion_id)
-     WHERE id = NEW.devolucion_id;
-
-    -- acumulado devuelto de la venta
-    UPDATE ventas
-       SET total_devuelto = (SELECT IFNULL(SUM(total), 0)
-                               FROM devoluciones WHERE venta_id = v_venta_id)
-     WHERE id = v_venta_id;
-
-    -- estado de la venta: DEVUELTA si ya no queda nada por devolver, si no PARCIAL.
-    -- Una venta ANULADA no cambia de estado.
-    SELECT COUNT(*) INTO v_pend
-      FROM venta_detalle
-     WHERE venta_id = v_venta_id AND cantidad_devuelta < cantidad;
-
-    UPDATE ventas
-       SET estado = IF(v_pend = 0, 'DEVUELTA', 'DEVUELTA_PARCIAL')
-     WHERE id = v_venta_id
-       AND estado IN ('COMPLETADA', 'DEVUELTA_PARCIAL', 'DEVUELTA');
-
-    IF NEW.reingresa_stock = 1 THEN
-        SELECT stock_actual INTO v_stock
-          FROM productos WHERE id = NEW.producto_id FOR UPDATE;
-
-        UPDATE productos
-           SET stock_actual = stock_actual + NEW.cantidad
-         WHERE id = NEW.producto_id;
-
-        SELECT usuario_id INTO v_usuario
-          FROM devoluciones WHERE id = NEW.devolucion_id;
-
-        INSERT INTO movimientos_inventario
-            (producto_id, usuario_id, tipo, origen, devolucion_id,
-             cantidad, stock_anterior, stock_resultante, motivo)
-        VALUES
-            (NEW.producto_id, v_usuario, 'ENTRADA', 'DEVOLUCION', NEW.devolucion_id,
-             NEW.cantidad, v_stock, v_stock + NEW.cantidad, 'Devolución de cliente');
-    END IF;
-END$$
-
--- 10.3 Las ventas no se eliminan: se anulan
+-- 9.3 Las ventas no se eliminan: se anulan
 CREATE TRIGGER trg_ventas_before_delete
 BEFORE DELETE ON ventas
 FOR EACH ROW
@@ -1191,7 +974,7 @@ BEGIN
         SET MESSAGE_TEXT = 'Las ventas no se eliminan. Use la anulación (RNF6).';
 END$$
 
--- 10.3.bis Una venta solo entra en un turno de caja ABIERTO. La aplicación ya
+-- 9.4 Una venta solo entra en un turno de caja ABIERTO. La aplicación ya
 --      lo comprobaba, pero una venta cargada por script en un turno cerrado
 --      cambiaba el arqueo de un cierre que ya se firmó.
 CREATE TRIGGER trg_ventas_before_insert
@@ -1205,20 +988,7 @@ BEGIN
     END IF;
 END$$
 
--- 10.3.ter Todo movimiento del kardex tiene responsable. La única excepción es
---      la carga INICIAL del inventario, que corre un script antes de que
---      exista nadie a quien atribuírsela.
-CREATE TRIGGER trg_movimientos_inventario_before_insert
-BEFORE INSERT ON movimientos_inventario
-FOR EACH ROW
-BEGIN
-    IF NEW.usuario_id IS NULL AND NEW.origen <> 'INICIAL' THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'El movimiento de inventario necesita un responsable';
-    END IF;
-END$$
-
--- 10.4 El comprobante debe corresponder al tipo de persona del cliente:
+-- 9.5 El comprobante debe corresponder al tipo de persona del cliente:
 --      FACTURA solo a persona jurídica con NIT, RECIBO solo a persona natural.
 CREATE TRIGGER trg_comprobantes_before_insert
 BEFORE INSERT ON comprobantes
@@ -1269,15 +1039,109 @@ BEGIN
     END IF;
 END$$
 
+-- 9.6 A un pedido cerrado o cancelado no se le agregan platos. La puerta real
+--      es `App\Services\Pedidos`, que valida lo mismo en PHP (y es la única
+--      que existe con LOGICA_EN_PHP=true); esto es la guarda de la base, para
+--      lo que entre por fuera de la aplicación.
+CREATE TRIGGER trg_pedido_detalle_before_insert
+BEFORE INSERT ON pedido_detalle
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pedidos WHERE id = NEW.pedido_id AND estado = 'ABIERTO') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pedido ya no está abierto: no admite más platos';
+    END IF;
+END$$
+
+-- 9.7 Los pedidos no se eliminan: se cancelan con su motivo, igual que las
+--      ventas se anulan. Un pedido borrado se lleva por delante lo que la
+--      cocina preparó y nadie puede explicar después qué pasó con ese pedido.
+CREATE TRIGGER trg_pedidos_before_delete
+BEFORE DELETE ON pedidos
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Los pedidos no se eliminan. Use la cancelación.';
+END$$
+
+-- 9.8 Lo documentado no se borra, lo cerrado no crece, y en un turno cerrado
+--      no entra nada más (parche 2026_09_20_1). Impiden lo que la aplicación
+--      nunca hace: no tienen réplica en `ReglasEnPhp`, igual que
+--      `trg_ventas_before_delete`.
+CREATE TRIGGER trg_comprobantes_before_delete
+BEFORE DELETE ON comprobantes
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Los comprobantes no se eliminan: se anulan o se sustituyen, conservando su número.';
+END$$
+
+CREATE TRIGGER trg_venta_detalle_before_delete
+BEFORE DELETE ON venta_detalle
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El detalle de una venta no se elimina. Use la anulación (RNF6).';
+END$$
+
+CREATE TRIGGER trg_venta_pagos_before_delete
+BEFORE DELETE ON venta_pagos
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Los pagos de una venta no se eliminan. Use la anulación (RNF6).';
+END$$
+
+CREATE TRIGGER trg_pedido_detalle_before_delete
+BEFORE DELETE ON pedido_detalle
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Los platos de un pedido no se eliminan: se cancelan, con su motivo.';
+END$$
+
+CREATE TRIGGER trg_venta_pagos_before_insert
+BEFORE INSERT ON venta_pagos
+FOR EACH ROW
+BEGIN
+    IF (SELECT estado FROM ventas WHERE id = NEW.venta_id) <> 'COMPLETADA'
+       OR EXISTS (SELECT 1 FROM comprobantes WHERE venta_id = NEW.venta_id) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La venta ya está cerrada: no admite más pagos.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_movimientos_caja_before_insert
+BEFORE INSERT ON movimientos_caja
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sesiones_caja
+                    WHERE id = NEW.sesion_caja_id AND estado = 'ABIERTA') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El movimiento debe registrarse en un turno de caja abierto';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_cobros_qr_before_insert
+BEFORE INSERT ON cobros_qr
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sesiones_caja
+                    WHERE id = NEW.sesion_caja_id AND estado = 'ABIERTA') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El cobro QR debe generarse en un turno de caja abierto';
+    END IF;
+END$$
+
 DELIMITER ;
 
 -- =============================================================================
---  11. PROCEDIMIENTOS ALMACENADOS
+--  10. PROCEDIMIENTOS ALMACENADOS
 -- =============================================================================
 
 DELIMITER $$
 
--- 11.1 Siguiente correlativo con bloqueo de fila (HU-13)
+-- 10.1 Siguiente correlativo con bloqueo de fila (HU-13)
 CREATE PROCEDURE sp_siguiente_comprobante (
     IN  p_serie_id     SMALLINT UNSIGNED,
     OUT p_numero       INT UNSIGNED,
@@ -1300,7 +1164,7 @@ BEGIN
     SET p_comprobante = CONCAT(v_serie, '-', LPAD(p_numero, v_longitud, '0'));
 END$$
 
--- 11.2 Recalcular los totales de una venta a partir de su detalle.
+-- 10.2 Recalcular los totales de una venta a partir de su detalle.
 --      En los dos modos:
 --          subtotal  = suma de importes del detalle (base imponible, sin impuesto)
 --          total     = subtotal - descuento + impuesto
@@ -1310,6 +1174,7 @@ END$$
 --      descuento que vio el cliente; el impuesto baja en la misma proporción y
 --      `descuento` guarda la parte de ese descuento que corresponde a la base.
 --      El descuento de cabecera se prorratea entre la base afecta y la inafecta.
+--      Es el único descuento: las líneas no llevan uno propio.
 CREATE PROCEDURE sp_recalcular_venta (IN p_venta_id BIGINT UNSIGNED)
 BEGIN
     DECLARE v_base_total     DECIMAL(12,2);
@@ -1367,9 +1232,9 @@ BEGIN
     END IF;
 END$$
 
--- 11.2.b Emitir el comprobante de una venta: FACTURA para persona jurídica,
+-- 10.2.b Emitir el comprobante de una venta: FACTURA para persona jurídica,
 --        RECIBO para persona natural. Toma el correlativo y congela los datos
---        del cliente y los importes en `comprobantes`.
+--        del negocio, del cliente y los importes en `comprobantes`.
 --        Basta la serie: ella determina el tipo de documento.
 CREATE PROCEDURE sp_emitir_comprobante (
     IN  p_venta_id            BIGINT UNSIGNED,
@@ -1383,6 +1248,10 @@ BEGIN
     DECLARE v_numero      INT UNSIGNED;
     DECLARE v_moneda      VARCHAR(3);
     DECLARE v_generico    VARCHAR(150);
+    DECLARE v_emisor_nombre    VARCHAR(120);
+    DECLARE v_emisor_documento VARCHAR(20);
+    DECLARE v_emisor_direccion VARCHAR(200);
+    DECLARE v_emisor_telefono  VARCHAR(30);
 
     SELECT estado, cliente_id INTO v_estado, v_cliente_id
       FROM ventas WHERE id = p_venta_id FOR UPDATE;
@@ -1403,21 +1272,31 @@ BEGIN
     -- correlativo con bloqueo de fila
     CALL sp_siguiente_comprobante(p_serie_id, v_numero, p_numero_completo);
 
-    SET v_moneda = IFNULL((SELECT valor FROM configuracion WHERE clave = 'moneda_codigo'), 'BOB');
+    -- NULLIF: un valor vacío cuenta como ausente, igual que en PHP
+    -- (`ReglasEnPhp::config`).
+    SET v_moneda = IFNULL((SELECT NULLIF(valor, '') FROM configuracion WHERE clave = 'moneda_codigo'), 'BOB');
 
     -- Venta al paso: sin cliente registrado el documento sale a nombre genérico.
-    SET v_generico = IFNULL((SELECT valor FROM configuracion
+    SET v_generico = IFNULL((SELECT NULLIF(valor, '') FROM configuracion
                               WHERE clave = 'cliente_generico_nombre'), 'Cliente varios');
+
+    -- Los datos del negocio, congelados: el documento se reimprime como se entregó.
+    SET v_emisor_nombre    = (SELECT NULLIF(valor, '') FROM configuracion WHERE clave = 'negocio_nombre');
+    SET v_emisor_documento = (SELECT NULLIF(valor, '') FROM configuracion WHERE clave = 'negocio_documento');
+    SET v_emisor_direccion = (SELECT NULLIF(valor, '') FROM configuracion WHERE clave = 'negocio_direccion');
+    SET v_emisor_telefono  = (SELECT NULLIF(valor, '') FROM configuracion WHERE clave = 'negocio_telefono');
 
     -- El trigger trg_comprobantes_before_insert valida que el tipo de documento
     -- corresponda al tipo de persona del cliente.
     INSERT INTO comprobantes (
         venta_id, serie_id, numero, numero_completo,
+        emisor_nombre, emisor_documento, emisor_direccion, emisor_telefono,
         cliente_id, tipo_persona, cliente_nombre, cliente_tipo_documento,
         cliente_documento, cliente_direccion, representante_legal,
         subtotal, descuento, impuesto, moneda, emitido_por
     )
     SELECT v.id, p_serie_id, v_numero, p_numero_completo,
+           v_emisor_nombre, v_emisor_documento, v_emisor_direccion, v_emisor_telefono,
            c.id, c.tipo_persona,
            IFNULL(c.nombre, v_generico),
            IFNULL(c.tipo_documento, 'SIN'),
@@ -1430,9 +1309,9 @@ BEGIN
     SET p_comprobante_id = LAST_INSERT_ID();
 END$$
 
--- 11.2.c Sustituir el comprobante de una venta ya cobrada (HU-42).
+-- 10.2.c Sustituir el comprobante de una venta ya cobrada (HU-42).
 --        Caso típico: se entregó un RECIBO y el cliente vuelve pidiendo FACTURA.
---        No se toca la venta ni el stock: solo cambia el documento.
+--        No se toca la venta: solo cambia el documento.
 --        El anterior queda SUSTITUIDO (no se borra) y el nuevo lo referencia.
 CREATE PROCEDURE sp_sustituir_comprobante (
     IN  p_comprobante_id      BIGINT UNSIGNED,
@@ -1468,11 +1347,11 @@ BEGIN
 
     IF v_estado_venta <> 'COMPLETADA' THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'No se sustituye el comprobante de una venta anulada o devuelta';
+            SET MESSAGE_TEXT = 'No se sustituye el comprobante de una venta anulada';
     END IF;
 
     -- ventana de tiempo permitida (configurable)
-    SET v_dias_max = IFNULL((SELECT CAST(valor AS SIGNED) FROM configuracion
+    SET v_dias_max = IFNULL((SELECT CAST(NULLIF(valor, '') AS SIGNED) FROM configuracion
                               WHERE clave = 'dias_max_sustitucion'), 1);
     IF DATEDIFF(NOW(), v_fecha_venta) > v_dias_max THEN
         SIGNAL SQLSTATE '45000'
@@ -1509,7 +1388,11 @@ BEGIN
                         'motivo',      p_motivo));
 END$$
 
--- 11.3 Anular una venta: revierte el stock y marca el estado (HU-29)
+-- 10.3 Anular una venta: marca el estado y anula su comprobante (HU-29).
+--      Solo mientras su turno de caja sigue abierto: el dinero de un turno
+--      cerrado ya se contó en su arqueo, y anular cambiaría un cierre firmado.
+--      La aplicación lo avisa antes con un mensaje propio (`Ventas::anular`),
+--      pero la última palabra es de la base.
 CREATE PROCEDURE sp_anular_venta (
     IN p_venta_id   BIGINT UNSIGNED,
     IN p_usuario_id INT UNSIGNED,
@@ -1517,8 +1400,11 @@ CREATE PROCEDURE sp_anular_venta (
 )
 BEGIN
     DECLARE v_estado VARCHAR(20);
+    DECLARE v_sesion INT UNSIGNED;
+    DECLARE v_turno  VARCHAR(20);
 
-    SELECT estado INTO v_estado FROM ventas WHERE id = p_venta_id FOR UPDATE;
+    SELECT estado, sesion_caja_id INTO v_estado, v_sesion
+      FROM ventas WHERE id = p_venta_id FOR UPDATE;
 
     IF v_estado IS NULL THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La venta no existe';
@@ -1527,27 +1413,16 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Solo se puede anular una venta COMPLETADA';
     END IF;
 
-    -- Reingreso de stock + kardex, agrupando por producto: un UPDATE con JOIN
-    -- toca cada fila UNA vez, así que con el mismo producto en dos líneas
-    -- reponía solo una de las dos. Agrupado, repone la suma aunque el índice
-    -- único de arriba falte en una base vieja.
-    INSERT INTO movimientos_inventario
-        (producto_id, usuario_id, tipo, origen, venta_id,
-         cantidad, stock_anterior, stock_resultante, motivo)
-    SELECT t.producto_id, p_usuario_id, 'ENTRADA', 'ANULACION', p_venta_id,
-           t.cantidad, p.stock_actual, p.stock_actual + t.cantidad,
-           CONCAT('Anulación de venta: ', p_motivo)
-      FROM (SELECT producto_id, SUM(cantidad) AS cantidad
-                   FROM venta_detalle WHERE venta_id = p_venta_id
-                  GROUP BY producto_id) t
-      JOIN productos p ON p.id = t.producto_id;
+    -- Con el turno bloqueado en modo compartido: un cierre en curso espera.
+    SELECT estado INTO v_turno FROM sesiones_caja WHERE id = v_sesion FOR SHARE;
 
-    UPDATE productos p
-      JOIN (SELECT producto_id, SUM(cantidad) AS cantidad
-                   FROM venta_detalle WHERE venta_id = p_venta_id
-                  GROUP BY producto_id) t ON t.producto_id = p.id
-       SET p.stock_actual = p.stock_actual + t.cantidad;
+    IF v_turno <> 'ABIERTA' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El turno de caja de esta venta ya cerró: no se anula, su dinero ya se contó en el arqueo';
+    END IF;
 
+    -- Sin inventario no hay stock que reponer: anular es cambiar el estado de
+    -- la venta y dejar su comprobante anulado, con el correlativo intacto.
     UPDATE ventas
        SET estado           = 'ANULADA',
            anulada_en       = NOW(),
@@ -1569,7 +1444,7 @@ BEGIN
             JSON_OBJECT('motivo', p_motivo));
 END$$
 
--- 11.4 Cerrar caja calculando el esperado y la diferencia (HU-27)
+-- 10.4 Cerrar caja calculando el esperado y la diferencia (HU-27)
 CREATE PROCEDURE sp_cerrar_caja (
     IN p_sesion_id  INT UNSIGNED,
     IN p_usuario_id INT UNSIGNED,
@@ -1581,7 +1456,6 @@ BEGIN
     DECLARE v_ventas    DECIMAL(12,2);
     DECLARE v_ingresos  DECIMAL(12,2);
     DECLARE v_egresos   DECIMAL(12,2);
-    DECLARE v_devuelto  DECIMAL(12,2);
     DECLARE v_esperado  DECIMAL(12,2);
 
     SELECT monto_inicial INTO v_inicial
@@ -1607,26 +1481,10 @@ BEGIN
       INTO v_ingresos, v_egresos
       FROM movimientos_caja WHERE sesion_caja_id = p_sesion_id;
 
-    -- De cada devolución sale del cajón solo la fracción que en su día entró
-    -- en efectivo. Una venta cobrada con tarjeta se reembolsa por el mismo
-    -- medio: descontarla del cajón dejaría al cajero con un sobrante.
-    -- Desde el 14/09/2026 cada devolución guarda en `efectivo` lo que salió
-    -- del cajón según el medio de reembolso elegido. Las anteriores no lo
-    -- tienen y siguen con la proporción de siempre.
-    SELECT IFNULL(SUM(IFNULL(d.efectivo,
-               ROUND(d.total * IFNULL(
-                   (SELECT SUM(vp.monto)
-                      FROM venta_pagos vp
-                      JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
-                     WHERE vp.venta_id = d.venta_id
-                       AND mp.afecta_caja = 1)
-                   / NULLIF(v.total, 0), 0), 2))
-           ), 0) INTO v_devuelto
-      FROM devoluciones d
-      JOIN ventas v ON v.id = d.venta_id
-     WHERE d.sesion_caja_id = p_sesion_id;
-
-    SET v_esperado = v_inicial + v_ventas + v_ingresos - v_egresos - v_devuelto;
+    -- Del cajón entra lo cobrado en efectivo y salen los egresos: no hay
+    -- devoluciones que restar, porque una venta mal cobrada se anula y su
+    -- efectivo deja de contarse arriba (`v.estado <> 'ANULADA'`).
+    SET v_esperado = v_inicial + v_ventas + v_ingresos - v_egresos;
 
     -- `diferencia` es columna generada: sale sola de esperado y declarado
     UPDATE sesiones_caja
@@ -1647,167 +1505,77 @@ END$$
 DELIMITER ;
 
 -- =============================================================================
---  12. VISTAS DE APOYO A REPORTES
+--  11. VISTAS DE APOYO A REPORTES
+--
+--  Solo las que el sistema usa: son la definición oficial de cada cifra de
+--  los reportes (y `ReportesTest` las compara con lo que calcula PHP).
+--  `v_empleados`, `v_ventas_comprobante`, `v_comprobantes_sustituidos` y
+--  `v_comprobantes_emitidos` se retiraron el 2026-09-19: nadie las leía.
 -- =============================================================================
 
--- Personal: la persona, su cargo y (si la tiene) su cuenta de acceso con su rol
-CREATE OR REPLACE VIEW v_empleados AS
-SELECT e.id AS empleado_id, e.documento, e.nombre_completo,
-       c.nombre  AS cargo,
-       e.fecha_ingreso, e.fecha_cese, e.tipo_contrato, e.estado AS estado_laboral,
-       u.id      AS usuario_id,
-       u.usuario,
-       r.nombre  AS rol_acceso,
-       u.activo  AS acceso_habilitado,
-       u.ultimo_acceso
-  FROM empleados e
-  JOIN cargos c   ON c.id = e.cargo_id
-  LEFT JOIN usuarios u ON u.empleado_id = e.id
-  LEFT JOIN roles r    ON r.id = u.rol_id;
-
--- Productos en o por debajo del stock mínimo (HU-22)
-CREATE OR REPLACE VIEW v_alertas_stock AS
-SELECT p.id, p.codigo, p.nombre, c.nombre AS categoria,
-       p.stock_actual, p.stock_minimo,
-       (p.stock_minimo - p.stock_actual) AS faltante
-  FROM productos p
-  JOIN categorias c ON c.id = p.categoria_id
- WHERE p.activo = 1
-   AND p.stock_actual <= p.stock_minimo;
-
--- Ventas por día (HU-31, HU-32)
+-- Ventas por JORNADA (HU-31, HU-32): el local cierra pasada la medianoche, y
+-- la venta de la 01:30 es de la noche anterior. La jornada es la fecha menos
+-- `configuracion.hora_corte_jornada` horas (5 si no está), la misma cuenta que
+-- `App\Support\Config::jornadaSql()` y que numera los pedidos. La columna se
+-- sigue llamando `dia`: es la fecha de la jornada.
 CREATE OR REPLACE VIEW v_ventas_por_dia AS
-SELECT DATE(v.fecha)      AS dia,
-       COUNT(*)           AS cantidad_ventas,
-       SUM(v.total)       AS monto_total,
-       ROUND(AVG(v.total), 2) AS ticket_promedio
-  FROM ventas v
- WHERE v.estado <> 'ANULADA'
- GROUP BY DATE(v.fecha);
+SELECT j.dia                  AS dia,
+       COUNT(*)               AS cantidad_ventas,
+       SUM(j.total)           AS monto_total,
+       ROUND(AVG(j.total), 2) AS ticket_promedio
+  FROM (
+        SELECT DATE(v.fecha - INTERVAL IFNULL((SELECT CAST(NULLIF(c.valor, '') AS UNSIGNED)
+                                                  FROM configuracion c
+                                                 WHERE c.clave = 'hora_corte_jornada'), 5) HOUR) AS dia,
+               v.total
+          FROM ventas v
+         WHERE v.estado <> 'ANULADA'
+       ) AS j
+ GROUP BY j.dia;
 
 -- Productos más vendidos (HU-33)
--- Las tres cifras son NETAS de devoluciones: lo que el negocio se quedó.
--- El importe de la línea se prorratea por la fracción no devuelta, igual que
--- `sp_recalcular_venta` prorratea el impuesto; así el descuento de línea se
--- reparte solo y no hace falta repetir su fórmula.
--- Un producto devuelto por completo queda en cero, no con unidades cero e
--- importe entero.
--- Neto del descuento de la venta (repartido entre sus líneas) y de lo
--- devuelto, y con el costo que tenía el producto el día que se vendió.
+-- El importe de cada línea va neto del descuento de la venta, repartido entre
+-- sus líneas en la misma proporción en que `sp_recalcular_venta` reparte el
+-- impuesto: así el descuento de cabecera no hace falta repetirlo aquí.
+-- Las ventas anuladas no cuentan.
 CREATE OR REPLACE VIEW v_productos_mas_vendidos AS
 SELECT p.id, p.codigo, p.nombre, c.nombre AS categoria,
-       SUM(n.unidades_netas)                                     AS unidades_vendidas,
-       SUM(n.monto_neto)                                         AS monto_vendido,
-       SUM(n.monto_neto - ROUND(n.unidades_netas * n.costo, 2))  AS margen_estimado
+       SUM(n.unidades_netas)  AS unidades_vendidas,
+       SUM(n.monto_neto)      AS monto_vendido
   FROM (
         SELECT d.producto_id,
-               (d.cantidad - d.cantidad_devuelta) AS unidades_netas,
+               d.cantidad AS unidades_netas,
                ROUND(d.importe
-                     * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1)
-                     * IF(d.cantidad > 0, (d.cantidad - d.cantidad_devuelta) / d.cantidad, 0), 2) AS monto_neto,
-               COALESCE(d.costo_unitario, pc.precio_compra) AS costo
+                     * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2) AS monto_neto
           FROM venta_detalle d
           JOIN ventas v ON v.id = d.venta_id AND v.estado <> 'ANULADA'
-          JOIN productos pc ON pc.id = d.producto_id
        ) AS n
   JOIN productos  p ON p.id = n.producto_id
   JOIN categorias c ON c.id = p.categoria_id
  GROUP BY p.id, p.codigo, p.nombre, c.nombre;
 
--- Kardex legible por producto (HU-21)
--- Con FK por origen el kardex puede mostrar el documento real, no un par (tabla, id)
-CREATE OR REPLACE VIEW v_kardex AS
-SELECT m.id, m.fecha, p.codigo, p.nombre AS producto,
-       m.tipo, m.origen, m.cantidad, m.stock_anterior, m.stock_resultante,
-       e.nombre_completo AS usuario,
-       CASE m.origen
-            WHEN 'VENTA'      THEN co.numero_completo
-            WHEN 'ANULACION'  THEN co.numero_completo
-            WHEN 'DEVOLUCION' THEN CONCAT('DEV-', LPAD(m.devolucion_id, 6, '0'))
-            WHEN 'COMPRA'     THEN CONCAT_WS(' ', pr.razon_social, m.documento_externo)
-            -- La nota de crédito cuando la hay, y el número del documento
-            -- interno cuando todavía no llegó: un movimiento del kardex sin
-            -- papel que señalar no se puede contrastar contra nada.
-            WHEN 'DEVOLUCION_COMPRA' THEN CONCAT_WS(' ', pr.razon_social,
-                     COALESCE(m.documento_externo, CONCAT('DEVC-', LPAD(m.devolucion_compra_id, 6, '0'))))
-            ELSE NULL
-       END AS documento,
-       m.venta_id, m.devolucion_id, m.proveedor_id, m.devolucion_compra_id, m.motivo
-  FROM movimientos_inventario m
-  JOIN productos p ON p.id = m.producto_id
-  LEFT JOIN usuarios u     ON u.id  = m.usuario_id
-  LEFT JOIN empleados e    ON e.id  = u.empleado_id
-  LEFT JOIN proveedores pr ON pr.id = m.proveedor_id
-  LEFT JOIN comprobantes co ON co.venta_id = m.venta_id AND co.estado <> 'SUSTITUIDO';
-
--- Ventas con su comprobante y el tipo de cliente (listados y reportes)
--- Se une solo al comprobante vigente o anulado: los SUSTITUIDOS son historial y
--- duplicarían la venta en los listados.
-CREATE OR REPLACE VIEW v_ventas_comprobante AS
-SELECT v.id AS venta_id, v.fecha, v.estado AS estado_venta,
-       v.subtotal, v.descuento, v.impuesto, v.total,
-       co.numero_completo, tc.codigo AS tipo_documento, tc.nombre AS nombre_documento,
-       co.estado AS estado_comprobante,
-       co.tipo_persona,
-       co.cliente_nombre, co.cliente_tipo_documento, co.cliente_documento,
-       co.sustituye_a,
-       e.nombre_completo AS cajero, cg.nombre AS cargo_cajero
-  FROM ventas v
-  LEFT JOIN comprobantes co       ON co.venta_id = v.id AND co.estado <> 'SUSTITUIDO'
-  LEFT JOIN series_comprobante s  ON s.id  = co.serie_id
-  LEFT JOIN tipos_comprobante tc  ON tc.id = s.tipo_comprobante_id
-  JOIN usuarios  u  ON u.id  = v.usuario_id
-  JOIN empleados e  ON e.id  = u.empleado_id
-  JOIN cargos    cg ON cg.id = e.cargo_id;
-
--- Cadena de sustituciones: qué documento reemplazó a cuál, quién y por qué (auditoría)
-CREATE OR REPLACE VIEW v_comprobantes_sustituidos AS
-SELECT ant.numero_completo AS documento_anterior,
-       tca.codigo          AS tipo_anterior,
-       ant.sustituido_en,
-       nue.numero_completo AS documento_nuevo,
-       tcn.codigo          AS tipo_nuevo,
-       nue.fecha_emision   AS emitido_en,
-       nue.cliente_nombre,
-       nue.motivo_emision,
-       e.nombre_completo AS emitido_por,
-       ant.venta_id
-  FROM comprobantes nue
-  JOIN comprobantes ant       ON ant.id  = nue.sustituye_a
-  JOIN series_comprobante sa  ON sa.id   = ant.serie_id
-  JOIN tipos_comprobante tca  ON tca.id  = sa.tipo_comprobante_id
-  JOIN series_comprobante sn  ON sn.id   = nue.serie_id
-  JOIN tipos_comprobante tcn  ON tcn.id  = sn.tipo_comprobante_id
-  LEFT JOIN usuarios u        ON u.id    = nue.emitido_por
-  LEFT JOIN empleados e       ON e.id    = u.empleado_id;
-
--- Facturación por tipo de documento y tipo de persona (reporte contable)
-CREATE OR REPLACE VIEW v_comprobantes_emitidos AS
-SELECT DATE(co.fecha_emision) AS dia,
-       tc.codigo   AS tipo_documento,
-       co.tipo_persona,
-       COUNT(*)    AS cantidad,
-       SUM(co.subtotal) AS base_imponible,
-       SUM(co.impuesto) AS impuesto,
-       SUM(co.total)    AS total
-  FROM comprobantes co
-  JOIN series_comprobante s ON s.id  = co.serie_id
-  JOIN tipos_comprobante tc ON tc.id = s.tipo_comprobante_id
- WHERE co.estado = 'EMITIDO'
- GROUP BY DATE(co.fecha_emision), tc.codigo, co.tipo_persona;
-
--- Ventas por método de pago (HU-32, cierre de caja)
+-- Ventas por método de pago (HU-32, cierre de caja). Por JORNADA, como
+-- `v_ventas_por_dia`: una venta de las 02:00 es de la noche anterior.
 CREATE OR REPLACE VIEW v_ventas_por_metodo_pago AS
-SELECT DATE(v.fecha) AS dia, mp.nombre AS metodo_pago,
-       COUNT(DISTINCT v.id) AS cantidad_ventas,
-       SUM(vp.monto) AS monto
-  FROM venta_pagos vp
-  JOIN ventas v        ON v.id  = vp.venta_id AND v.estado <> 'ANULADA'
-  JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
- GROUP BY DATE(v.fecha), mp.nombre;
+SELECT j.dia                   AS dia,
+       j.metodo_pago           AS metodo_pago,
+       COUNT(DISTINCT j.venta) AS cantidad_ventas,
+       SUM(j.monto)            AS monto
+  FROM (
+        SELECT DATE(v.fecha - INTERVAL IFNULL((SELECT CAST(NULLIF(c.valor, '') AS UNSIGNED)
+                                                  FROM configuracion c
+                                                 WHERE c.clave = 'hora_corte_jornada'), 5) HOUR) AS dia,
+               mp.nombre AS metodo_pago,
+               v.id      AS venta,
+               vp.monto  AS monto
+          FROM venta_pagos vp
+          JOIN ventas v        ON v.id  = vp.venta_id AND v.estado <> 'ANULADA'
+          JOIN metodos_pago mp ON mp.id = vp.metodo_pago_id
+       ) AS j
+ GROUP BY j.dia, j.metodo_pago;
 
 -- =============================================================================
---  13. REGISTRO DE PARCHES
+--  12. REGISTRO DE PARCHES
 --
 --  `scripts/aplicar-parches.sh` anota acá cada parche que aplica. Una base
 --  creada con este archivo ya trae todo lo que corrigen los parches de esquema,
@@ -1859,4 +1627,23 @@ INSERT INTO parches_aplicados (archivo) VALUES
     ('2026_09_15_plazo_devolucion_y_referencia_de_pago.sql'),
     ('2026_09_15_precios_con_impuesto_incluido.sql'),
     ('2026_09_16_permisos_por_rol.sql'),
-    ('2026_09_16_reglas_en_la_base.sql');
+    ('2026_09_16_reglas_en_la_base.sql'),
+    ('2026_09_17_eliminar_inventario_y_devoluciones.sql'),
+    ('2026_09_17_mesas_y_pedidos.sql'),
+    ('2026_09_17_numero_diario_de_pedido.sql'),
+    ('2026_09_17_sin_codigo_de_barras.sql'),
+    ('2026_09_17_sin_costo_de_compra.sql'),
+    ('2026_09_17_sin_unidades_de_medida.sql'),
+    ('2026_09_18_comanda.sql'),
+    ('2026_09_18_jornada_del_pedido.sql'),
+    ('2026_09_18_pasa_por_cocina.sql'),
+    ('2026_09_18_permiso_del_menu.sql'),
+    ('2026_09_18_sin_mesas.sql'),
+    ('2026_09_18_sin_mozos.sql'),
+    ('2026_09_19_1_logica_igual_en_las_dos_vias.sql'),
+    ('2026_09_19_2_la_venta_guarda_su_pedido.sql'),
+    ('2026_09_19_3_configuracion_y_limpieza.sql'),
+    ('2026_09_19_4_emisor_documentos_y_detalle.sql'),
+    ('2026_09_19_5_identificadores_sin_tope.sql'),
+    ('2026_09_19_6_sin_pantalla_de_respaldos.sql'),
+    ('2026_09_20_1_lo_cerrado_no_se_toca.sql');

@@ -3,16 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Caja;
-use App\Models\Cliente;
-use App\Models\Devolucion;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Models\Venta;
 use App\Services\Cajas;
-use App\Services\Devoluciones;
-use App\Services\LibroDeVentas;
 use App\Services\Ventas;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -35,9 +31,9 @@ class ReportesTest extends TestCase
         return Usuario::where('usuario', 'cajero1')->firstOrFail();
     }
 
-    private function almacenero(): Usuario
+    private function cocina(): Usuario
     {
-        return Usuario::where('usuario', 'almacen')->firstOrFail();
+        return Usuario::where('usuario', 'cocina1')->firstOrFail();
     }
 
     private function turno(?Usuario $usuario = null): SesionCaja
@@ -45,7 +41,7 @@ class ReportesTest extends TestCase
         return Cajas::abrir(Caja::firstOrFail(), $usuario ?? $this->admin(), 200);
     }
 
-    private function vender(SesionCaja $sesion, float $cantidad = 2, string $codigo = 'P-0004'): Venta
+    private function vender(SesionCaja $sesion, float $cantidad = 2, string $codigo = 'P-0004', float $descuento = 0): Venta
     {
         $producto = Producto::where('codigo', $codigo)->firstOrFail();
 
@@ -57,13 +53,15 @@ class ReportesTest extends TestCase
                 'cantidad' => $cantidad,
                 'precio_unitario' => (float) $producto->precio_venta,
             ]],
+            descuento: $descuento,
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
         );
     }
 
+    /** La jornada en curso: a la 01:30 todavía es la de ayer, y es la que cuenta lo que se vende ahora. */
     private function hoy(): array
     {
-        return ['desde' => now()->toDateString(), 'hasta' => now()->toDateString()];
+        return ['desde' => Config::jornadaActual(), 'hasta' => Config::jornadaActual()];
     }
 
     /**
@@ -88,7 +86,7 @@ class ReportesTest extends TestCase
 
     // -------------------------------------------------------------- permisos
 
-    /** `reportes.ver` lo tienen el administrador y el almacenero, no el cajero. */
+    /** `reportes.ver` lo tiene el administrador, no el cajero. */
     public function test_el_cajero_no_entra_a_los_reportes(): void
     {
         $this->actingAs($this->cajero())->get('/reportes/ventas')->assertForbidden();
@@ -101,7 +99,7 @@ class ReportesTest extends TestCase
         $this->actingAs($this->admin())->get('/reportes/ventas')->assertOk();
         $this->actingAs($this->admin())->get('/reportes/productos')->assertOk();
 
-        foreach ([$this->almacenero(), $this->cajero()] as $usuario) {
+        foreach ([$this->cocina(), $this->cajero()] as $usuario) {
             $this->actingAs($usuario)->get('/reportes/ventas')->assertForbidden();
             $this->actingAs($usuario)->get('/reportes/productos')->assertForbidden();
         }
@@ -142,89 +140,6 @@ class ReportesTest extends TestCase
         $this->assertSame(1, $resumen['operaciones']);
         $this->assertSame(1, $resumen['anuladas']);
         $this->assertSame((float) $vigente->fresh()->total, $resumen['vendido']);
-    }
-
-    /** El neto descuenta lo devuelto: es lo que quedó en el negocio. */
-    public function test_el_neto_descuenta_las_devoluciones(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 3);
-
-        $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota');
-
-        $resumen = $this->actingAs($this->admin())
-            ->get(route('reportes.ventas', $this->hoy()))
-            ->viewData('resumen');
-
-        $this->assertSame((float) $devolucion->total, $resumen['devuelto']);
-        $this->assertSame(
-            round($resumen['vendido'] - (float) $devolucion->total, 2),
-            $resumen['neto'],
-        );
-    }
-
-    private function ganancia(): float
-    {
-        return $this->actingAs($this->admin())
-            ->get(route('reportes.ventas', $this->hoy()))
-            ->viewData('resumen')['ganancia'];
-    }
-
-    /**
-     * La ganancia descuenta el costo de lo devuelto que volvió al estante, y va
-     * sin impuesto: el IVA cobrado no es del negocio.
-     */
-    public function test_la_ganancia_descuenta_tambien_el_costo_de_lo_devuelto(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 5, 'P-0004');
-        $costo = (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
-
-        $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Dos de más');
-
-        $venta->refresh();
-        $baseVendida = (float) $venta->total - (float) $venta->impuesto;
-        $baseDevuelta = (float) $devolucion->detalle()->sum('importe');
-
-        $this->assertSame(round(($baseVendida - $baseDevuelta) - 3 * $costo, 2), $this->ganancia());
-    }
-
-    public function test_la_ganancia_no_incluye_el_impuesto_cobrado(): void
-    {
-        $venta = $this->vender($this->turno(), 5, 'P-0004');
-        $costo = 5 * (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
-        $this->assertGreaterThan(0, (float) $venta->impuesto, 'la semilla trae IVA 13 %');
-
-        $this->assertSame(round((float) $venta->total - (float) $venta->impuesto - $costo, 2), $this->ganancia());
-    }
-
-    /** Lo roto se le devuelve al cliente pero no vuelve al estante: su costo se perdió. */
-    public function test_lo_devuelto_danado_no_recupera_su_costo(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 5, 'P-0004');
-        $costo = (float) Producto::where('codigo', 'P-0004')->value('precio_compra');
-
-        $devolucion = Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2, 'reingresa_stock' => false]], 'Dos rotas');
-
-        $venta->refresh();
-        $esperada = ((float) $venta->total - (float) $venta->impuesto - (float) $devolucion->detalle()->sum('importe')) - 5 * $costo;
-
-        $this->assertSame(round($esperada, 2), $this->ganancia());
-    }
-
-    /** La ganancia de lo ya vendido no cambia porque el proveedor subió el precio después. */
-    public function test_la_ganancia_usa_el_costo_del_dia_de_la_venta(): void
-    {
-        $this->vender($this->turno(), 5, 'P-0004');
-        $antes = $this->ganancia();
-
-        Producto::where('codigo', 'P-0004')->firstOrFail()->forceFill(['precio_compra' => 99])->save();
-
-        $this->assertSame($antes, $this->ganancia());
     }
 
     /** Una venta de Bs 100 con 10 % de descuento no aparece en el ranking como 100. */
@@ -380,14 +295,12 @@ class ReportesTest extends TestCase
         $this->requiereLasVistas();
 
         $sesion = $this->turno();
-        $conDevolucion = $this->vender($sesion, 3, 'P-0004');
+        $conDescuento = $this->vender($sesion, 3, 'P-0004', descuento: 1.00);
         $this->vender($sesion, 2, 'P-0009');
 
-        // Con una devolución de por medio: es justo donde las dos fórmulas
-        // podrían separarse sin que nadie se entere.
-        Devoluciones::registrar($conDevolucion, $this->admin(), $sesion,
-            [['venta_detalle_id' => $conDevolucion->detalle->first()->id, 'cantidad' => 1]],
-            'Una unidad rota');
+        // Con un descuento de cabecera de por medio: es justo donde las dos
+        // fórmulas podrían separarse sin que nadie se entere.
+        $this->assertGreaterThan(0, (float) $conDescuento->fresh()->descuento_visible);
 
         $reporte = $this->actingAs($this->admin())
             ->get(route('reportes.productos', [
@@ -406,118 +319,7 @@ class ReportesTest extends TestCase
 
             $this->assertSame($vista[$id]->unidades_vendidas, $fila->unidades_vendidas);
             $this->assertSame($vista[$id]->monto_vendido, $fila->monto_vendido);
-            $this->assertSame($vista[$id]->margen_estimado, $fila->margen_estimado);
         }
-    }
-
-    /** Unidades, monto y margen van netos: lo que el negocio se quedó. */
-    public function test_el_ranking_descuenta_lo_devuelto(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 5, 'P-0004');
-        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
-
-        Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 2]], 'Dos rotas');
-
-        $fila = $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))
-            ->viewData('masVendidos')
-            ->firstWhere('id', $producto->id);
-
-        // 5 vendidas − 2 devueltas
-        $this->assertSame(3.0, (float) $fila->unidades_vendidas);
-        $this->assertSame(2.0, (float) $fila->unidades_devueltas);
-
-        // El monto se prorratea por lo que el cliente se quedó: 3 × precio.
-        $this->assertSame(
-            round(3 * (float) $producto->precio_venta, 2),
-            round((float) $fila->monto_vendido, 2),
-        );
-
-        // Y el margen compara ese neto contra el costo de esas mismas 3.
-        $this->assertSame(
-            round(3 * ((float) $producto->precio_venta - (float) $producto->precio_compra), 2),
-            round((float) $fila->margen_estimado, 2),
-        );
-    }
-
-    /** Devolver todo deja el producto en cero, no con importe y sin unidades. */
-    public function test_un_producto_devuelto_por_completo_queda_en_cero(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 4, 'P-0004');
-        $producto = Producto::where('codigo', 'P-0004')->firstOrFail();
-
-        Devoluciones::registrar($venta, $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 4]], 'Se devolvió todo');
-
-        $fila = $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))
-            ->viewData('masVendidos')
-            ->firstWhere('id', $producto->id);
-
-        $this->assertSame(0.0, (float) $fila->unidades_vendidas);
-        $this->assertSame(0.0, (float) $fila->monto_vendido);
-        $this->assertSame(0.0, (float) $fila->margen_estimado);
-    }
-
-    public function test_las_alertas_salen_de_la_vista_del_esquema(): void
-    {
-        $this->requiereLasVistas();
-
-        $producto = Producto::where('codigo', 'P-0011')->firstOrFail();
-        $producto->update(['stock_minimo' => (float) $producto->stock_actual + 10]);
-
-        $alertas = $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))
-            ->viewData('alertas');
-
-        $alerta = collect($alertas)->firstWhere('id', $producto->id);
-
-        $this->assertNotNull($alerta);
-        $this->assertSame(10.0, (float) $alerta->faltante);
-        $this->assertSame(
-            DB::table('v_alertas_stock')->count(),
-            collect($alertas)->count(),
-        );
-    }
-
-    public function test_el_valor_del_inventario_se_calcula_sobre_todo_lo_que_hay_en_estante(): void
-    {
-        $inventario = $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))
-            ->viewData('inventario');
-
-        $esperado = (float) DB::table('productos')
-            ->selectRaw('COALESCE(SUM(stock_actual * precio_compra), 0) AS costo')
-            ->value('costo');
-
-        $this->assertSame($esperado, $inventario['costo']);
-        $this->assertSame(
-            round($inventario['venta'] - $inventario['costo'], 2),
-            $inventario['margen'],
-        );
-    }
-
-    /** Dar de baja un producto con stock no hace desaparecer lo que costó. */
-    public function test_un_producto_dado_de_baja_con_stock_sigue_valiendo_en_el_inventario(): void
-    {
-        $inventario = fn () => $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))->viewData('inventario');
-        $producto = Producto::where('activo', 1)->where('stock_actual', '>', 0)->where('precio_compra', '>', 0)->firstOrFail();
-
-        $antes = $inventario();
-        DB::table('productos')->where('id', $producto->id)->update(['activo' => 0]);
-        $despues = $inventario();
-
-        $this->assertSame($antes['costo'], $despues['costo']);
-        $this->assertSame($antes['productos'] - 1, $despues['productos']);
-        $this->assertSame($antes['inactivos_con_stock'] + 1, $despues['inactivos_con_stock']);
-
-        // Las tres pantallas dan la misma cifra.
-        $this->assertSame($despues['costo'], $this->actingAs($this->admin())->get(route('inventario.index'))->viewData('resumen')['valor']);
-        $this->assertSame($despues['costo'], $this->actingAs($this->admin())->get(route('productos.index'))->viewData('resumen')['valor']);
     }
 
     /**
@@ -538,8 +340,6 @@ class ReportesTest extends TestCase
             lineas: [['producto_id' => $producto->id, 'cantidad' => 1, 'precio_unitario' => (float) $producto->precio_venta]],
             pagos: [['metodo_pago_id' => MetodoPago::where('afecta_caja', 0)->value('id'), 'monto' => null, 'referencia' => 'VOUCHER-001']],
         );
-        Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion,
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota', Devolucion::EFECTIVO);
         Cajas::movimiento($sesion->fresh(), $this->admin(), 'INGRESO', 'Cambio del banco', 30);
         Cajas::movimiento($sesion->fresh(), $this->admin(), 'EGRESO', 'Bolsas', 10);
         Cajas::cerrar($sesion->fresh(), $this->admin(), $sesion->fresh()->efectivoEsperado());
@@ -551,7 +351,7 @@ class ReportesTest extends TestCase
             round((float) $cerrada->monto_esperado - (float) $cerrada->monto_inicial, 2),
             round($despues['efectivo'] - $antes, 2),
         );
-        $this->assertNotSame($despues['neto'], $despues['efectivo']);
+        $this->assertNotSame($despues['vendido'], $despues['efectivo']);
         $this->actingAs($this->admin())->get(route('reportes.ventas', $this->hoy()))->assertSee('Efectivo que pasó por las cajas');
     }
 
@@ -584,7 +384,7 @@ class ReportesTest extends TestCase
             ->get(route('reportes.ventas', $this->hoy()))
             ->assertOk()
             ->assertSee('data-apexchart', false)
-            ->assertSee('Ventas por día', false);
+            ->assertSee('Ventas por jornada', false);
     }
 
     public function test_el_menu_ofrece_los_reportes_a_quien_puede_verlos(): void
@@ -625,12 +425,12 @@ class ReportesTest extends TestCase
         $libro = $this->libroDescargado(route('reportes.ventas.excel', $this->hoy()));
 
         $this->assertSame(
-            ['Resumen', 'Ventas por día', 'Por método de pago', 'Por cajero'],
+            ['Resumen', 'Ventas por jornada', 'Por método de pago', 'Por cajero'],
             collect($libro->getAllSheets())->map(fn ($h) => $h->getTitle())->all()
         );
 
         // Cabecera del documento: sin ella no se sabe de qué negocio es.
-        $this->assertSame('Minimarket El Ahorro', $libro->getSheet(0)->getCell('A1')->getValue());
+        $this->assertSame('Restaurante El Buen Sabor', $libro->getSheet(0)->getCell('A1')->getValue());
     }
 
     public function test_el_reporte_de_productos_se_descarga_como_libro_de_excel(): void
@@ -638,7 +438,7 @@ class ReportesTest extends TestCase
         $libro = $this->libroDescargado(route('reportes.productos.excel'));
 
         $this->assertSame(
-            ['Resumen', 'Reponer', 'Más vendidos'],
+            ['Resumen', 'Más vendidos'],
             collect($libro->getAllSheets())->map(fn ($h) => $h->getTitle())->all()
         );
     }
@@ -653,11 +453,11 @@ class ReportesTest extends TestCase
         $this->vender($sesion, 2);
 
         $hoja = $this->libroDescargado(route('reportes.ventas.excel', $this->hoy()))
-            ->getSheetByName('Ventas por día');
+            ->getSheetByName('Ventas por jornada');
 
         // Filas 1-3 la cabecera del documento, 4 en blanco, 5 el título, 6 la
         // nota y 7 los nombres de columna: los datos empiezan en la 8.
-        $this->assertSame('Día', $hoja->getCell('A7')->getValue());
+        $this->assertSame('Jornada', $hoja->getCell('A7')->getValue());
 
         $this->assertIsNumeric($hoja->getCell('D8')->getValue(), 'el monto debería ser un número');
         $this->assertSame('#,##0.00', $hoja->getStyle('D8')->getNumberFormat()->getFormatCode());
@@ -673,7 +473,7 @@ class ReportesTest extends TestCase
         $this->vender($sesion, 2);
 
         $hoja = $this->libroDescargado(route('reportes.ventas.excel', ['desde' => now()->subDays(20)->toDateString(), 'hasta' => now()->toDateString()]))
-            ->getSheetByName('Ventas por día');
+            ->getSheetByName('Ventas por jornada');
 
         // Cabecera en la 7, una fila de datos y una de totales: 9 en total.
         // Con los 21 días del rango serían 29.
@@ -715,96 +515,5 @@ class ReportesTest extends TestCase
                 ->get(route($ruta))
                 ->assertForbidden();
         }
-    }
-
-    // ================================================================ un solo «neto»
-
-    /**
-     * El «neto» del reporte de ventas y el «vendido» del ranking de productos
-     * son la misma pregunta —qué quedó de lo que se vendió en el período— y
-     * antes se calculaban con criterios distintos: uno restaba las
-     * devoluciones registradas en el período y el otro las de esas ventas.
-     */
-    public function test_el_neto_descuenta_las_devoluciones_de_las_ventas_del_periodo(): void
-    {
-        $sesion = $this->turno();
-        $venta = $this->vender($sesion, 3);
-
-        // Una devolución registrada HOY de una venta de hoy.
-        $devolucion = Devoluciones::registrar($venta->fresh(), $this->admin(), $sesion->fresh(),
-            [['venta_detalle_id' => $venta->detalle->first()->id, 'cantidad' => 1]], 'Una unidad rota');
-
-        // Y una venta vieja, devuelta hoy: sale del cajón hoy, pero no es de
-        // este período.
-        $vieja = $this->vender($sesion->fresh(), 2);
-        $devolucionVieja = Devoluciones::registrar($vieja->fresh(), $this->admin(), $sesion->fresh(),
-            [['venta_detalle_id' => $vieja->detalle->first()->id, 'cantidad' => 1]], 'Devolución de una venta vieja');
-        Venta::whereKey($vieja->id)->update(['fecha' => now()->subDays(20)]);
-
-        $resumen = $this->actingAs($this->admin())
-            ->get(route('reportes.ventas', $this->hoy()))
-            ->viewData('resumen');
-
-        // Lo que salió del cajón hoy: las dos devoluciones.
-        $this->assertSame(
-            round((float) $devolucion->total + (float) $devolucionVieja->total, 2),
-            round($resumen['devuelto'], 2),
-        );
-
-        // Lo que se le resta a lo vendido de hoy: solo la de la venta de hoy.
-        $this->assertSame(round((float) $devolucion->total, 2), round($resumen['devuelto_de_las_ventas'], 2));
-        $this->assertSame(round($resumen['vendido'] - (float) $devolucion->total, 2), $resumen['neto']);
-    }
-
-    // ================================================================ inventario con IVA incluido
-
-    /** «Si vendieras todo esto, ganarías» no puede contar el IVA como ganancia. */
-    public function test_el_valor_del_inventario_a_venta_va_sin_iva(): void
-    {
-        $inventario = fn () => $this->actingAs($this->admin())
-            ->get(route('reportes.productos', $this->hoy()))->viewData('inventario');
-
-        DB::table('configuracion')->where('clave', 'tasa_impuesto')->update(['valor' => '0.1300']);
-        DB::table('configuracion')->updateOrInsert(['clave' => 'precios_incluyen_impuesto'], ['valor' => '1']);
-        Config::olvidar();
-
-        $conIva = (float) DB::table('productos')
-            ->selectRaw('COALESCE(SUM(stock_actual * precio_venta), 0) AS v')->value('v');
-        $sinIva = (float) DB::table('productos')
-            ->selectRaw('COALESCE(SUM(stock_actual * IF(afecto_impuesto = 1, precio_venta - ROUND(precio_venta * 0.13 / 1.13, 2), precio_venta)), 0) AS v')
-            ->value('v');
-
-        $este = $inventario();
-        $this->assertSame(round($sinIva, 2), round($este['venta'], 2));
-        $this->assertLessThan(round($conIva, 2), round($este['venta'], 2));
-        $this->assertSame(round($este['venta'] - $este['costo'], 2), $este['margen']);
-    }
-
-    // ================================================================ libro de ventas
-
-    /** Con la tasa en 0 el libro no puede declarar débito fiscal. */
-    public function test_el_libro_no_declara_iva_si_el_negocio_no_lo_cobra(): void
-    {
-        DB::table('configuracion')->where('clave', 'tasa_impuesto')->update(['valor' => '0.0000']);
-        Config::olvidar();
-
-        $sesion = $this->turno();
-        $cliente = Cliente::where('tipo_persona', 'JURIDICA')->firstOrFail();
-        Ventas::registrar(
-            sesion: $sesion,
-            usuario: $this->admin(),
-            lineas: [['producto_id' => Producto::where('codigo', 'P-0004')->value('id'), 'cantidad' => 2]],
-            pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
-            cliente: $cliente,
-        );
-
-        $libro = LibroDeVentas::mes((int) now()->year, (int) now()->month);
-
-        $this->assertTrue($libro['sin_impuesto_configurado']);
-        $this->assertSame(0.0, round($libro['totales']['debito_fiscal'], 2));
-        $this->assertSame(round($libro['totales']['importe_total'], 2), round($libro['totales']['exentas'], 2));
-
-        $this->actingAs($this->admin())->get(route('reportes.libro-ventas'))->assertOk()
-            ->assertSee('El negocio está configurado sin IVA');
     }
 }

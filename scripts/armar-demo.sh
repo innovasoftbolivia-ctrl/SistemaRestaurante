@@ -36,8 +36,14 @@ BUILD="$SALIDA/build/htdocs"
 }
 
 echo "== 1/6  compilando los assets =========================================="
-# En el contenedor, que es donde los node_modules están completos.
-docker exec ventas_vite npm run build >/dev/null 2>&1
+# En el contenedor, que es donde los node_modules están completos: el de Vite
+# del stack del restaurante, o el del sistema de ventas si es el que corre.
+VITE=""
+for c in restaurante_vite ventas_vite; do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then VITE="$c"; break; fi
+done
+[ -n "$VITE" ] || { echo "no encuentro corriendo el contenedor de Vite (restaurante_vite ni ventas_vite)"; exit 1; }
+docker exec "$VITE" npm run build >/dev/null 2>&1
 echo "   $(ls "$FUENTE/public/build/assets" | wc -l) archivos en public/build/assets"
 
 echo "== 2/6  copiando el código ============================================="
@@ -74,34 +80,28 @@ echo "   $(grep -c '=> ' "$BUILD/vendor/composer/autoload_classmap.php") clases 
 echo "== 4/6  comprobando que lo nuevo llegó ================================="
 FALTA=0
 
+# Lo que un paquete viejo no traería: los pedidos del mostrador, la cocina y
+# la comanda, y el cobro por QR. Si falta algo de aquí, el zip se armó sobre
+# otra versión. (Las mesas y la cuenta abierta se retiraron el 2026-09-18.)
 while read -r archivo; do
     [ -e "$BUILD/$archivo" ] || { echo "   FALTA  $archivo"; FALTA=1; }
 done <<'LISTA'
-app/Http/Controllers/InventarioController.php
+app/Http/Controllers/PedidoController.php
+app/Http/Controllers/CocinaController.php
+app/Http/Controllers/ComandaController.php
+app/Services/Pedidos.php
+app/Services/Comandas.php
+app/Models/Pedido.php
+app/Models/PedidoDetalle.php
+resources/views/pedidos/cobrar.blade.php
+resources/views/cocina/index.blade.php
+resources/views/comandas/imprimir.blade.php
 app/Http/Controllers/CobroQrController.php
 app/Services/CobrosQr.php
 app/Services/Qr/QrSimulado.php
 app/Models/CobroQr.php
 config/qr.php
 resources/js/qr.js
-resources/views/inventario/index.blade.php
-app/Http/Controllers/CompraController.php
-app/Http/Controllers/DevolucionCompraController.php
-app/Http/Controllers/VencimientoController.php
-app/Services/Compras.php
-app/Services/DevolucionesCompra.php
-app/Services/Lotes.php
-app/Services/Costos.php
-app/Models/Compra.php
-app/Models/DevolucionCompra.php
-app/Models/Lote.php
-app/Support/Palabras.php
-app/Http/Controllers/Concerns/IngresaPorEmpaque.php
-resources/views/compras/create.blade.php
-resources/views/devoluciones-compra/create.blade.php
-resources/views/devoluciones-compra/elegir.blade.php
-resources/views/vencimientos/index.blade.php
-resources/views/components/form/cantidad-empaque.blade.php
 LISTA
 
 # Estar en el disco no alcanza: la clase tiene que estar en el MAPA, porque
@@ -117,7 +117,18 @@ foreach (array_slice($argv, 2) as $clase) {
 "; $faltan++; }
 }
 exit($faltan > 0 ? 1 : 0);
-' "$BUILD"     'App\Http\Controllers\InventarioController'     'App\Http\Controllers\CobroQrController'     'App\Services\CobrosQr'     'App\Services\Qr\QrSimulado'     'App\Models\CobroQr'     'App\Http\Controllers\CompraController'     'App\Http\Controllers\DevolucionCompraController'     'App\Http\Controllers\VencimientoController'     'App\Services\Compras'     'App\Services\DevolucionesCompra'     'App\Services\Lotes'     'App\Services\Costos'     'App\Models\DevolucionCompra'     'App\Models\Lote'     'App\Support\Palabras' || FALTA=1
+' "$BUILD" \
+    'App\Http\Controllers\PedidoController' \
+    'App\Http\Controllers\CocinaController' \
+    'App\Http\Controllers\ComandaController' \
+    'App\Services\Pedidos' \
+    'App\Services\Comandas' \
+    'App\Models\Pedido' \
+    'App\Models\PedidoDetalle' \
+    'App\Http\Controllers\CobroQrController' \
+    'App\Services\CobrosQr' \
+    'App\Services\Qr\QrSimulado' \
+    'App\Models\CobroQr' || FALTA=1
 
 [ -e "$BUILD/public/hot" ] && {
     echo "   VIAJA public/hot — la demo cargaría el JavaScript de localhost"

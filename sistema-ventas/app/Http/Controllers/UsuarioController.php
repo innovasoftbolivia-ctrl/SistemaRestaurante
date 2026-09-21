@@ -199,7 +199,14 @@ class UsuarioController extends Controller
         // en ese caso se desactiva en lugar de borrarse.
         try {
             $usuario->delete();
-        } catch (QueryException) {
+        } catch (QueryException $e) {
+            // Solo «hay filas que la referencian» (1451) quiere decir que tiene
+            // operaciones. Cualquier otro error —un bloqueo, la conexión— se
+            // informa como error, no desactiva la cuenta en silencio.
+            if ((int) ($e->errorInfo[1] ?? 0) !== 1451) {
+                throw $e;
+            }
+
             $usuario->update(['activo' => false]);
 
             Auditor::registrar('USUARIO_DESACTIVADO', 'usuarios', $usuario->id, ['motivo' => 'tiene operaciones asociadas']);

@@ -19,7 +19,7 @@
                 $tarjetas[] = ['Impuesto', Config::importe($resumen['impuesto']), 'text-gray-800 dark:text-white/90', 'incluido en el total'];
             }
 
-            $tarjetas[] = ['Anuladas', number_format($resumen['anuladas']), 'text-error-600 dark:text-error-400', 'revirtieron stock'];
+            $tarjetas[] = ['Anuladas', number_format($resumen['anuladas']), 'text-error-600 dark:text-error-400', 'no suman en lo vendido'];
         @endphp
 
         <div class="grid grid-cols-2 gap-4 {{ count($tarjetas) === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3' }}">
@@ -84,6 +84,11 @@
                                  y no hay un único número por el que ordenarla. --}}
                             <x-tabla.th>Comprobante</x-tabla.th>
                             <x-tabla.th clave="fecha" defecto inicial="desc" class="hidden sm:table-cell">Fecha</x-tabla.th>
+                            {{-- «Pedido» tampoco se ordena: el número vuelve a 1 en
+                                 cada jornada, y las ventas de antes de los pedidos no
+                                 tienen ninguno: ordenar por ahí no ayuda a encontrar
+                                 nada. --}}
+                            <x-tabla.th class="hidden md:table-cell">Pedido</x-tabla.th>
                             <x-tabla.th clave="cliente" class="hidden md:table-cell">Cliente</x-tabla.th>
                             <x-tabla.th clave="cajero" class="hidden lg:table-cell">Cajero</x-tabla.th>
                             <x-tabla.th clave="estado">Estado</x-tabla.th>
@@ -103,8 +108,23 @@
                                 <td class="hidden px-5 py-4 whitespace-nowrap text-theme-sm text-gray-500 sm:table-cell dark:text-gray-400">
                                     {{ $venta->fecha?->format('d/m/Y H:i') }}
                                 </td>
+                                <td class="hidden px-5 py-4 whitespace-nowrap text-theme-sm text-gray-500 md:table-cell dark:text-gray-400">
+                                    @if ($venta->pedido)
+                                        {{ $venta->pedido->destino }}
+                                        {{-- Con la jornada: el listado mezcla días y el número
+                                             vuelve a 1 en cada jornada, así que «pedido 7» a secas
+                                             sería el de hoy y el de la semana pasada a la vez. Es la
+                                             jornada y no la fecha de apertura: el pedido de la 01:30
+                                             se numeró con los de la noche anterior. --}}
+                                        <span class="block text-theme-xs text-gray-400 dark:text-gray-500">
+                                            {{ $venta->pedido->numero_visible }} · {{ $venta->pedido->jornada?->format('d/m/Y') }}
+                                        </span>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                                 <td class="hidden px-5 py-4 text-theme-sm text-gray-500 md:table-cell dark:text-gray-400">
-                                    {{ $venta->cliente?->nombre ?? 'Cliente varios' }}
+                                    {{ $venta->cliente?->nombre ?? Config::get('cliente_generico_nombre', 'Cliente varios') }}
                                 </td>
                                 <td class="hidden px-5 py-4 text-theme-sm text-gray-500 lg:table-cell dark:text-gray-400">
                                     {{ $venta->usuario?->usuario }}
@@ -121,7 +141,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="7" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
                                     No hay ventas con esos criterios.
                                 </td>
                             </tr>

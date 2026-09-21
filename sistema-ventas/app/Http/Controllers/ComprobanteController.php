@@ -41,9 +41,12 @@ class ComprobanteController extends Controller
 
         $comprobante->load([
             'serie.tipo',
-            'venta.detalle.producto.unidadMedida:id,codigo',
             'venta.pagos.metodoPago:id,codigo,nombre',
             'venta.usuario:id,usuario',
+            // El ticket encabeza con el número del pedido, «comer aquí» o
+            // «para llevar» y, si lo hay, el nombre para llamarlo. Una venta
+            // vieja, de antes de los pedidos, no trae ninguno.
+            'venta.pedido',
         ]);
 
         return view('comprobantes.imprimir', [
@@ -54,11 +57,14 @@ class ComprobanteController extends Controller
             // imprimir; abrir el documento desde el listado NO lo pide, porque
             // ahí la intención es mirarlo.
             'autoImprimir' => $request->boolean('imprimir'),
+            // Los datos del negocio congelados al emitir, no los de hoy: el
+            // documento se reimprime como se entregó. Solo el nombre tiene
+            // respaldo, por si un documento quedó sin él.
             'negocio' => [
-                'nombre' => Config::get('negocio_nombre', config('app.name')),
-                'documento' => Config::get('negocio_documento'),
-                'direccion' => Config::get('negocio_direccion'),
-                'telefono' => Config::get('negocio_telefono'),
+                'nombre' => $comprobante->emisor_nombre ?? Config::negocio(),
+                'documento' => $comprobante->emisor_documento,
+                'direccion' => $comprobante->emisor_direccion,
+                'telefono' => $comprobante->emisor_telefono,
             ],
         ]);
     }
