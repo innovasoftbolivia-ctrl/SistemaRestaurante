@@ -194,7 +194,8 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
     ('cliente_generico_nombre','Cliente varios',     'Texto impreso en el comprobante cuando la venta no tiene cliente registrado'),
     ('exigir_referencia_pago', '1',                  'Pedir el número de operación en pagos con tarjeta, billetera o transferencia (1 = sí)'),
     ('dias_max_sustitucion','1',                     'Días máximos tras la venta para sustituir su comprobante (recibo -> factura)'),
-    ('hora_corte_jornada',  '5',                     'Hora (0 a 12) en que empieza la jornada: lo pedido antes cuenta para la noche anterior');
+    ('hora_corte_jornada',  '5',                     'Hora (0 a 12) en que empieza la jornada: lo pedido antes cuenta para la noche anterior'),
+    ('cajero_cierra_su_caja', '0',                'El cajero cierra su propia caja, sin ver el esperado (1 = sí; 0 = lo cierra un administrador)');
 
 -- =============================================================================
 --  EJEMPLO A: VENTA A PERSONA NATURAL -> se emite RECIBO

@@ -254,14 +254,14 @@ class ReporteController extends Controller
             ],
             [
                 'nombre' => 'Cuadre de caja',
-                'nota' => 'Turnos cerrados en el período. Diferencia = contado − esperado: negativa es faltante, positiva sobrante.',
-                'cabeceras' => ['Cierre', 'Caja', 'Cajero', 'Esperado', 'Contado', 'Diferencia', 'Explicación'],
-                'formatos' => [null, null, null, 'moneda', 'moneda', 'moneda', null],
-                'alineacion' => ['izq', 'izq', 'izq', 'der', 'der', 'der', 'izq'],
+                'nota' => 'Turnos cerrados en el período. Diferencia = contado − esperado: negativa es faltante, positiva sobrante. Retirado = contado − lo que quedó en el cajón para el turno siguiente.',
+                'cabeceras' => ['Cierre', 'Caja', 'Cajero', 'Cerró', 'Esperado', 'Contado', 'Diferencia', 'Retirado', 'Explicación'],
+                'formatos' => [null, null, null, null, 'moneda', 'moneda', 'moneda', 'moneda', null],
+                'alineacion' => ['izq', 'izq', 'izq', 'izq', 'der', 'der', 'der', 'der', 'izq'],
                 'filas' => $cuadres->map(fn ($c) => [
-                    Carbon::parse($c->fecha_cierre)->format('d/m/Y H:i'), $c->caja, $c->usuario, (float) $c->monto_esperado, (float) $c->monto_declarado, (float) $c->diferencia, $c->observacion_cierre,
+                    Carbon::parse($c->fecha_cierre)->format('d/m/Y H:i'), $c->caja, $c->usuario, $c->cerro, (float) $c->monto_esperado, (float) $c->monto_declarado, (float) $c->diferencia, $c->retirado === null ? null : (float) $c->retirado, $c->observacion_cierre,
                 ])->all(),
-                'totales' => ['Total', null, null, (float) $cuadres->sum('monto_esperado'), (float) $cuadres->sum('monto_declarado'), (float) $cuadres->sum('diferencia'), null],
+                'totales' => ['Total', null, null, null, (float) $cuadres->sum('monto_esperado'), (float) $cuadres->sum('monto_declarado'), (float) $cuadres->sum('diferencia'), (float) $cuadres->sum('retirado'), null],
                 'vacia' => 'No se cerró ningún turno en el período.',
             ],
         ]);
@@ -756,11 +756,16 @@ class ReporteController extends Controller
         return DB::table('sesiones_caja as s')
             ->join('cajas as c', 'c.id', '=', 's.caja_id')
             ->join('usuarios as u', 'u.id', '=', 's.usuario_apertura_id')
+            ->leftJoin('usuarios as cierra', 'cierra.id', '=', 's.usuario_cierre_id')
             ->where('s.estado', 'CERRADA')
             ->whereBetween('s.fecha_cierre', Config::momentosDeJornadas($desde, $hasta))
             ->orderByDesc('s.fecha_cierre')
-            ->select('s.id', 's.fecha_apertura', 's.fecha_cierre', 's.monto_esperado', 's.monto_declarado', 's.diferencia', 's.observacion_cierre')
-            ->selectRaw('c.nombre AS caja, u.usuario')
+            ->select('s.id', 's.fecha_apertura', 's.fecha_cierre', 's.monto_esperado', 's.monto_declarado', 's.diferencia', 's.fondo_dejado', 's.observacion_cierre')
+            ->selectRaw('c.nombre AS caja, u.usuario, cierra.usuario AS cerro')
+            // Lo que se llevó del cajón: lo contado menos el fondo que quedó
+            // para el turno siguiente. Es la plata que el dueño recibe cada
+            // cierre. Sin fondo anotado (cierres viejos) no se sabe.
+            ->selectRaw('IF(s.fondo_dejado IS NULL, NULL, ROUND(s.monto_declarado - s.fondo_dejado, 2)) AS retirado')
             ->get();
     }
 

@@ -355,6 +355,9 @@
                                 {{ $sobrantes->count() }} con sobrante ({{ Config::importe($sobrantes->sum('diferencia')) }})
                             @endif
                         @endif
+                        @if ($cuadres->whereNotNull('retirado')->isNotEmpty())
+                            <span class="mt-1 block">Retirado de las cajas en el período: <b class="text-gray-800 dark:text-white/90">{{ Config::importe($cuadres->sum('retirado')) }}</b>.</span>
+                        @endif
                     </p>
                 </div>
                 @if ($cuadres->isNotEmpty())
@@ -366,6 +369,7 @@
                                     <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Esperado</th>
                                     <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Contado</th>
                                     <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Diferencia</th>
+                                    <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400" title="Lo contado menos lo que quedó en el cajón para el turno siguiente">Retirado</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -375,7 +379,7 @@
                                             <a href="{{ route('caja.show', $c->id) }}" class="block text-theme-sm text-gray-800 hover:text-brand-500 dark:text-white/90">
                                                 {{ \Illuminate\Support\Carbon::parse($c->fecha_cierre)->format('d/m H:i') }} · {{ $c->caja }}
                                             </a>
-                                            <span class="text-theme-xs text-gray-500 dark:text-gray-400">{{ $c->usuario }}@if ($c->observacion_cierre) · {{ \Illuminate\Support\Str::limit($c->observacion_cierre, 40) }}@endif</span>
+                                            <span class="text-theme-xs text-gray-500 dark:text-gray-400">{{ $c->usuario }}@if ($c->cerro && $c->cerro !== $c->usuario) · cerró {{ $c->cerro }}@endif @if ($c->observacion_cierre) · {{ \Illuminate\Support\Str::limit($c->observacion_cierre, 40) }}@endif</span>
                                         </td>
                                         <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($c->monto_esperado) }}</td>
                                         <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($c->monto_declarado) }}</td>
@@ -385,6 +389,9 @@
                                             @else
                                                 {{ (float) $c->diferencia < 0 ? 'Falta' : 'Sobra' }} {{ Config::importe(abs((float) $c->diferencia)) }}
                                             @endif
+                                        </td>
+                                        <td class="whitespace-nowrap px-6 py-3 text-right text-theme-sm font-medium text-gray-800 dark:text-white/90">
+                                            {{ $c->retirado === null ? '—' : Config::importe($c->retirado) }}
                                         </td>
                                     </tr>
                                 @endforeach

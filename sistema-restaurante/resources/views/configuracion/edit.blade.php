@@ -207,6 +207,17 @@
                         </p>
                     </div>
 
+                    <div class="sm:col-span-2" data-cajero-cierra>
+                        <x-form.check name="cajero_cierra_su_caja" :checked="$actual['cajero_cierra_su_caja'] === '1'"
+                            label="El cajero cierra su propia caja" />
+                        <p class="mt-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                            Apagado, cada cierre lo hace un administrador junto al cajero: es el control más fuerte.
+                            Encendido, el cajero cuenta y cierra solo, sin ver cuánto debería haber; la diferencia la
+                            ves después en el turno y en Reportes → Cuadre de caja. Úsalo si no hay un administrador en
+                            el local a la hora de cerrar.
+                        </p>
+                    </div>
+
                     <x-form.campo label="Nombre del cliente sin registrar" for="cliente_generico_nombre"
                         name="cliente_generico_nombre" required class="sm:col-span-2"
                         help="Lo que dice el comprobante cuando se vende sin elegir un cliente.">

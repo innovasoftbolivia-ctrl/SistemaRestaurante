@@ -877,7 +877,7 @@ CREATE TABLE configuracion (
     descripcion     VARCHAR(200) NULL,
     actualizado_en  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (clave),
-    CONSTRAINT ck_config_banderas CHECK (clave NOT IN ('precios_incluyen_impuesto', 'exigir_referencia_pago')
+    CONSTRAINT ck_config_banderas CHECK (clave NOT IN ('precios_incluyen_impuesto', 'exigir_referencia_pago', 'cajero_cierra_su_caja')
                                          OR valor IN ('0', '1')),
     -- Fracción: 0.13 es el 13 %.
     CONSTRAINT ck_config_tasa     CHECK (clave <> 'tasa_impuesto'

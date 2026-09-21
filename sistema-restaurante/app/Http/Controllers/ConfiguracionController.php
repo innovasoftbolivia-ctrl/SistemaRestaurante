@@ -114,6 +114,7 @@ class ConfiguracionController extends Controller
             'cliente_generico_nombre' => ['required', 'string', 'max:60'],
             'dias_max_sustitucion' => ['required', 'integer', 'min:0', 'max:30'],
             'exigir_referencia_pago' => ['boolean'],
+            'cajero_cierra_su_caja' => ['boolean'],
             // Opcional para quien guarda otra parte de la pantalla: sin él, la
             // hora de corte se queda como está.
             'hora_corte_jornada' => ['sometimes', 'required', 'integer', 'min:0', 'max:'.Config::HORA_CORTE_MAXIMA],
@@ -155,6 +156,7 @@ class ConfiguracionController extends Controller
             'cliente_generico_nombre' => trim($datos['cliente_generico_nombre']),
             'dias_max_sustitucion' => (string) (int) $datos['dias_max_sustitucion'],
             'exigir_referencia_pago' => $request->boolean('exigir_referencia_pago') ? '1' : '0',
+            'cajero_cierra_su_caja' => $request->boolean('cajero_cierra_su_caja') ? '1' : '0',
             'serie_factura' => (string) (int) $datos['serie_factura'],
             'serie_recibo' => (string) (int) $datos['serie_recibo'],
         ];
@@ -165,7 +167,10 @@ class ConfiguracionController extends Controller
             $nuevos['hora_corte_jornada'] = (string) (int) $datos['hora_corte_jornada'];
         }
 
-        $antes = DB::table('configuracion')->pluck('valor', 'clave')->all() + $this->seriesActuales();
+        // `cajero_cierra_su_caja` llegó después de las primeras instalaciones:
+        // sin la fila, vale lo mismo que apagada, y guardar sin tocarla no es
+        // un cambio.
+        $antes = DB::table('configuracion')->pluck('valor', 'clave')->all() + $this->seriesActuales() + ['cajero_cierra_su_caja' => '0'];
         $cambios = [];
 
         foreach ($nuevos as $clave => $valor) {
@@ -271,6 +276,7 @@ class ConfiguracionController extends Controller
             'cliente_generico_nombre' => (string) Config::get('cliente_generico_nombre', 'Cliente varios'),
             'dias_max_sustitucion' => (string) Config::get('dias_max_sustitucion', '1'),
             'exigir_referencia_pago' => (string) Config::get('exigir_referencia_pago', '1'),
+            'cajero_cierra_su_caja' => Config::cajeroCierraSuCaja() ? '1' : '0',
             'hora_corte_jornada' => (string) Config::horaCorteJornada(),
         ] + $this->seriesActuales();
     }

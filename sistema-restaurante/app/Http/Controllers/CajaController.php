@@ -83,8 +83,9 @@ class CajaController extends Controller
                 : Auth::user()->tienePermiso('caja.cerrar'),
             'qrSinVenta' => $sesion->cobrosQrSinVenta()->get(),
             'qrAMano' => self::arquea(Auth::user()) ? $sesion->cobrosQrConfirmadosAMano()->with('confirmadoPor:id,usuario')->get() : collect(),
+            'puedeCerrar' => $sesion->estaAbierta() && Cajas::puedeCerrar(Auth::user(), $sesion),
             // Solo hace falta para cerrar: los pedidos con el cobro anulado que falta volver a cobrar.
-            'cuentasAbiertas' => $sesion->estaAbierta() && Auth::user()->tienePermiso('caja.cerrar')
+            'cuentasAbiertas' => $sesion->estaAbierta() && Cajas::puedeCerrar(Auth::user(), $sesion)
                 ? Cajas::cuentasAbiertas()
                 : collect(),
         ]);
@@ -216,10 +217,10 @@ class CajaController extends Controller
 
         // Cerrar el turno de otro es del arqueo, no de los reportes: el permiso
         // que lo habilita tiene que ser el mismo que pide registrar movimientos
-        // en un turno ajeno.
-        if ($sesion->usuario_apertura_id !== Auth::id() && ! Auth::user()->tienePermiso('caja.cerrar')) {
-            return back()->with('error', 'Solo quien abrió la caja puede cerrarla.');
-        }
+        // en un turno ajeno. El propio, solo si el negocio lo permite.
+        abort_unless(Cajas::puedeCerrar(Auth::user(), $sesion), 403, $sesion->usuario_apertura_id === Auth::id()
+            ? 'Tu caja la cierra un administrador, contando el cajón junto a ti.'
+            : 'Solo quien abrió la caja o un administrador puede cerrarla.');
 
         try {
             $sesion = Cajas::cerrar(

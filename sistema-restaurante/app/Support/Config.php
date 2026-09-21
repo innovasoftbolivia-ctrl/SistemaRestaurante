@@ -62,6 +62,17 @@ class Config
     }
 
     /**
+     * ¿El cajero cierra su propia caja? Apagado por omisión: el arqueo lo hace
+     * quien no tuvo la mano en el cajón (HU-27). El negocio lo enciende si a la
+     * hora de cerrar no hay un administrador en el local; el cajero cierra
+     * igual a ciegas, sin ver el esperado.
+     */
+    public static function cajeroCierraSuCaja(): bool
+    {
+        return (string) self::get('cajero_cierra_su_caja', '0') === '1';
+    }
+
+    /**
      * ROUND(importe × tasa, 2), exacto: el impuesto que se SUMA a un importe.
      *
      * En centavos enteros, como MySQL y `montos.js`. PHP 8.4 dejó de

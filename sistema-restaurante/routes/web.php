@@ -233,8 +233,11 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         // ruta exige lo mismo que el controlador, y no solo `caja.abrir`.
         ->middleware('permiso:caja.abrir,caja.cerrar')->middleware('un.envio')->name('caja.movimiento');
 
+    // `caja.cerrar` cierra cualquier turno; quien solo tiene `caja.abrir`
+    // cierra el suyo si el negocio lo encendió en Configuración. El
+    // controlador decide cuál es el caso (`Cajas::puedeCerrar`).
     Route::post('caja/{sesion}/cerrar', [CajaController::class, 'cerrar'])
-        ->middleware('permiso:caja.cerrar')->name('caja.cerrar');
+        ->middleware('permiso:caja.abrir,caja.cerrar')->name('caja.cerrar');
 
     // Las cajas FÍSICAS del local, no los turnos. En plural (`/cajas`) para no
     // chocar con `caja/{sesion}` de arriba, y detrás de `configuracion.editar`

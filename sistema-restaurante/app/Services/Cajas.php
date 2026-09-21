@@ -185,6 +185,37 @@ class Cajas
         return $usuario !== null && ($usuario->tienePermiso('caja.cerrar') || $usuario->tienePermiso('reportes.ver'));
     }
 
+    /**
+     * Quién puede cerrar este turno: quien tiene `caja.cerrar` (cualquier
+     * turno), o quien lo abrió, si el negocio encendió «el cajero cierra su
+     * propia caja». Ese cierre es a ciegas: ver `cierraACiegas()`.
+     */
+    public static function puedeCerrar(?Usuario $usuario, SesionCaja $sesion): bool
+    {
+        if ($usuario === null) {
+            return false;
+        }
+
+        if ($usuario->tienePermiso('caja.cerrar')) {
+            return true;
+        }
+
+        return $sesion->usuario_apertura_id === $usuario->id
+            && $usuario->tienePermiso('caja.abrir')
+            && Config::cajeroCierraSuCaja();
+    }
+
+    /**
+     * Quien cierra sin ver el esperado. No se le dice si hay diferencia ni de
+     * cuánto: si el cierre le contestara «faltan Bs 20, explica», bastaría con
+     * volver a escribir el conteo hasta que cuadre y quedarse con el sobrante.
+     * La diferencia la ve el administrador en el turno y en los reportes.
+     */
+    public static function cierraACiegas(?Usuario $usuario): bool
+    {
+        return ! self::arquea($usuario);
+    }
+
     private static function validarTopeDelCajero(SesionCaja $sesion, Usuario $usuario, float $monto): void
     {
         $tope = (float) Config::get('egreso_max_cajero', '0');
@@ -338,10 +369,11 @@ class Cajas
             }
 
             // Una diferencia sin explicación no le sirve a nadie. Se calcula
-            // aquí con la misma fórmula que firma el procedimiento.
+            // aquí con la misma fórmula que firma el procedimiento. A quien
+            // cierra a ciegas no se le pide: sería decirle que hay diferencia.
             $diferencia = round($declarado - $bloqueada->efectivoEsperado(), 2);
 
-            if ($diferencia !== 0.0 && blank($observacion)) {
+            if ($diferencia !== 0.0 && blank($observacion) && ! self::cierraACiegas($usuario)) {
                 throw new RuntimeException(sprintf(
                     'El conteo tiene una diferencia de %s%s: escribe en la observación qué pasó.',
                     $diferencia > 0 ? '+' : '−',

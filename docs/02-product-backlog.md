@@ -1014,6 +1014,11 @@ está bien, lo único que cambia es el documento.
   que restar: una venta mal cobrada se anula y su efectivo deja de contarse.
 - El cajero abre su turno pero **no** lo cierra: por omisión solo el Administrador tiene
   `caja.cerrar`. El arqueo lo hace quien no tuvo la mano en el cajón durante el turno.
+- Si en el local no hay un administrador a la hora de cerrar, se enciende en Configuración
+  «El cajero cierra su propia caja». El cajero cierra solo el suyo y **a ciegas**: no ve el
+  esperado ni se le avisa si hay diferencia (si se le avisara, bastaría con reescribir el
+  conteo hasta que cuadre). La diferencia la revisa el administrador en el turno y en
+  Reportes → Cuadre de caja, junto con lo retirado en cada cierre.
 - Si quedan pedidos para volver a cobrar, el cierre los muestra y exige confirmarlo (HU-61).
 
 ---

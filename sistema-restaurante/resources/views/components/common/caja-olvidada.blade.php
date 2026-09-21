@@ -38,7 +38,12 @@
             <span>
                 <span class="font-semibold">Tu turno en {{ $sesion->caja?->nombre ?? 'la caja' }} sigue abierto desde el
                     {{ $sesion->fecha_apertura->format('d/m/Y') }} a las {{ $sesion->fecha_apertura->format('H:i') }}.</span>
-                Pide a un administrador que lo cierre contando el cajón contigo.
+                @if (\App\Services\Cajas::puedeCerrar($usuario, $sesion))
+                    <a href="{{ route('caja.show', $sesion) }}" class="font-semibold underline underline-offset-2 hover:no-underline">Ciérralo</a>
+                    contando el cajón.
+                @else
+                    Pide a un administrador que lo cierre contando el cajón contigo.
+                @endif
             </span>
         @endif
     </div>

@@ -67,9 +67,9 @@
                         @if ($puedeMover)
                             <x-ui.button size="sm" variant="outline" @click="moviendo = true">Registrar movimiento</x-ui.button>
                         @endif
-                        @puede('caja.cerrar')
+                        @if ($puedeCerrar)
                             <x-ui.button size="sm" variant="danger" @click="cerrando = true">Cerrar caja</x-ui.button>
-                        @endpuede
+                        @endif
                     @endif
                 </div>
             </div>
@@ -277,7 +277,7 @@
 
         {{-- Cerrar caja --}}
         @if ($abierta)
-            @puede('caja.cerrar')
+            @if ($puedeCerrar)
                 <div x-show="cerrando" x-cloak role="dialog" aria-modal="true" aria-labelledby="titulo-modal-cerrar-caja"
                     class="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto overscroll-contain p-5">
                     <div @click="cerrando = false" class="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"></div>
@@ -286,8 +286,13 @@
                         class="relative max-h-[90vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 dark:bg-gray-900 sm:p-8">
                         <h2 id="titulo-modal-cerrar-caja" class="mb-2 text-xl font-semibold text-gray-800 dark:text-white/90">Cerrar caja</h2>
                         <p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
-                            Cuenta el efectivo que hay en el cajón. El sistema compara con lo esperado y registra la
-                            diferencia: no se corrige, se explica.
+                            @if ($veArqueo)
+                                Cuenta el efectivo que hay en el cajón. El sistema compara con lo esperado y registra la
+                                diferencia: no se corrige, se explica.
+                            @else
+                                Cuenta el efectivo que hay en el cajón y escribe exactamente lo que hay. El sistema lo
+                                compara con lo esperado y el administrador revisa el resultado.
+                            @endif
                         </p>
 
                         <form method="POST" action="{{ route('caja.cerrar', $sesion) }}" class="space-y-5">
@@ -329,13 +334,17 @@
                             @endif
 
                             {{-- El esperado aparece recién después de contar: primero se
-                                 cuenta el cajón, después se compara. --}}
+                                 cuenta el cajón, después se compara. Y solo para quien
+                                 arquea: el cajero que cierra el suyo lo hace a ciegas
+                                 (ver Cajas::cierraACiegas), ni siquiera va en el HTML. --}}
+                            @if ($veArqueo)
                             <div x-show="declarado !== null" x-cloak class="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.03]">
                                 <div class="flex justify-between text-theme-sm text-gray-500 dark:text-gray-400">
                                     <span>Efectivo esperado</span>
                                     <b class="text-gray-800 dark:text-white/90">{{ Config::importe($resumen['esperado']) }}</b>
                                 </div>
                             </div>
+                            @endif
 
                             {{-- Vacío hasta que se cuente de verdad: sin esto, el
                                  campo ya venía igualado al esperado y cerrar sin
@@ -346,6 +355,7 @@
                                     required autofocus />
                             </x-form.campo>
 
+                            @if ($veArqueo)
                             <div x-show="declarado !== null" x-cloak class="rounded-xl p-4"
                                 :class="(declarado - esperado) === 0
                                     ? 'bg-success-50 dark:bg-success-500/10'
@@ -362,18 +372,19 @@
                                     Falta dinero en el cajón. Explica la diferencia abajo.
                                 </p>
                             </div>
+                            @endif
 
                             <x-form.campo label="Observación" for="cierre_observacion" name="observacion"
-                                help="Obligatoria si hay diferencia: es lo que justifica el descuadre.">
+                                :help="$veArqueo ? 'Obligatoria si hay diferencia: es lo que justifica el descuadre.' : 'Lo que haya que saber del turno: un vuelto mal dado, un billete dudoso…'">
                                 <x-form.textarea id="cierre_observacion" name="observacion"
-                                    x-bind:required="declarado !== null && Math.round((declarado - esperado) * 100) !== 0"
+                                    x-bind:required="esperado !== null && declarado !== null && Math.round((declarado - esperado) * 100) !== 0"
                                     placeholder="Sin novedad / faltó vuelto de una venta / …" />
                             </x-form.campo>
 
-                            <x-form.campo label="Queda en el cajón para el siguiente turno" for="fondo_dejado" name="fondo_dejado"
+                            <x-form.campo label="Queda en el cajón para el siguiente turno" for="fondo_dejado" name="fondo_dejado" required
                                 help="El fondo de cambio que no se retira. El próximo turno de esta caja empieza con este monto.">
                                 <x-form.input id="fondo_dejado" name="fondo_dejado" type="number" step="0.01" min="0"
-                                    placeholder="Opcional" />
+                                    placeholder="0.00" required />
                             </x-form.campo>
 
                             <div class="flex justify-end gap-3">
@@ -383,7 +394,7 @@
                         </form>
                     </div>
                 </div>
-            @endpuede
+            @endif
         @endif
     </div>
 @endsection
