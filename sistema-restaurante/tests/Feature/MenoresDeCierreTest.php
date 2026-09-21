@@ -314,7 +314,7 @@ class MenoresDeCierreTest extends TestCase
             ],
             pagos: [['metodo_pago_id' => $this->efectivo(), 'monto' => null]],
         );
-        config(['ventas.excel_max_filas' => 1]);
+        config(['restaurante.excel_max_filas' => 1]);
 
         $this->actingAs($this->admin())->from(route('reportes.productos'))->get(route('reportes.productos.excel'))
             ->assertRedirect(route('reportes.productos'))
