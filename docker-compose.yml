@@ -94,8 +94,8 @@ services:
       --default-time-zone=-04:00
       --explicit_defaults_for_timestamp=OFF
     ports:
-      # 13311: el 13310 es del stack de ventas, y por debajo de 13000 Windows
-      # reserva rangos que cambian en cada reinicio (ver docker-compose.yml).
+      # 13311: por debajo de 13000, Windows reserva rangos que cambian en cada
+      # reinicio y el puerto deja de estar libre sin aviso.
       # Publicado solo en 127.0.0.1: no se alcanza desde fuera de esta máquina.
       - "127.0.0.1:13311:3306"
     volumes:

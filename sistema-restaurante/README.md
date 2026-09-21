@@ -90,10 +90,9 @@ Composer y npm dentro de los contenedores.
 | MySQL | `127.0.0.1:13311` | `root` / la de tu `.env`, base `ventas_db`. Solo desde esta máquina |
 | Vite | puerto 5175 | lo consume el navegador solo; no se abre a mano |
 
-Los puertos van en el rango 82xx para no chocar con los otros proyectos del repositorio, entre
-ellos el stack de ventas (81xx, 13310 y 5174). El de Vite lo decide la variable `VITE_PUERTO`,
-que `vite.config.js` lee (5174 si no está) y que el compose de restaurante pone en 5175: los dos
-stacks montan el mismo código, y sin esa variable los dos Vite pelearían por el mismo puerto.
+Los puertos van en el rango 82xx para no chocar con los otros proyectos del equipo, que ocupan
+el 8000, el 8080 y el 8090. El de Vite lo decide la variable `VITE_PUERTO`, que `vite.config.js`
+lee (5174 si no está) y que el compose pone en 5175.
 
 Adminer queda detrás de un perfil aparte: es un cliente de base de datos sin login propio, y no
 tiene sentido dejarlo escuchando todo el tiempo en un servidor real.
