@@ -512,7 +512,6 @@
 
         <div class="centro tenue">
             <div>¡Gracias por su compra!</div>
-            <div>{{ $comprobante->numero_completo }} · venta #{{ $venta->id }}</div>
         </div>
     </div>
 </body>
