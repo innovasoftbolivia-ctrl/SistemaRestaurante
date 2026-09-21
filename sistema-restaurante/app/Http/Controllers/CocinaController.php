@@ -66,7 +66,19 @@ class CocinaController extends Controller
             'segundos' => self::SEGUNDOS_REFRESCO,
             'minutosAviso' => self::MINUTOS_AVISO,
             'minutosTarde' => self::MINUTOS_TARDE,
+            'soloEntrega' => self::soloEntrega(),
         ]);
+    }
+
+    /**
+     * Quien ve la cocina para llevar los platos (`cocina.entregar`) y no para
+     * cocinarlos (`cocina.ver`): entrega lo listo, no mueve la preparación.
+     */
+    public static function soloEntrega(): bool
+    {
+        $usuario = Auth::user();
+
+        return $usuario !== null && ! $usuario->tienePermiso('cocina.ver');
     }
 
     /** El mismo listado, para el sondeo de la pantalla. */
@@ -118,6 +130,10 @@ class CocinaController extends Controller
         if (! $linea->pasa_por_cocina || ! $this->esDeLaJornada($linea->pedido)) {
             return back()->with('error', 'Ese plato no está en la pantalla de la cocina.');
         }
+
+        // Quien lleva los platos solo entrega lo que la cocina ya terminó.
+        abort_if(self::soloEntrega() && ($datos['estado'] !== PedidoDetalle::ENTREGADO
+            || $linea->estado_cocina !== PedidoDetalle::LISTO), 403, 'Solo puedes marcar entregado lo que la cocina ya dejó listo.');
 
         try {
             Pedidos::actualizarEstadoLinea($linea, $datos['estado'], Auth::user());

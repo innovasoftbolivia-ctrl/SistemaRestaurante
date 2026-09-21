@@ -53,6 +53,13 @@
             </div>
         </div>
 
+        @if ($soloEntrega)
+            <p class="rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-theme-sm text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-400" data-solo-entrega>
+                Ves la cocina para entregar: cuando un pedido pasa a <b>Para entregar</b>, canta su número y
+                toca <b>Entregado</b> al dárselo al cliente. La preparación la mueve la cocina.
+            </p>
+        @endif
+
         <div class="grid grid-cols-1 items-start gap-4 md:grid-cols-3">
             @foreach ($columnas as $clave => $columna)
                 <section data-columna="{{ $clave }}" aria-labelledby="columna-{{ $clave }}"

@@ -35,6 +35,12 @@ class Menu
             $mostrador[] = ['icon' => 'pos', 'name' => 'Punto de venta', 'path' => '/pos'];
         }
 
+        // Quien solo entrega (el cajero): la cocina va junto al mostrador, que
+        // es su pantalla de trabajo, y no arriba de todo.
+        if (! self::puede('cocina.ver') && self::puede('cocina.entregar')) {
+            $mostrador[] = ['icon' => 'cocina', 'name' => 'Cocina', 'path' => '/cocina'];
+        }
+
         if (self::puedeAlguno('caja.abrir', 'caja.cerrar', 'reportes.ver')) {
             $mostrador[] = ['icon' => 'caja', 'name' => 'Caja', 'path' => '/caja'];
         }

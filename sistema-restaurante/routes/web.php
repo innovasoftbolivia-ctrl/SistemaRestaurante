@@ -152,19 +152,25 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
 
     // ---- Cocina ----
     // Sin nada de dinero: la cocina solo ve qué preparar y mueve su estado.
-    Route::middleware('permiso:cocina.ver')->group(function () {
+    // `cocina.entregar` es para quien lleva los platos desde el mostrador: ve
+    // la misma pantalla y entrega lo listo, pero no toca la preparación.
+    Route::middleware('permiso:cocina.ver,cocina.entregar')->group(function () {
         Route::get('cocina', [CocinaController::class, 'index'])->name('cocina.index');
         // La pantalla pregunta cada pocos segundos: el tope va holgado.
         Route::get('cocina/pendientes', [CocinaController::class, 'pendientes'])
             ->middleware('throttle:120,1')->name('cocina.pendientes');
+        // Un plato suelto: con `cocina.entregar` solo a ENTREGADO (lo decide
+        // el controlador, que es quien sabe a qué estado va).
         Route::post('cocina/lineas/{linea}', [CocinaController::class, 'actualizarEstado'])
             ->name('cocina.estado');
         // Quien lleva los platos entrega el pedido entero de un toque.
-        Route::post('cocina/pedidos/{pedido}/avanzar', [CocinaController::class, 'avanzar'])
-            ->middleware('un.envio')->name('cocina.avanzar');
         Route::post('cocina/pedidos/{pedido}/entregar', [CocinaController::class, 'entregar'])
             ->middleware('un.envio')->name('cocina.entregar');
     });
+
+    // Empezar y marcar listo es de la cocina.
+    Route::post('cocina/pedidos/{pedido}/avanzar', [CocinaController::class, 'avanzar'])
+        ->middleware(['permiso:cocina.ver', 'un.envio'])->name('cocina.avanzar');
 
     Route::middleware('permiso:ventas.registrar,reportes.ver')->group(function () {
         Route::get('ventas', [VentaController::class, 'index'])->name('ventas.index');

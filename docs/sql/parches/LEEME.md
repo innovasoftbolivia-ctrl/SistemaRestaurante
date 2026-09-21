@@ -1,8 +1,12 @@
 # Parches de la base
 
-Aquí van las correcciones del esquema para las bases **ya instaladas**. Hoy no hay ninguno
-pendiente: el esquema completo está en [`../01_schema_mysql.sql`](../01_schema_mysql.sql) y una
-instalación nueva nace con todo.
+Aquí van las correcciones de la base para las bases **ya instaladas**. Una instalación nueva nace
+con todo: el esquema completo está en [`../01_schema_mysql.sql`](../01_schema_mysql.sql) y los
+datos base en `02_datos_*.sql`.
+
+| Parche | Qué hace |
+|---|---|
+| `2026_09_21_cocina_entregar.sql` | Permiso `cocina.entregar`: el cajero ve la cocina y entrega lo listo |
 
 ## Cómo se agrega uno
 

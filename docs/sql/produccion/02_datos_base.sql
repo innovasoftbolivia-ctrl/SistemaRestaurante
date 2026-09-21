@@ -47,6 +47,7 @@ INSERT INTO permisos (codigo, modulo, descripcion) VALUES
     ('ventas.descuento',     'Ventas',     'Aplicar descuentos sobre el umbral'),
     ('pedidos.registrar',    'Pedidos',    'Cancelar un pedido por cobrar o uno de sus platos'),
     ('cocina.ver',           'Cocina',     'Ver y actualizar el estado de preparación'),
+    ('cocina.entregar',      'Cocina',     'Ver la pantalla de la cocina y marcar entregado lo que ya está listo'),
     ('caja.abrir',           'Caja',       'Abrir sesión de caja'),
     ('caja.cerrar',          'Caja',       'Cerrar sesión de caja'),
     ('reportes.ver',         'Reportes',   'Consultar reportes y dashboard'),
@@ -58,7 +59,7 @@ INSERT INTO permisos (codigo, modulo, descripcion) VALUES
 INSERT INTO rol_permiso (rol_id, permiso_id) SELECT 1, id FROM permisos;
 INSERT INTO rol_permiso (rol_id, permiso_id)
 SELECT 2, id FROM permisos
- WHERE codigo IN ('ventas.registrar','caja.abrir','pedidos.registrar');
+ WHERE codigo IN ('ventas.registrar','caja.abrir','pedidos.registrar','cocina.entregar');
 INSERT INTO rol_permiso (rol_id, permiso_id)
 SELECT 4, id FROM permisos WHERE codigo IN ('cocina.ver');
 -- Sin `reportes.ver`: las ventas y las cajas son de todos los cajeros, y eso

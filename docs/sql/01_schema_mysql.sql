@@ -1583,14 +1583,17 @@ SELECT j.dia                   AS dia,
 --  que nacer registrados: sin eso, el script los vería pendientes y los
 --  aplicaría a ciegas.
 --
---  Hoy la lista está vacía: este esquema es el punto de partida. Cada parche
---  nuevo de docs/sql/parches se agrega también aquí (lo exige
---  MenoresDeCierreTest).
+--  Cada parche nuevo de docs/sql/parches se agrega también aquí (lo exige
+--  MenoresDeCierreTest). Los que solo agregan datos (un permiso nuevo) los
+--  trae 02_datos_*.sql, que se carga siempre junto a este archivo.
 -- =============================================================================
 
 CREATE TABLE parches_aplicados (
     archivo     VARCHAR(150) NOT NULL PRIMARY KEY,
     aplicado_en DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+INSERT INTO parches_aplicados (archivo) VALUES
+    ('2026_09_21_cocina_entregar.sql');
 
 

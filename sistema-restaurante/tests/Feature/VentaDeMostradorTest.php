@@ -471,8 +471,9 @@ class VentaDeMostradorTest extends TestCase
         $this->assertSame([PedidoDetalle::ENTREGADO, PedidoDetalle::ENTREGADO], [$uno->fresh()->estado_cocina, $otro->fresh()->estado_cocina]);
         $this->assertNull($tanda(), 'el pedido entregado sigue en la pantalla');
 
-        // El cajero no entra a la cocina, tampoco para entregar.
-        $this->actingAs($this->cajero())->post(route('cocina.entregar', $pedido))->assertForbidden();
+        // El cajero también entrega (`cocina.entregar`); aquí ya no queda nada.
+        $this->actingAs($this->cajero())->post(route('cocina.entregar', $pedido))
+            ->assertSessionHas('exito', "{$pedido->numero_visible} no tenía nada listo para entregar.");
     }
 
     // ------------------------------------------------------- la corrección

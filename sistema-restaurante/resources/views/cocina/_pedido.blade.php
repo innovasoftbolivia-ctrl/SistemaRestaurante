@@ -9,6 +9,8 @@
     $llevar = $pedido->tipo === Pedido::LLEVAR;
     $desde = $tanda['desde']?->getTimestampMs() ?? now()->getTimestampMs();
     $porImprimir = Comandas::hayPendiente($pedido);
+    // Quien lleva los platos (`cocina.entregar`): entrega lo listo y nada más.
+    $soloEntrega ??= false;
 @endphp
 
 {{-- Un pedido del tablero. Arriba el número (lo que se canta), el destino y el
@@ -63,6 +65,7 @@
                     PedidoDetalle::LISTO => 'listo',
                     default => 'entregado',
                 };
+                $puedeTocar = $siguiente && (! $soloEntrega || $siguiente === PedidoDetalle::ENTREGADO);
             @endphp
             <li class="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
                 {{-- El plato suelto: tocarlo lo avanza solo a él. Sin
@@ -71,10 +74,10 @@
                 <form method="POST" action="{{ route('cocina.estado', $linea) }}">
                     @csrf
                     <input type="hidden" name="estado" value="{{ $siguiente }}" />
-                    <button type="submit" @disabled(! $siguiente)
-                        aria-label="{{ Config::cantidad($linea->cantidad) }} × {{ $linea->descripcion }}: {{ mb_strtolower($linea->estado_visible) }}. Marcar como {{ $enPalabras }}"
-                        title="Toca para marcarlo {{ $enPalabras }}"
-                        class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none dark:hover:bg-white/[0.03] dark:focus-visible:bg-white/[0.03]">
+                    <button type="submit" @disabled(! $puedeTocar)
+                        aria-label="{{ Config::cantidad($linea->cantidad) }} × {{ $linea->descripcion }}: {{ mb_strtolower($linea->estado_visible) }}{{ $puedeTocar ? '. Marcar como '.$enPalabras : '' }}"
+                        title="{{ $puedeTocar ? 'Toca para marcarlo '.$enPalabras : 'Lo mueve la cocina' }}"
+                        class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-white/[0.03] dark:focus-visible:bg-white/[0.03]">
                         <span aria-hidden="true" class="flex h-7 w-7 flex-none items-center justify-center rounded-full {{ match ($linea->estado_cocina) {
                             PedidoDetalle::EN_PREPARACION => 'bg-warning-100 text-warning-700 dark:bg-warning-500/20 dark:text-orange-400',
                             PedidoDetalle::LISTO => 'bg-success-500 text-white',
@@ -111,7 +114,13 @@
     @endif
 
     <footer class="flex items-center gap-2 border-t border-gray-100 px-4 py-3 dark:border-gray-800">
-        {{-- El botón del pedido entero: lo pasa a la columna siguiente. --}}
+        {{-- El botón del pedido entero: lo pasa a la columna siguiente. Quien
+             solo entrega lo ve recién cuando todo está listo. --}}
+        @if ($soloEntrega && $columna !== 'entregar')
+            <p class="flex min-h-12 flex-1 items-center justify-center rounded-xl bg-gray-100 px-4 text-theme-sm font-medium text-gray-500 dark:bg-white/[0.05] dark:text-gray-400" data-en-cocina>
+                {{ $columna === 'hacer' ? 'Esperando a la cocina' : 'La cocina lo está preparando' }}
+            </p>
+        @else
         <form method="POST" class="flex-1"
             action="{{ $columna === 'entregar' ? route('cocina.entregar', $pedido) : route('cocina.avanzar', $pedido) }}">
             @csrf
@@ -133,9 +142,13 @@
                 } }}
             </button>
         </form>
+        @endif
 
         {{-- La comanda en papel, por si hace falta: la de lo que todavía no
-             salió, o de nuevo la completa si se perdió. --}}
+             salió, o de nuevo la completa si se perdió. Es de la cocina: quien
+             solo entrega no la imprime desde aquí (la del cobro sale en el
+             mostrador). --}}
+        @unless ($soloEntrega)
         <form method="POST" target="_blank"
             action="{{ route($porImprimir ? 'pedidos.comanda.imprimir' : 'pedidos.comanda.reimprimir', $pedido) }}">
             @csrf
@@ -149,5 +162,6 @@
                 <span aria-hidden="true">{{ $porImprimir ? 'Imprimir' : 'Reimprimir' }}</span>
             </button>
         </form>
+        @endunless
     </footer>
 </article>

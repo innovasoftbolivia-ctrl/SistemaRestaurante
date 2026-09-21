@@ -57,12 +57,11 @@ class CocinaTest extends TestCase
     }
 
     /** Quien vende y toma pedidos no necesita la pantalla de la cocina. */
-    public function test_el_cajero_no_entra_a_la_cocina(): void
+    /** El cajero entra a la cocina para entregar (ver EntregaDesdeElMostradorTest). */
+    public function test_el_cajero_entra_a_la_cocina(): void
     {
-        foreach (['cajero1'] as $quien) {
-            $this->actingAs($this->usuario($quien))->get(route('cocina.index'))->assertForbidden();
-            $this->actingAs($this->usuario($quien))->getJson(route('cocina.pendientes'))->assertForbidden();
-        }
+        $this->actingAs($this->usuario('cajero1'))->get(route('cocina.index'))->assertOk();
+        $this->actingAs($this->usuario('cajero1'))->getJson(route('cocina.pendientes'))->assertOk();
     }
 
     // ---------------------------------------------------------- lo que se ve
