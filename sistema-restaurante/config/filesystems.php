@@ -38,9 +38,13 @@ return [
             'report' => false,
         ],
 
+        // Las fotos del menú. En un hosting compartido (InfinityFree) no se
+        // puede crear el enlace public/storage -> storage/app/public: con
+        // FOTOS_EN_PUBLIC=true se guardan directo en public/storage, que es
+        // donde el navegador las busca.
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
+            'root' => env('FOTOS_EN_PUBLIC', false) ? public_path('storage') : storage_path('app/public'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,
