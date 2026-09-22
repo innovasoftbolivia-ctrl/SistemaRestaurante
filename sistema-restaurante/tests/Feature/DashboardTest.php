@@ -87,7 +87,7 @@ class DashboardTest extends TestCase
     {
         $respuesta = $this->actingAs($this->cajero())->get('/inicio')->assertOk();
 
-        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock', 'cajasAbiertas'] as $bloque) {
+        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
             $this->assertNull($respuesta->viewData($bloque), "el cajero no debería ver «{$bloque}»");
         }
         $this->assertFalse($respuesta->viewData('gestion'));
@@ -101,16 +101,20 @@ class DashboardTest extends TestCase
 
         $respuesta = $this->actingAs($this->admin())->get('/inicio')->assertOk();
 
-        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock', 'cajasAbiertas'] as $bloque) {
+        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
             $this->assertNotNull($respuesta->viewData($bloque), "falta «{$bloque}» en el panel");
         }
         $this->assertTrue($respuesta->viewData('gestion'));
         $respuesta->assertSee('data-se-actualiza', false)
             ->assertSee('data-formas-de-pago', false)
             ->assertSee('data-ultimos-pedidos', false)
-            ->assertSee('data-cocina-ahora', false)
+            ->assertSee('data-cocina-desglose', false)
             ->assertSee('data-top-hoy', false)
-            ->assertSee('data-por-comprar', false);
+            ->assertSee('data-kpi="stock"', false)
+            // Lo que ya está a la vista en otro lado no se repite.
+            ->assertDontSee('Lo que llevo vendido hoy')
+            ->assertDontSee('data-cocina-ahora', false)
+            ->assertDontSee('data-por-comprar', false);
     }
 
     /** La cocina no vende, así que no tiene ventas propias que mostrar. */
@@ -137,13 +141,14 @@ class DashboardTest extends TestCase
 
     public function test_sin_turno_abierto_lo_dice(): void
     {
-        $this->actingAs($this->admin())
+        $this->actingAs($this->cajero())
             ->get('/inicio')
             ->assertOk()
+            ->assertSee('Mi turno')
             ->assertSee('Sin caja abierta');
 
         $this->assertNull(
-            $this->actingAs($this->admin())->get('/inicio')->viewData('sesion')
+            $this->actingAs($this->cajero())->get('/inicio')->viewData('sesion')
         );
     }
 

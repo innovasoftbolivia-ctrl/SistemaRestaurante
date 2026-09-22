@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Pedido;
 use App\Models\PedidoDetalle;
-use App\Models\SesionCaja;
 use App\Models\Usuario;
 use App\Services\Cajas;
 use App\Support\AlertasStock;
@@ -24,10 +23,12 @@ use Illuminate\View\View;
  *   - el panel del negocio pide `reportes.ver`, y lo que hay que comprar,
  *     `inventario.gestionar`.
  *
- * El panel es lo que pasa AHORA: lo vendido hoy frente al mismo día de la
- * semana pasada, las ventas por hora, cómo se cobra, los últimos pedidos, la
- * cocina y lo más pedido. La historia (el gráfico de semanas, el listado de
- * ventas) está en Reportes y en Ventas.
+ * El panel es lo que pasa AHORA, sin repetir lo que ya está a la vista (las
+ * cajas abiertas en la barra de arriba, lo que falta comprar en la campana):
+ * cuatro números —vendido frente al mismo día de la semana pasada, ventas,
+ * cocina, por comprar—, las ventas por hora, cómo se cobra, los últimos
+ * pedidos y lo más pedido. El turno propio es del cajero. La historia (el
+ * gráfico de semanas, el listado de ventas) está en Reportes y en Ventas.
  *
  * Un cajero entra al mostrador, no aquí (ver {@see Menu::inicio()}), pero
  * puede abrir la portada para ver cómo va su turno.
@@ -66,7 +67,6 @@ class DashboardController extends Controller
             'cocina' => $gestion ? $this->cocina() : null,
             'top' => $gestion ? $this->loMasVendido($jornada) : null,
             'stock' => $gestion ? AlertasStock::para($usuario) : null,
-            'cajasAbiertas' => $gestion ? $this->cajasAbiertas() : null,
             'segundos' => self::SEGUNDOS_REFRESCO,
             'veArqueo' => CajaController::arquea($usuario),
         ]);
@@ -278,11 +278,5 @@ class DashboardController extends Controller
             ->orderByDesc('monto')
             ->limit(5)
             ->get();
-    }
-
-    /** Los turnos abiertos ahora, con el nombre de su caja. */
-    private function cajasAbiertas(): Collection
-    {
-        return SesionCaja::where('estado', 'ABIERTA')->with('caja:id,nombre')->get(['id', 'caja_id']);
     }
 }

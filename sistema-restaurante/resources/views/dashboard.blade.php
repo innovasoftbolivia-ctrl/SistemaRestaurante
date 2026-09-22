@@ -43,50 +43,22 @@
     <div class="space-y-6"
         @if ($gestion) x-data x-init="setInterval(() => { if (document.visibilityState === 'visible') location.reload() }, {{ $segundos * 1000 }})" data-se-actualiza @endif>
 
-        {{-- Saludo --}}
-        <div class="{{ $tarjeta }} p-5 lg:p-6">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h2 class="text-lg font-semibold text-gray-800 dark:text-white/90">
-                        @php $hora = (int) now()->format('G'); @endphp
-                        {{ $hora < 12 ? 'Buenos días' : ($hora < 19 ? 'Buenas tardes' : 'Buenas noches') }},
-                        {{ $usuario->empleado?->nombres ?? $usuario->usuario }}
-                    </h2>
-                    <p class="text-theme-sm text-gray-500 dark:text-gray-400">
-                        {{ ucfirst(now()->locale('es')->isoFormat('dddd D [de] MMMM [de] YYYY')) }} ·
-                        {{ $usuario->empleado?->cargo?->nombre }}, rol {{ $usuario->rol?->nombre }}
-                    </p>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-2">
-                    @if ($gestion)
-                        @if ($cajasAbiertas->isEmpty())
-                            <span class="rounded-full bg-gray-100 px-3 py-1 text-theme-xs font-medium text-gray-600 dark:bg-white/5 dark:text-gray-400" data-cajas-abiertas="0">Sin caja abierta</span>
-                        @else
-                            <span class="inline-flex items-center gap-1.5 rounded-full bg-success-50 px-3 py-1 text-theme-xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-500" data-cajas-abiertas="{{ $cajasAbiertas->count() }}">
-                                <span class="h-1.5 w-1.5 rounded-full bg-success-500" aria-hidden="true"></span>
-                                {{ $cajasAbiertas->count() === 1 ? ($cajasAbiertas->first()->caja?->nombre ?? 'Caja').' abierta' : $cajasAbiertas->count().' cajas abiertas' }}
-                            </span>
-                        @endif
-                        <span class="rounded-full bg-gray-100 px-3 py-1 font-mono text-theme-xs font-medium text-gray-600 dark:bg-white/5 dark:text-gray-400"
-                            x-data="{ hora: '{{ now()->format('H:i') }}' }"
-                            x-init="setInterval(() => hora = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false }), 15000)"
-                            x-text="hora" title="Se actualiza sola cada minuto">{{ now()->format('H:i') }}</span>
-                    @endif
-                    @puede('ventas.registrar')
-                        <x-ui.button size="sm" :href="route('pos.index')">Ir al mostrador</x-ui.button>
-                    @endpuede
-                    @puede('reportes.ver')
-                        <x-ui.button size="sm" variant="outline" :href="route('reportes.ventas')">
-                            Ver reportes
-                        </x-ui.button>
-                    @endpuede
-                </div>
-            </div>
+        {{-- Saludo: el nombre y la fecha. Las cajas abiertas ya están en la barra
+             de arriba, y el mostrador y los reportes, en el menú. --}}
+        <div>
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white/90">
+                @php $hora = (int) now()->format('G'); @endphp
+                {{ $hora < 12 ? 'Buenos días' : ($hora < 19 ? 'Buenas tardes' : 'Buenas noches') }},
+                {{ $usuario->empleado?->nombres ?? $usuario->usuario }}
+            </h2>
+            <p class="text-theme-sm text-gray-500 dark:text-gray-400">
+                {{ ucfirst(now()->locale('es')->isoFormat('dddd D [de] MMMM [de] YYYY')) }}
+            </p>
         </div>
 
-        {{-- Mi turno --}}
-        @if ($sesion || $mias)
+        {{-- Mi turno: del cajero. El administrador ve su caja en la barra de
+             arriba y lo vendido en el panel. --}}
+        @if (! $gestion && ($sesion || $mias))
             <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div class="{{ $tarjeta }} p-5 lg:col-span-2">
                     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -124,6 +96,9 @@
                     </div>
 
                     <div class="mt-4 flex flex-wrap gap-2">
+                        @puede('ventas.registrar')
+                            <x-ui.button size="xs" :href="route('pos.index')">Ir al mostrador</x-ui.button>
+                        @endpuede
                         @if ($sesion)
                             <x-ui.button size="xs" variant="outline" :href="route('caja.show', $sesion)">
                                 Ver turno y cerrar
@@ -182,36 +157,41 @@
                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">ticket promedio {{ Config::importe($hoy['hoy']['ticket']) }}</p>
                 </div>
 
-                <div class="{{ $tarjeta }} p-5" data-kpi="cocina">
+                @php
+                    $enCocina = $cocina['hacer'] + $cocina['cocinando'];
+                    $enlace = 'block transition hover:border-brand-300 dark:hover:border-brand-800';
+                @endphp
+                @php $veCocina = $usuario->tienePermiso('cocina.ver'); @endphp
+                <{{ $veCocina ? 'a' : 'div' }} @if ($veCocina) href="{{ route('cocina.index') }}" @endif
+                    class="{{ $tarjeta }} {{ $veCocina ? $enlace : '' }} p-5" data-kpi="cocina">
                     <p class="mb-1 {{ $rotulo }}">En cocina</p>
-                    @php $enCocina = $cocina['hacer'] + $cocina['cocinando']; @endphp
                     <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">
                         {{ $enCocina }} {{ $enCocina === 1 ? 'pedido' : 'pedidos' }}
                     </p>
-                    @if ($cocina['espera'] !== null)
-                        <p class="mt-1 text-theme-xs font-medium {{ $cocina['espera'] >= CocinaController::MINUTOS_TARDE ? 'text-error-600 dark:text-error-400' : ($cocina['espera'] >= CocinaController::MINUTOS_AVISO ? 'text-warning-700 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400') }}">
+                    <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400" data-cocina-desglose>
+                        {{ $cocina['hacer'] }} por hacer · {{ $cocina['cocinando'] }} cocinando · {{ $cocina['entregar'] }} para entregar
+                    </p>
+                    @if ($cocina['espera'] !== null && $cocina['espera'] >= CocinaController::MINUTOS_AVISO)
+                        <p class="mt-0.5 text-theme-xs font-medium {{ $cocina['espera'] >= CocinaController::MINUTOS_TARDE ? 'text-error-600 dark:text-error-400' : 'text-warning-700 dark:text-orange-400' }}">
                             el más viejo espera hace {{ $cocina['espera'] }} min
                         </p>
-                    @else
-                        <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">nada esperando</p>
                     @endif
-                </div>
+                </{{ $veCocina ? 'a' : 'div' }}>
 
                 @if ($stock !== null)
-                    <div class="{{ $tarjeta }} p-5" data-kpi="stock">
+                    <a href="{{ route('inventario.index') }}" class="{{ $tarjeta }} {{ $enlace }} p-5" data-kpi="stock">
                         <p class="mb-1 {{ $rotulo }}">Por comprar</p>
                         <p class="text-title-sm font-semibold {{ $stock['total'] > 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">
                             {{ $stock['total'] }} {{ $stock['total'] === 1 ? 'producto' : 'productos' }}
                         </p>
                         @if ($stock['total'] > 0)
-                            @php $primero = $stock['productos']->first(); @endphp
                             <p class="mt-1 truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                                {{ $primero->nombre }}: {{ (float) $primero->stock_actual <= 0 ? 'sin stock' : 'quedan '.Config::cantidad($primero->stock_actual) }}
+                                {{ $stock['productos']->take(2)->map(fn ($p) => $p->nombre.': '.((float) $p->stock_actual <= 0 ? 'sin stock' : 'quedan '.Config::cantidad($p->stock_actual)))->implode(' · ') }}
                             </p>
                         @else
                             <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">todo sobre su mínimo</p>
                         @endif
-                    </div>
+                    </a>
                 @else
                     <div class="{{ $tarjeta }} p-5" data-kpi="listos">
                         <p class="mb-1 {{ $rotulo }}">Para entregar</p>
@@ -290,46 +270,6 @@
                             <li class="px-6 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no hay pedidos hoy.</li>
                         @endforelse
                     </ul>
-                </div>
-
-                <div class="space-y-6">
-                    <div class="{{ $tarjeta }} p-6" data-cocina-ahora>
-                        <div class="flex items-center justify-between gap-3">
-                            <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Cocina ahora</h2>
-                            @puede('cocina.ver')
-                                <a href="{{ route('cocina.index') }}" class="text-theme-sm font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400">Ver cocina</a>
-                            @endpuede
-                        </div>
-                        <div class="mt-4 grid grid-cols-3 gap-2 text-center">
-                            @foreach ([['hacer', 'Por hacer', 'text-gray-800 dark:text-white/90'], ['cocinando', 'Cocinando', 'text-warning-700 dark:text-orange-400'], ['entregar', 'Para entregar', 'text-success-700 dark:text-success-500']] as [$clave, $texto, $color])
-                                <div class="rounded-xl bg-gray-50 px-2 py-3 dark:bg-white/[0.03]">
-                                    <p class="text-title-sm font-semibold tabular-nums {{ $color }}">{{ $cocina[$clave] }}</p>
-                                    <p class="text-theme-xs text-gray-500 dark:text-gray-400">{{ $texto }}</p>
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-
-                    @if ($stock !== null)
-                        <div class="{{ $tarjeta }} p-6" data-por-comprar>
-                            <div class="flex items-center justify-between gap-3">
-                                <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Por comprar</h2>
-                                <a href="{{ route('inventario.index') }}" class="text-theme-sm font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400">Inventario</a>
-                            </div>
-                            <ul class="mt-3 space-y-2">
-                                @forelse ($stock['productos']->take(4) as $producto)
-                                    <li class="flex items-baseline justify-between gap-3 text-theme-sm">
-                                        <a href="{{ route('inventario.kardex', $producto) }}" class="min-w-0 truncate text-gray-700 hover:text-brand-500 dark:text-gray-300">{{ $producto->nombre }}</a>
-                                        <span class="flex-none tabular-nums {{ (float) $producto->stock_actual <= 0 ? 'text-error-600 dark:text-error-400' : 'text-warning-700 dark:text-orange-400' }}">
-                                            {{ Config::cantidad($producto->stock_actual) }} / mín. {{ Config::cantidad($producto->stock_minimo) }}
-                                        </span>
-                                    </li>
-                                @empty
-                                    <li class="text-theme-sm text-gray-500 dark:text-gray-400">Todo está sobre su stock mínimo.</li>
-                                @endforelse
-                            </ul>
-                        </div>
-                    @endif
                 </div>
 
                 <div class="{{ $tarjeta }}" data-top-hoy>
