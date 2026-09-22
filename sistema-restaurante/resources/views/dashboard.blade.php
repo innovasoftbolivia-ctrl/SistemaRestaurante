@@ -203,8 +203,9 @@
             {{-- -------------------------------------- por hora y formas de pago --}}
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
                 {{-- Un gráfico, tres vistas. Los tres se dibujan al cargar y los
-                     botones solo muestran uno: el que estaba oculto se ajusta a su
-                     ancho al aparecer (`seguirAlContenedor` en graficos.js). --}}
+                     botones solo muestran uno. El que estaba oculto se dibujó sin
+                     ancho: al mostrarlo se avisa un cambio de tamaño de la
+                     ventana, que es lo que ApexCharts escucha para redibujarse. --}}
                 <div class="{{ $tarjeta }} xl:col-span-2" data-grafico-ventas x-data="{ vista: '7' }">
                     <div class="flex flex-wrap items-start justify-between gap-3 px-6 pt-5">
                         <div>
@@ -218,7 +219,7 @@
                         @if ($graficos)
                             <div class="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-white/5" role="group" aria-label="Período del gráfico">
                                 @foreach ($vistas as $clave => $vista)
-                                    <button type="button" @click="vista = '{{ $clave }}'" :aria-pressed="vista === '{{ $clave }}'"
+                                    <button type="button" @click="vista = '{{ $clave }}'; $nextTick(() => window.dispatchEvent(new Event('resize')))" :aria-pressed="vista === '{{ $clave }}'"
                                         data-vista="{{ $clave }}"
                                         class="rounded-md px-3 py-1.5 text-theme-sm font-medium transition"
                                         :class="vista === '{{ $clave }}' ? 'bg-white text-gray-900 shadow-theme-xs dark:bg-gray-800 dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white'">

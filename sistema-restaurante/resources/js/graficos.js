@@ -138,15 +138,7 @@ function seguirAlContenedor(el, grafico) {
     const observador = new ResizeObserver(() => {
         const ancho = Math.round(el.clientWidth);
 
-        // Oculto (una vista del gráfico que no está a la vista): al volver a
-        // mostrarse se redibuja siempre, aunque recupere el mismo ancho, por si
-        // ApexCharts lo encogió mientras tanto al cambiar la ventana.
-        if (ancho === 0) {
-            anchoPrevio = 0;
-            return;
-        }
-
-        if (ancho === anchoPrevio || pendiente) {
+        if (ancho === anchoPrevio || ancho === 0 || pendiente) {
             return;
         }
 
