@@ -52,12 +52,13 @@ class CompraSugerida
 
         $ids = $productos->pluck('id');
         $vendidas = self::vendidas($ids);
+        $porReponer = self::porReponer($ids);
         $ultimoProveedor = self::ultimoProveedor($ids);
         $proveedores = Proveedor::whereIn('id', $ultimoProveedor->filter()->unique())->get()->keyBy('id');
 
         return $productos
-            ->map(function (Producto $p) use ($vendidas, $ultimoProveedor, $proveedores) {
-                $linea = self::linea($p, (float) ($vendidas[$p->id] ?? 0));
+            ->map(function (Producto $p) use ($vendidas, $porReponer, $ultimoProveedor, $proveedores) {
+                $linea = self::linea($p, (float) ($vendidas[$p->id] ?? 0), (float) ($porReponer[$p->id] ?? 0));
                 $proveedorId = (int) ($ultimoProveedor[$p->id] ?? 0);
                 // Un proveedor desactivado no recibe compras: se elige otro.
                 $linea['proveedor_id'] = ($proveedores[$proveedorId] ?? null)?->activo ? $proveedorId : 0;
@@ -82,14 +83,16 @@ class CompraSugerida
      *
      * @return array<string, mixed>
      */
-    public static function linea(Producto $p, float $vendidasEnHistoria): array
+    public static function linea(Producto $p, float $vendidasEnHistoria, float $porReponer = 0): array
     {
         $stock = (float) $p->stock_actual;
         $minimo = (float) $p->stock_minimo;
         $porSemana = $vendidasEnHistoria / self::DIAS_HISTORIA * self::DIAS_COBERTURA;
 
         $objetivo = $porSemana > 0 ? $minimo + $porSemana : max($minimo * 2, 1);
-        $falta = max(0, $objetivo - $stock);
+        // Lo que el proveedor todavía debe (una devolución PENDIENTE) va a
+        // llegar: pedirlo de nuevo dejaba el doble cuando llegara.
+        $falta = max(0, $objetivo - $stock - $porReponer);
 
         $contenido = (float) $p->contenido_empaque;
         $conEmpaque = $contenido > 1 && $p->nombre_empaque;
@@ -101,6 +104,7 @@ class CompraSugerida
             'producto' => $p,
             'stock' => $stock,
             'minimo' => $minimo,
+            'por_reponer' => $porReponer,
             'por_semana' => round($porSemana, 1),
             'empaques' => $empaques,
             'cantidad' => $cantidad,
@@ -125,7 +129,9 @@ class CompraSugerida
                 // En cajas cerradas si viene en caja; si no, en unidades.
                 'empaques' => $l['empaques'] > 0 ? (string) $l['empaques'] : '',
                 'sueltas' => $l['empaques'] > 0 ? '' : (string) (int) $l['cantidad'],
-                'costo' => $l['costo'] !== null ? number_format($l['costo'], 2, '.', '') : '',
+                // Hasta cuatro decimales (el costo por unidad de una caja), sin
+                // ceros de más.
+                'costo' => $l['costo'] !== null ? preg_replace('/(\.\d\d)0+$/', '$1', number_format($l['costo'], 4, '.', '')) : '',
                 'costo_por' => 'unidad',
             ])
             ->values()
@@ -147,6 +153,18 @@ class CompraSugerida
             ->groupBy('d.producto_id')
             ->selectRaw('d.producto_id, SUM(d.cantidad) AS unidades')
             ->pluck('unidades', 'producto_id');
+    }
+
+    /** Lo que los proveedores deben reponer de cada producto (devoluciones PENDIENTE). */
+    private static function porReponer(Collection $ids): Collection
+    {
+        return DB::table('devolucion_compra_detalle as d')
+            ->join('devoluciones_compra as dc', 'dc.id', '=', 'd.devolucion_compra_id')
+            ->where('dc.espera', 'PENDIENTE')
+            ->whereIn('d.producto_id', $ids)
+            ->groupBy('d.producto_id')
+            ->selectRaw('d.producto_id, SUM(d.cantidad - d.cantidad_repuesta) AS debe')
+            ->pluck('debe', 'producto_id');
     }
 
     /** El proveedor de la última compra de cada producto. */

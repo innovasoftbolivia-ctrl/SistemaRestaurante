@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\Auditor;
+use App\Support\ReglaDeClave;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -30,7 +31,7 @@ class PerfilController extends Controller
     {
         $datos = $request->validate([
             'password_actual' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', 'different:password_actual', Password::min(8)],
+            'password' => ['required', 'confirmed', 'different:password_actual', Password::min(8), ReglaDeClave::para($request->user()->usuario)],
         ], [
             'password_actual.current_password' => 'La contraseña actual no es correcta.',
             'password.different' => 'La nueva contraseña tiene que ser distinta de la actual.',

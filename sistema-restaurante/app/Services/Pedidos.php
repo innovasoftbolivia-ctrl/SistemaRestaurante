@@ -418,11 +418,31 @@ class Pedidos
                 'cerrado_por' => $usuario->id,
             ]);
 
+            // Lo del mostrador que ya se entregó —la gaseosa del cobro que
+            // después se anuló— se lo llevó el cliente: al anular volvió al
+            // stock, y con el pedido cancelado no se vuelve a cobrar. Sale del
+            // stock como consumido sin cobrar. Por producto y en orden de id,
+            // el mismo en que bloquean las ventas.
+            $consumido = $actual->detalle()
+                ->where('pasa_por_cocina', false)
+                ->where('estado_cocina', PedidoDetalle::ENTREGADO)
+                ->whereHas('producto', fn ($q) => $q->where('controla_stock', true))
+                ->get()
+                ->groupBy('producto_id')
+                ->map(fn ($lineas) => (float) $lineas->sum('cantidad'))
+                ->sortKeys();
+
+            foreach ($consumido as $productoId => $cantidad) {
+                Inventario::mover((int) $productoId, $cantidad, 'SALIDA', 'AJUSTE', $usuario->id, [
+                    'motivo' => mb_substr("Entregado y no cobrado: {$actual->numero_visible} cancelado", 0, 255),
+                ]);
+            }
+
             Auditor::registrar('PEDIDO_CANCELADO', 'pedidos', $actual->id, [
                 'motivo' => $motivo,
                 'numero' => $actual->numero_dia,
                 'platos_empezados' => $empezados,
-            ], $usuario->id);
+            ] + ($consumido->isNotEmpty() ? ['consumido_sin_cobrar' => $consumido->all()] : []), $usuario->id);
 
             return $actual->fresh();
         });

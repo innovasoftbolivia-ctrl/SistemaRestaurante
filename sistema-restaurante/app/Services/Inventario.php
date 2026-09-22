@@ -98,6 +98,12 @@ class Inventario
             throw new RuntimeException('Un ajuste necesita el motivo: sin él, es un descuadre sin explicación.');
         }
 
+        // Un plato no tiene stock: un ajuste le creaba movimientos, y al
+        // activarle el inventario ya no se pedía el stock inicial.
+        if (! $producto->controla_stock) {
+            throw new RuntimeException("«{$producto->nombre}» no lleva inventario.");
+        }
+
         return DB::transaction(function () use ($producto, $contado, $motivo, $usuario) {
             $actual = self::bloquear($producto->id);
             $diferencia = round($contado - $actual, 3);

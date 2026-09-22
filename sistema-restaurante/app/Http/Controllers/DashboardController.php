@@ -57,7 +57,9 @@ class DashboardController extends Controller
         return view('dashboard', [
             'title' => 'Inicio',
             'usuario' => $usuario,
-            'sesion' => Cajas::sesionDe($usuario)?->loadCount('ventas'),
+            // Las ventas vigentes del turno: la tarjeta de al lado ya excluye las
+            // anuladas, y con ellas los dos números no coincidían.
+            'sesion' => Cajas::sesionDe($usuario)?->loadCount(['ventas' => fn ($q) => $q->where('estado', '<>', 'ANULADA')]),
             'mias' => $vende ? $this->ventasPropias($usuario) : null,
             'gestion' => $gestion,
             'hoy' => $gestion ? $this->comparativaDelDia($jornada) : null,
@@ -103,8 +105,16 @@ class DashboardController extends Controller
      */
     private function comparativaDelDia(Carbon $jornada): array
     {
+        // Hasta la MISMA HORA de la jornada de hace una semana: a las 13:00 el
+        // día va a medias, y contra el día completo daba −80 % todas las
+        // mañanas cuando en realidad iba parejo.
+        [$inicioHoy] = Config::momentosDeJornadas($jornada, $jornada);
+        $transcurrido = max(0, Carbon::parse($inicioHoy)->diffInSeconds(now()));
+        $antesDia = $jornada->copy()->subWeek();
+        [$inicioAntes] = Config::momentosDeJornadas($antesDia, $antesDia);
+
         $hoy = $this->totalesDe($jornada);
-        $antes = $this->totalesDe($jornada->copy()->subWeek());
+        $antes = $this->totalesDe($antesDia, Carbon::parse($inicioAntes)->addSeconds((int) $transcurrido));
 
         return [
             'hoy' => $hoy,
@@ -122,10 +132,12 @@ class DashboardController extends Controller
      *
      * Mismo motivo que `ventasPropias()`: rango explícito y no `whereDate()`.
      */
-    private function totalesDe(Carbon $dia): array
+    private function totalesDe(Carbon $dia, ?Carbon $hastaMomento = null): array
     {
+        [$desde, $hasta] = Config::momentosDeJornadas($dia, $dia);
+
         $fila = DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($dia, $dia))
+            ->whereBetween('fecha', [$desde, $hastaMomento ? min(Carbon::parse($hasta), $hastaMomento) : $hasta])
             ->where('estado', '<>', 'ANULADA')
             ->selectRaw('COUNT(*) AS operaciones, COALESCE(SUM(total), 0) AS monto')
             ->first();
@@ -228,6 +240,16 @@ class DashboardController extends Controller
         }
         $antes = $sumar($jornada->copy()->subWeeks(self::SEMANAS_PROMEDIO), $jornada->copy()->subWeek(), $dias);
 
+        // Se promedia entre los días que tuvieron ventas: con menos de cuatro
+        // semanas de historia, dividir por cuatro dejaba «un lunes normal» muy
+        // por debajo de lo real.
+        $conVentas = max(1, DB::table('ventas')
+            ->whereBetween('fecha', Config::momentosDeJornadas($jornada->copy()->subWeeks(self::SEMANAS_PROMEDIO), $jornada->copy()->subWeek()))
+            ->whereIn(DB::raw(Config::jornadaSql('fecha')), $dias)
+            ->where('estado', '<>', 'ANULADA')
+            ->distinct()
+            ->count(DB::raw(Config::jornadaSql('fecha'))));
+
         $corte = Config::horaCorteJornada();
         $orden = array_map(fn ($i) => ($corte + $i) % 24, range(0, 23));
         $abierto = array_values(array_filter($orden, fn ($h) => $mes->has($h) || $hoy->has($h)));
@@ -241,7 +263,7 @@ class DashboardController extends Controller
             'categorias' => array_map(fn ($h) => $h.'h', $horario),
             'series' => [
                 ['name' => 'Hoy', 'data' => array_map(fn ($h) => round($hoy[$h] ?? 0, 2), $horario)],
-                ['name' => 'Un '.$dia.' normal', 'data' => array_map(fn ($h) => round(($antes[$h] ?? 0) / self::SEMANAS_PROMEDIO, 2), $horario)],
+                ['name' => 'Un '.$dia.' normal', 'data' => array_map(fn ($h) => round(($antes[$h] ?? 0) / $conVentas, 2), $horario)],
             ],
         ];
     }
@@ -334,7 +356,11 @@ class DashboardController extends Controller
             ->join('productos as p', 'p.id', '=', 'd.producto_id')
             ->whereBetween('v.fecha', Config::momentosDeJornadas($jornada, $jornada))
             ->groupBy('p.id', 'p.nombre')
-            ->selectRaw('p.id, p.nombre, SUM(d.cantidad) AS unidades, SUM(d.total_linea) AS monto')
+            // Lo cobrado por la línea: con el descuento de la venta repartido,
+            // como «Vendido hoy». Sin esto, un ítem de una venta con descuento
+            // aparecía con más de lo que se cobró.
+            ->selectRaw('p.id, p.nombre, SUM(d.cantidad) AS unidades')
+            ->selectRaw('SUM(ROUND(d.total_linea * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2)) AS monto')
             ->orderByDesc('unidades')
             ->orderByDesc('monto')
             ->limit(5)

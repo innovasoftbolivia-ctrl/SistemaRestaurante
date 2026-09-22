@@ -21,7 +21,7 @@ class TomaInventarioDetalle extends Model
             'contado' => 'decimal:3',
             'stock_sistema' => 'decimal:3',
             'diferencia' => 'decimal:3',
-            'costo_unitario' => 'decimal:2',
+            'costo_unitario' => 'decimal:4',
             'fecha_conteo' => 'datetime',
         ];
     }

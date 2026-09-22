@@ -8,6 +8,7 @@ use App\Models\Rol;
 use App\Models\Usuario;
 use App\Services\Auditor;
 use App\Support\Administracion;
+use App\Support\ReglaDeClave;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -77,7 +78,7 @@ class UsuarioController extends Controller
             // Un rol desactivado dejaría la cuenta nueva sin permisos y sin acceso.
             'rol_id' => ['required', Rule::exists('roles', 'id')->where('activo', 1)],
             'usuario' => ['required', 'string', 'min:3', 'max:40', 'regex:/^[a-z0-9._-]+$/', Rule::unique('usuarios', 'usuario')],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'password' => ['required', 'confirmed', Password::min(8), ReglaDeClave::para($request->input('usuario'))],
             'activo' => ['boolean'],
         ], $this->mensajes(), $this->atributos());
 
@@ -129,7 +130,7 @@ class UsuarioController extends Controller
                 'required', 'string', 'min:3', 'max:40', 'regex:/^[a-z0-9._-]+$/',
                 Rule::unique('usuarios', 'usuario')->ignore($usuario->id),
             ],
-            'password' => ['nullable', 'confirmed', Password::min(8)],
+            'password' => ['nullable', 'confirmed', Password::min(8), ReglaDeClave::para($request->input('usuario', $usuario->usuario))],
             // Cambiar la PROPIA contraseña exige la actual, igual que en Perfil:
             // una sesión de administrador olvidada abierta no puede quedarse con
             // la cuenta poniéndole otra clave.

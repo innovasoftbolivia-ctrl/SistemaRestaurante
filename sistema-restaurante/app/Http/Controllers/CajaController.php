@@ -228,10 +228,12 @@ class CajaController extends Controller
 
         // Contado por billetes: el efectivo contado es lo que suman, calculado
         // aquí. Lo que mostró la pantalla no decide nada.
-        $arqueo = array_filter($datos['arqueo'] ?? [], fn ($c) => (int) $c > 0);
-        $declarado = $arqueo
-            ? round(collect($arqueo)->sum(fn ($c, $d) => (float) $d * (int) $c), 2)
-            : (float) $datos['monto_declarado'];
+        try {
+            $arqueo = Cajas::arqueoLimpio($datos['arqueo'] ?? []);
+        } catch (RuntimeException $e) {
+            return back()->with('error', Mensaje::de($e));
+        }
+        $declarado = $arqueo ? Cajas::sumaDelArqueo($arqueo) : (float) $datos['monto_declarado'];
 
         try {
             $sesion = Cajas::cerrar(

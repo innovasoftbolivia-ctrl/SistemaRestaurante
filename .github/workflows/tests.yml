@@ -163,6 +163,68 @@ jobs:
       - name: Imagen de producción
         run: docker build -f sistema-restaurante/Dockerfile.prod -t restaurante-prod sistema-restaurante
 
+  # El hosting compartido corre MariaDB, no MySQL, y ahí la lógica va en PHP
+  # (sin procedimientos, triggers ni vistas). Lo único que se mantiene son los
+  # CHECK del esquema, que es justo donde se cuelan las funciones que MariaDB no
+  # tiene (REGEXP_LIKE). Sin este trabajo, eso solo se descubría al instalar.
+  mariadb:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: ventas123
+        ports:
+          - 13311:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, dom, fileinfo, mysql, gd, bcmath, zip
+          coverage: none
+
+      - name: Dependencias de Composer
+        working-directory: sistema-restaurante
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Compilar assets
+        working-directory: sistema-restaurante
+        run: |
+          npm ci
+          npm run build
+
+      - name: Clave de aplicación
+        working-directory: sistema-restaurante
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      # Sin procedimientos, triggers ni vistas: lo que MariaDB no deja crear en
+      # el hosting. El esquema tiene que entrar igual.
+      - name: Cargar el esquema en MariaDB, sin lo que el hosting no permite
+        run: |
+          MYSQL="mysql --host=127.0.0.1 --port=13311 --default-character-set=utf8mb4 -uroot -pventas123"
+          python3 scripts/esquema-sin-logica.py docs/sql/01_schema_mysql.sql \
+            | sed 's/ventas_db/ventas_db_test/g' | $MYSQL
+          sed 's/ventas_db/ventas_db_test/g' docs/sql/02_datos_iniciales.sql | $MYSQL
+          echo "tablas: $($MYSQL -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ventas_db_test'")"
+
+      - name: Pruebas con la lógica en PHP, sobre MariaDB
+        working-directory: sistema-restaurante
+        env:
+          LOGICA_EN_PHP: 'true'
+        run: php artisan test
+
   estilo:
     runs-on: ubuntu-latest
     steps:

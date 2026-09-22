@@ -38,7 +38,7 @@ class MovimientoInventario extends Model
             'cantidad' => 'decimal:3',
             'stock_anterior' => 'decimal:3',
             'stock_resultante' => 'decimal:3',
-            'costo_unitario' => 'decimal:2',
+            'costo_unitario' => 'decimal:4',
             'fecha' => 'datetime',
         ];
     }

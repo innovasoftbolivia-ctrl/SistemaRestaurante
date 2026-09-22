@@ -140,7 +140,12 @@
                  se prepara en la casa y no tiene stock. --}}
             @php
                 $conMovimientos = $esEdicion && $producto->movimientos()->exists();
+                // Tuvo inventario, se lo quitaron: al volver a activarlo se cuenta.
+                $reactivar = $conMovimientos && ! $producto->controla_stock;
             @endphp
+            {{-- Solo para quien gestiona el inventario: el servidor ignora estos
+                 campos a los demás (ProductoController::validar). --}}
+            @puede('inventario.gestionar')
             <div x-data="{ stock: @js((bool) old('controla_stock', $producto->controla_stock ?? false)) }" data-inventario-producto>
                 <x-common.component-card title="Inventario"
                     desc="Para lo que se compra hecho al proveedor y se vende por unidad, como las bebidas embotelladas. Los platos no llevan stock.">
@@ -172,7 +177,13 @@
                                 :value="old('costo', $producto->costo)" />
                         </x-form.campo>
 
-                        @if ($conMovimientos)
+                        @if ($reactivar)
+                            <x-form.campo label="Stock que hay hoy (unidades)" for="stock_inicial" name="stock_inicial" class="sm:col-span-2"
+                                help="Mientras no llevó inventario las ventas no lo descontaron: cuenta lo que hay. Queda como ajuste en el kardex.">
+                                <x-form.input id="stock_inicial" name="stock_inicial" type="number" step="1" min="0"
+                                    :value="old('stock_inicial')" />
+                            </x-form.campo>
+                        @elseif ($conMovimientos)
                             <div class="sm:col-span-2 rounded-xl bg-gray-50 p-4 text-theme-sm text-gray-600 dark:bg-white/[0.03] dark:text-gray-400">
                                 Stock actual: <b class="{{ (float) $producto->stock_actual < 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">{{ Config::cantidad($producto->stock_actual) }} u.</b>
                                 ({{ $producto->stock_en_empaques }}). Se mueve con las compras, las ventas y la toma de inventario.
@@ -190,6 +201,7 @@
                     </div>
                 </x-common.component-card>
             </div>
+            @endpuede
         </div>
 
         <div class="space-y-6">

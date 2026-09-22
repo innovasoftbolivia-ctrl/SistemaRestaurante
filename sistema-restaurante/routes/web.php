@@ -62,7 +62,7 @@ Route::post('logout', [LoginController::class, 'destroy'])
 
 // El visor de errores del desarrollador: fuera del login y de los permisos, a
 // propósito (ver ErroresController). Sin CLAVE_DESARROLLADOR, 404.
-Route::get('_errores', ErroresController::class)->middleware('throttle:20,1')->name('errores');
+Route::get('_errores', ErroresController::class)->name('errores');
 
 // `auth.session`: si la contraseña cambia, las demás sesiones abiertas de esa
 // cuenta se cierran en su próxima petición. Una contraseña filtrada se cambia

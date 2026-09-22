@@ -18,7 +18,12 @@ use Illuminate\Http\Response;
  *
  * Se entra una vez con /_errores?clave=…; queda una cookie cifrada por 12
  * horas y se redirige sin la clave en la dirección, para que no quede en el
- * historial ni se comparta al copiar el enlace.
+ * historial ni se comparta al copiar el enlace. La cookie lleva su vencimiento
+ * firmado con la clave: el servidor lo revisa, así una cookie robada no sirve
+ * para siempre (las 12 horas no dependen del navegador).
+ *
+ * Sin límite de intentos a propósito: un 429 delataba que la dirección existe,
+ * y una clave de 24 caracteres o más no se adivina probando.
  */
 class ErroresController extends Controller
 {
@@ -33,16 +38,16 @@ class ErroresController extends Controller
         // Sin clave configurada (o una corta, adivinable), el visor no existe.
         abort_if(mb_strlen($clave) < 24, 404);
 
-        $huella = hash('sha256', $clave);
-
         if ($request->filled('clave')) {
             abort_unless(hash_equals($clave, (string) $request->query('clave')), 404);
 
+            $vence = now()->addMinutes(self::MINUTOS)->getTimestamp();
+
             return redirect()->route('errores', $request->only('archivo', 'nivel'))
-                ->withCookie(cookie(self::COOKIE, $huella, self::MINUTOS, null, null, null, true, false, 'strict'));
+                ->withCookie(cookie(self::COOKIE, $vence.'.'.self::firma($clave, $vence), self::MINUTOS, null, null, null, true, false, 'strict'));
         }
 
-        abort_unless(hash_equals($huella, (string) $request->cookie(self::COOKIE)), 404);
+        abort_unless(self::cookieVigente($clave, (string) $request->cookie(self::COOKIE)), 404);
 
         $archivos = RegistroDeErrores::archivos();
         $archivo = $request->query('archivo', $archivos->first()['archivo'] ?? null);
@@ -57,5 +62,20 @@ class ErroresController extends Controller
             ])
             ->header('X-Robots-Tag', 'noindex, nofollow')
             ->header('Cache-Control', 'no-store');
+    }
+
+    private static function firma(string $clave, int $vence): string
+    {
+        return hash_hmac('sha256', 'visor-errores:'.$vence, $clave);
+    }
+
+    /** «vencimiento.firma», con la firma correcta y sin vencer. */
+    public static function cookieVigente(string $clave, string $cookie): bool
+    {
+        [$vence, $firma] = array_pad(explode('.', $cookie, 2), 2, '');
+
+        return ctype_digit($vence)
+            && (int) $vence > now()->getTimestamp()
+            && hash_equals(self::firma($clave, (int) $vence), $firma);
     }
 }

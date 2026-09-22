@@ -33,10 +33,11 @@
         <x-common.rango-fechas :accion="route('reportes.productos')" :excel="route('reportes.productos.excel')" :pdf="route('reportes.productos.pdf')" :desde="$desde" :hasta="$hasta" />
 
         @if ($masVendidos->isNotEmpty())
-            {{-- Lo que responde «¿qué es lo que más me deja?» antes que la tabla. --}}
+            {{-- Lo que más se vende, en plata, antes que la tabla. «Lo que más
+                 deja» es la ganancia, más abajo: no siempre es el mismo ítem. --}}
             <div class="rounded-2xl border border-brand-200 bg-brand-50 p-5 dark:border-brand-800 dark:bg-brand-500/10" data-resumen-menu>
                 <p class="text-theme-sm text-gray-700 dark:text-gray-300">
-                    Lo que más te deja:
+                    Lo que más vendes:
                     <b class="text-brand-600 dark:text-brand-400">{{ $masVendidos->first()->nombre }}</b>,
                     con <b>{{ Config::importe($masVendidos->first()->monto_vendido) }}</b>.
                     @if ($masPedido && $masPedido->id !== $masVendidos->first()->id)
@@ -191,7 +192,7 @@
                                     <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($g->vendido) }}</td>
                                     <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($g->costo) }}</td>
                                     <td class="px-6 py-3 text-right text-theme-sm font-medium {{ $g->ganancia < 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">{{ Config::importe($g->ganancia) }}</td>
-                                    <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ number_format($g->margen * 100, 1) }}%</td>
+                                    <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ $g->margen === null ? '—' : number_format($g->margen * 100, 1).'%' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

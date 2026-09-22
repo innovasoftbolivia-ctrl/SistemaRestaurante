@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\TomaInventario;
 use App\Models\TomaInventarioDetalle;
 use App\Models\Usuario;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -64,36 +66,68 @@ class TomasInventario
         }
     }
 
-    /** Anota lo contado de un producto, con lo que decía el sistema en ese momento. */
-    public static function contar(TomaInventario $toma, int $productoId, float $contado, Usuario $usuario): TomaInventarioDetalle
+    /**
+     * Anota lo contado de un producto, con lo que decía el sistema CUANDO SE
+     * CONTÓ. La planilla se llena entera y se guarda de una vez: si entre el
+     * conteo y el guardado se vendió algo, el stock de ese momento ya no es
+     * el del conteo, y la diferencia salía mal (un faltante real desaparecía).
+     * Con `$contadoEn` —la hora en que se escribió la fila— el stock del
+     * sistema se lee del kardex a esa hora.
+     *
+     * La toma se bloquea compartida: varios conteos a la vez sí, pero ninguno
+     * mientras se cierra o se cancela (que la bloquean exclusiva). Y siempre
+     * en el mismo orden —toma, producto, línea—, el mismo que usa el cierre.
+     */
+    public static function contar(TomaInventario $toma, int $productoId, float $contado, Usuario $usuario, ?Carbon $contadoEn = null): TomaInventarioDetalle
     {
-        if (! $toma->estaAbierta()) {
-            throw new RuntimeException('Esta toma ya no está abierta.');
-        }
-
         if ($contado < 0) {
             throw new RuntimeException('Lo contado no puede ser negativo.');
         }
 
-        return DB::transaction(function () use ($toma, $productoId, $contado, $usuario) {
+        return DB::transaction(function () use ($toma, $productoId, $contado, $usuario, $contadoEn) {
+            $toma = TomaInventario::whereKey($toma->id)->sharedLock()->firstOrFail();
+
+            if (! $toma->estaAbierta()) {
+                throw new RuntimeException('Esta toma ya no está abierta.');
+            }
+
+            $actual = Inventario::bloquear($productoId);
+
             $linea = TomaInventarioDetalle::where('toma_id', $toma->id)->where('producto_id', $productoId)->lockForUpdate()->first();
 
             if (! $linea) {
                 throw new RuntimeException('Ese producto no está en esta toma.');
             }
 
-            $sistema = Inventario::bloquear($productoId);
+            // Entre la apertura de la toma y ahora: una hora fuera de ese rango
+            // no es la de este conteo.
+            $momento = $contadoEn ? max($toma->fecha_apertura, min($contadoEn, now())) : null;
 
             $linea->update([
                 'contado' => round($contado, 3),
-                'stock_sistema' => $sistema,
+                'stock_sistema' => $momento ? self::stockEn($productoId, $momento, $actual) : $actual,
                 'costo_unitario' => Producto::whereKey($productoId)->value('costo'),
                 'usuario_id' => $usuario->id,
-                'fecha_conteo' => now(),
+                'fecha_conteo' => $momento ?? now(),
             ]);
 
             return $linea->fresh();
         });
+    }
+
+    /**
+     * El stock de un producto a una hora, sacado del kardex: el «antes» del
+     * primer movimiento posterior a esa hora; si no hubo ninguno, el de ahora.
+     */
+    public static function stockEn(int $productoId, Carbon $momento, float $actual): float
+    {
+        $siguiente = MovimientoInventario::where('producto_id', $productoId)
+            ->where('fecha', '>', $momento)
+            ->orderBy('fecha')
+            ->orderBy('id')
+            ->value('stock_anterior');
+
+        return $siguiente !== null ? (float) $siguiente : $actual;
     }
 
     /** Aplica todas las diferencias contadas como movimientos TOMA del kardex. */
@@ -108,7 +142,9 @@ class TomasInventario
 
             $ajustes = 0;
 
-            $lineas = $toma->detalle()->whereNotNull('contado')->orderBy('producto_id')->get();
+            // Bloqueadas: un conteo que llegara a mitad del cierre no queda
+            // guardado sin aplicar (y la toma, bloqueada arriba, lo detiene).
+            $lineas = $toma->detalle()->whereNotNull('contado')->orderBy('producto_id')->lockForUpdate()->get();
 
             foreach ($lineas as $linea) {
                 $diferencia = round((float) $linea->diferencia, 3);
@@ -140,13 +176,19 @@ class TomasInventario
 
     public static function cancelar(TomaInventario $toma, Usuario $usuario): void
     {
-        if (! $toma->estaAbierta()) {
-            throw new RuntimeException('Esta toma ya no está abierta.');
-        }
+        DB::transaction(function () use ($toma, $usuario) {
+            // Bloqueada y revisada adentro: un cierre y una cancelación a la vez
+            // dejaban la toma CANCELADA con los ajustes ya aplicados.
+            $toma = TomaInventario::whereKey($toma->id)->lockForUpdate()->firstOrFail();
 
-        $toma->update(['estado' => 'CANCELADA', 'usuario_cierre_id' => $usuario->id, 'fecha_cierre' => now()]);
+            if (! $toma->estaAbierta()) {
+                throw new RuntimeException('Esta toma ya no está abierta.');
+            }
 
-        Auditor::registrar('TOMA_CANCELADA', 'tomas_inventario', $toma->id, [], $usuario->id);
+            $toma->update(['estado' => 'CANCELADA', 'usuario_cierre_id' => $usuario->id, 'fecha_cierre' => now()]);
+
+            Auditor::registrar('TOMA_CANCELADA', 'tomas_inventario', $toma->id, [], $usuario->id);
+        });
     }
 
     /**

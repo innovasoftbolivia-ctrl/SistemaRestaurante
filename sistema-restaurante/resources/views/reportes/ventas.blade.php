@@ -128,7 +128,8 @@
             <b class="text-gray-800 dark:text-white/90">{{ Config::importe($resumen['efectivo']) }}</b>
             <span class="text-theme-xs text-gray-500 dark:text-gray-400">
                 — ventas cobradas en efectivo, más ingresos y menos egresos de caja. Cuadra con los arqueos
-                de los turnos del período, sin su monto inicial.
+                de los turnos que abren y cierran dentro del período, sin su monto inicial (un turno que cierra
+                pasada la hora de corte cae en el cuadre de la jornada siguiente).
             </span>
         </p>
 

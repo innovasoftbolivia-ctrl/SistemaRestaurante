@@ -106,7 +106,7 @@ class NotificacionesTest extends TestCase
 
         $caja = $this->titulos('admin', 'caja');
         $this->assertCount(1, $caja);
-        $this->assertStringStartsWith('1 venta anulada hoy', $caja[0]);
+        $this->assertStringStartsWith('1 venta de hoy anulada', $caja[0]);
         $this->assertSame([], $this->titulos('cajero1', 'caja'), 'las anulaciones son del administrador');
 
         // Se vuelve a cobrar: el pedido deja de estar por cobrar.

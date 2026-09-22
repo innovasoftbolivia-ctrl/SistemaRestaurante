@@ -201,32 +201,8 @@ class Cajas
      */
     public static function arqueoValido(?array $arqueo, float $declarado): array
     {
-        if (! $arqueo) {
-            return [];
-        }
-
-        $validas = collect(ArqueoCaja::denominaciones())->mapWithKeys(fn ($d) => [ArqueoCaja::clave($d) => $d]);
-        $limpio = [];
-        $suma = 0.0;
-
-        foreach ($arqueo as $clave => $cantidad) {
-            $clave = ArqueoCaja::clave((float) $clave);
-
-            if (! $validas->has($clave)) {
-                throw new RuntimeException("No existe el billete o la moneda de {$clave}.");
-            }
-
-            $cantidad = (int) $cantidad;
-
-            if ($cantidad < 0) {
-                throw new RuntimeException('Las cantidades del arqueo no pueden ser negativas.');
-            }
-
-            if ($cantidad > 0) {
-                $limpio[$clave] = $cantidad;
-                $suma += $validas[$clave] * $cantidad;
-            }
-        }
+        $limpio = self::arqueoLimpio($arqueo);
+        $suma = self::sumaDelArqueo($limpio);
 
         if ($limpio && abs(round($suma, 2) - round($declarado, 2)) > 0.001) {
             throw new RuntimeException(sprintf(
@@ -236,6 +212,53 @@ class Cajas
         }
 
         return $limpio;
+    }
+
+    /**
+     * Solo las denominaciones que existen y se contaron, una vez cada una.
+     * «0.5» y «0.50» son la misma moneda: dos veces en el mismo envío
+     * sumaban dos veces y se guardaban una, y el arqueo impreso no daba lo
+     * contado.
+     *
+     * @param  ?array<string, int|string|null>  $arqueo
+     * @return array<string, int>
+     */
+    public static function arqueoLimpio(?array $arqueo): array
+    {
+        $validas = collect(ArqueoCaja::denominaciones())->mapWithKeys(fn ($d) => [ArqueoCaja::clave($d) => $d]);
+        $limpio = [];
+        $vistas = [];
+
+        foreach ($arqueo ?? [] as $clave => $cantidad) {
+            $clave = ArqueoCaja::clave((float) $clave);
+
+            if (! $validas->has($clave)) {
+                throw new RuntimeException("No existe el billete o la moneda de {$clave}.");
+            }
+
+            if (isset($vistas[$clave])) {
+                throw new RuntimeException("El arqueo trae dos veces el billete o la moneda de {$clave}.");
+            }
+            $vistas[$clave] = true;
+
+            $cantidad = (int) $cantidad;
+
+            if ($cantidad < 0) {
+                throw new RuntimeException('Las cantidades del arqueo no pueden ser negativas.');
+            }
+
+            if ($cantidad > 0) {
+                $limpio[$clave] = $cantidad;
+            }
+        }
+
+        return $limpio;
+    }
+
+    /** @param  array<string, int>  $arqueo  ya limpio */
+    public static function sumaDelArqueo(array $arqueo): float
+    {
+        return round(collect($arqueo)->sum(fn ($cantidad, $clave) => (float) $clave * $cantidad), 2);
     }
 
     public static function puedeCerrar(?Usuario $usuario, SesionCaja $sesion): bool

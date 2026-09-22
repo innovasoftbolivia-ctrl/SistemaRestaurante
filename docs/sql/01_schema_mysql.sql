@@ -179,10 +179,10 @@ CREATE TABLE categorias (
     UNIQUE KEY uq_categorias_nombre (nombre)
 ) ENGINE=InnoDB;
 
--- El negocio no lleva inventario: no hay stock, ni lotes, ni proveedores. Un
--- producto es lo que se sirve y a qué precio, y ese precio es uno solo: el
--- plato se hace en la casa, no se compra, así que no hay costo que registrar
--- ni margen que calcular.
+-- Un producto es lo que se sirve y a qué precio, y ese precio es uno solo. El
+-- plato se hace en la casa y no lleva stock; lo que se compra hecho (las
+-- bebidas embotelladas) sí: `controla_stock`, su empaque de compra, el stock
+-- mínimo y el último costo (ver la sección de inventario).
 --
 -- Tampoco lleva código de barras: nadie escanea un plato. Lo que se teclea
 -- para encontrarlo rápido es el código interno, y por eso ese sí se queda.
@@ -215,7 +215,7 @@ CREATE TABLE productos (
     stock_minimo        DECIMAL(12,3) NOT NULL DEFAULT 0.000,
     contenido_empaque   DECIMAL(10,3) UNSIGNED NULL,
     nombre_empaque      VARCHAR(20)   NULL,
-    costo               DECIMAL(12,2) NULL,
+    costo               DECIMAL(12,4) NULL,     -- 4 decimales: el costo por unidad sale de dividir la caja
     imagen              VARCHAR(255) NULL,
     activo              TINYINT(1)   NOT NULL DEFAULT 1,
     creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -371,7 +371,7 @@ CREATE TABLE arqueo_caja (
     denominacion    DECIMAL(8,2)  NOT NULL,   -- 200.00, 100.00 … 0.10
     cantidad        INT UNSIGNED  NOT NULL,   -- cuántos billetes o monedas
     PRIMARY KEY (sesion_caja_id, denominacion),
-    CONSTRAINT fk_arqueo_sesion FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id) ON DELETE CASCADE,
+    CONSTRAINT fk_arqueo_sesion FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id) ON DELETE RESTRICT,
     CONSTRAINT ck_arqueo_denominacion CHECK (denominacion > 0),
     CONSTRAINT ck_arqueo_cantidad CHECK (cantidad > 0)
 ) ENGINE=InnoDB;
@@ -554,7 +554,7 @@ CREATE TABLE venta_detalle (
     -- El costo por unidad al momento de vender (solo lo que controla stock):
     -- congelado, para que la ganancia de un mes viejo no cambie con la compra
     -- de hoy.
-    costo_unitario      DECIMAL(12,2) NULL,
+    costo_unitario      DECIMAL(12,4) NULL,
     -- Sin descuento por línea: el descuento se aplica al total de la venta
     -- (`ventas.descuento`), nunca por plato. La columna valía siempre 0 y se
     -- retiró el 2026-09-19.
@@ -953,10 +953,12 @@ CREATE TABLE compra_detalle (
     producto_id       INT UNSIGNED NOT NULL,
     cantidad          DECIMAL(12,3) NOT NULL,
     cantidad_devuelta DECIMAL(12,3) NOT NULL DEFAULT 0.000,
-    costo_unitario    DECIMAL(12,2) NOT NULL,
+    costo_unitario    DECIMAL(12,4) NOT NULL,
     importe           DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
     PRIMARY KEY (id),
     UNIQUE KEY uq_compradet_producto (compra_id, producto_id),
+    -- Para la FK compuesta de la línea devuelta: misma línea, mismo producto.
+    UNIQUE KEY uq_compradet_id_producto (id, producto_id),
     KEY ix_compradet_producto (producto_id),
     CONSTRAINT fk_compradet_compra   FOREIGN KEY (compra_id)   REFERENCES compras (id),
     CONSTRAINT fk_compradet_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
@@ -989,7 +991,7 @@ CREATE TABLE devolucion_compra_detalle (
     producto_id           INT UNSIGNED    NOT NULL,
     cantidad              DECIMAL(12,3)   NOT NULL,
     cantidad_repuesta     DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
-    costo_unitario        DECIMAL(12,2)   NOT NULL,
+    costo_unitario        DECIMAL(12,4)   NOT NULL,
     importe               DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
     PRIMARY KEY (id),
     UNIQUE KEY uq_devcompradet_linea (devolucion_compra_id, compra_detalle_id),
@@ -998,6 +1000,10 @@ CREATE TABLE devolucion_compra_detalle (
     CONSTRAINT fk_devcompradet_cabecera FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id),
     CONSTRAINT fk_devcompradet_linea    FOREIGN KEY (compra_detalle_id)    REFERENCES compra_detalle (id),
     CONSTRAINT fk_devcompradet_producto FOREIGN KEY (producto_id)          REFERENCES productos (id),
+    -- El producto devuelto es el de su línea de compra: con otro, se sacaba
+    -- del stock el producto equivocado.
+    CONSTRAINT fk_devcompradet_linea_producto FOREIGN KEY (compra_detalle_id, producto_id)
+        REFERENCES compra_detalle (id, producto_id),
     CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0),
     CONSTRAINT ck_devcompradet_repuesta CHECK (cantidad_repuesta >= 0 AND cantidad_repuesta <= cantidad)
 ) ENGINE=InnoDB;
@@ -1032,7 +1038,7 @@ CREATE TABLE movimientos_inventario (
     cantidad             DECIMAL(12,3) NOT NULL,
     stock_anterior       DECIMAL(12,3) NOT NULL,
     stock_resultante     DECIMAL(12,3) NOT NULL,
-    costo_unitario       DECIMAL(12,2) NULL,
+    costo_unitario       DECIMAL(12,4) NULL,
     motivo               VARCHAR(255) NULL,
     fecha                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -1071,7 +1077,7 @@ CREATE TABLE toma_inventario_detalle (
     contado             DECIMAL(12,3) NULL,
     stock_sistema       DECIMAL(12,3) NULL,
     diferencia          DECIMAL(12,3) GENERATED ALWAYS AS (contado - stock_sistema) STORED,
-    costo_unitario      DECIMAL(12,2) NULL,
+    costo_unitario      DECIMAL(12,4) NULL,
     usuario_id          INT UNSIGNED NULL,
     fecha_conteo        DATETIME     NULL,
     movimiento_id       BIGINT UNSIGNED NULL,
@@ -1114,7 +1120,9 @@ CREATE TABLE configuracion (
     CONSTRAINT ck_config_dias     CHECK (clave <> 'dias_max_sustitucion' OR valor REGEXP '^[0-9]{1,3}$'),
     CONSTRAINT ck_config_egreso   CHECK (clave <> 'egreso_max_cajero' OR valor REGEXP '^[0-9]{1,10}([.][0-9]{1,2})?$'),
     -- El código ISO, en mayúsculas: es lo que se congela en cada comprobante.
-    CONSTRAINT ck_config_moneda   CHECK (clave <> 'moneda_codigo' OR REGEXP_LIKE(valor, '^[A-Z]{3}$', 'c')),
+    -- REGEXP con cotejamiento binario y no REGEXP_LIKE: distingue mayúsculas
+    -- igual, y MariaDB (el hosting) no tiene REGEXP_LIKE.
+    CONSTRAINT ck_config_moneda   CHECK (clave <> 'moneda_codigo' OR valor COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}$'),
     -- Los datos del negocio y del cliente genérico se copian al comprobante:
     -- tienen que caber en sus columnas, o emitir aborta y no se puede vender.
     CONSTRAINT ck_config_largo    CHECK (CHAR_LENGTH(valor) <= CASE clave
@@ -1356,6 +1364,25 @@ BEGIN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'El cobro QR debe generarse en un turno de caja abierto';
     END IF;
+END$$
+
+-- El kardex no se edita ni se borra: un error de stock se corrige con un
+-- ajuste, que deja rastro. (Con la lógica en PHP no hay triggers: ahí solo lo
+-- escribe App\Services\Inventario, y nunca actualiza ni borra.)
+CREATE TRIGGER trg_movimientos_inventario_before_update
+BEFORE UPDATE ON movimientos_inventario
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El kardex no se edita: un error se corrige con un ajuste.';
+END$$
+
+CREATE TRIGGER trg_movimientos_inventario_before_delete
+BEFORE DELETE ON movimientos_inventario
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El kardex no se borra: un error se corrige con un ajuste.';
 END$$
 
 DELIMITER ;
@@ -1646,7 +1673,8 @@ BEGIN
             SET MESSAGE_TEXT = 'El turno de caja de esta venta ya cerró: no se anula, su dinero ya se contó en el arqueo';
     END IF;
 
-    -- Sin inventario no hay stock que reponer: anular es cambiar el estado de
+    -- El stock de lo que lleva inventario lo repone PHP en la misma transacción
+    -- (Inventario::reponerVenta): aquí anular es cambiar el estado de
     -- la venta y dejar su comprobante anulado, con el correlativo intacto.
     UPDATE ventas
        SET estado           = 'ANULADA',
@@ -1821,6 +1849,7 @@ CREATE TABLE parches_aplicados (
 INSERT INTO parches_aplicados (archivo) VALUES
     ('2026_09_21_cocina_entregar.sql'),
     ('2026_09_22_inventario_de_bebidas.sql'),
-    ('2026_09_22_arqueo_por_billetes.sql');
+    ('2026_09_22_arqueo_por_billetes.sql'),
+    ('2026_09_22_auditoria.sql');
 
 

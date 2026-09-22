@@ -56,7 +56,7 @@ class Producto extends Model
             'stock_actual' => 'decimal:3',
             'stock_minimo' => 'decimal:3',
             'contenido_empaque' => 'decimal:3',
-            'costo' => 'decimal:2',
+            'costo' => 'decimal:4',
             'activo' => 'boolean',
         ];
     }

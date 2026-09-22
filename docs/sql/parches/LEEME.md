@@ -7,6 +7,9 @@ datos base en `02_datos_*.sql`.
 | Parche | Qué hace |
 |---|---|
 | `2026_09_21_cocina_entregar.sql` | Permiso `cocina.entregar`: el cajero ve la cocina y entrega lo listo |
+| `2026_09_22_inventario_de_bebidas.sql` | Inventario de lo que se compra hecho: stock, proveedores, compras, devoluciones, toma y kardex |
+| `2026_09_22_arqueo_por_billetes.sql` | Tabla `arqueo_caja`: el cierre contado por billetes y monedas |
+| `2026_09_22_auditoria.sql` | Costos a 4 decimales, CHECKs de configuración compatibles con MariaDB, arqueo sin cascada, línea devuelta con su producto y kardex inmutable |
 
 ## Cómo se agrega uno
 

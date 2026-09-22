@@ -7,6 +7,7 @@ use App\Services\TomasInventario;
 use App\Support\Mensaje;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -89,22 +90,31 @@ class TomaInventarioController extends Controller
         $datos = $request->validate([
             'contados' => ['array'],
             'contados.*' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            // La hora en que se escribió cada fila (la pone la planilla): el
+            // stock del sistema se toma de esa hora, no de la de guardar.
+            'contado_en' => ['array'],
+            'contado_en.*' => ['nullable', 'integer', 'min:0'],
         ], [
             'contados.*.numeric' => 'Lo contado tiene que ser un número.',
             'contados.*.min' => 'Lo contado no puede ser negativo.',
         ]);
 
+        // Por id de producto: el mismo orden en que bloquean las ventas y las
+        // compras. En el de la planilla (por nombre) se trababan entre sí.
         $contados = collect($datos['contados'] ?? [])
-            ->filter(fn ($valor) => $valor !== null && $valor !== '');
+            ->filter(fn ($valor) => $valor !== null && $valor !== '')
+            ->sortKeys();
+        $horas = $datos['contado_en'] ?? [];
 
         if ($contados->isEmpty()) {
             return back()->with('error', 'No escribiste ningún conteo: llena la columna «Contado» de lo que ya contaste.');
         }
 
         try {
-            DB::transaction(function () use ($contados, $toma) {
+            DB::transaction(function () use ($contados, $toma, $horas) {
                 foreach ($contados as $productoId => $valor) {
-                    TomasInventario::contar($toma, (int) $productoId, (float) $valor, Auth::user());
+                    $hora = isset($horas[$productoId]) ? Carbon::createFromTimestampMs((int) $horas[$productoId]) : null;
+                    TomasInventario::contar($toma, (int) $productoId, (float) $valor, Auth::user(), $hora);
                 }
             });
         } catch (RuntimeException $e) {

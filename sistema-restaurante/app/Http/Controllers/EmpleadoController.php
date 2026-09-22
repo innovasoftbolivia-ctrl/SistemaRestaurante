@@ -120,8 +120,19 @@ class EmpleadoController extends Controller
             return back()->with('error', Administracion::MENSAJE_POR_ENCIMA)->withInput();
         }
 
+        // Cesar o suspender editando es lo mismo que el «Dar de baja» (le corta
+        // el acceso a la cuenta), y ese pide `registros.eliminar`: por aquí se
+        // lo saltaba.
+        if ($datos['estado'] !== $empleado->estado && $datos['estado'] !== 'ACTIVO'
+            && ! $request->user()->tienePermiso('registros.eliminar')) {
+            return back()->with('error', 'Cesar o suspender a un empleado lo hace quien puede dar de baja registros.')->withInput();
+        }
+
         $estadoAnterior = $empleado->estado;
-        $empleado->update($datos);
+        // En una transacción: con la lógica en PHP, cortarle el acceso a la
+        // cuenta va en un evento del modelo; si fallara, el empleado quedaba
+        // cesado con la cuenta todavía activa.
+        $empleado->fill($datos)->saveOrFail();
 
         Auditor::registrar('EMPLEADO_ACTUALIZADO', 'empleados', $empleado->id, [
             'nombre' => $empleado->nombre_completo,
@@ -157,11 +168,11 @@ class EmpleadoController extends Controller
             return back()->with('error', Administracion::MENSAJE_POR_ENCIMA);
         }
 
-        $empleado->update([
+        $empleado->fill([
             'estado' => 'CESADO',
             'fecha_cese' => $datos['fecha_cese'],
             'motivo_cese' => $datos['motivo_cese'],
-        ]);
+        ])->saveOrFail();
 
         Auditor::registrar('EMPLEADO_CESADO', 'empleados', $empleado->id, $datos);
 
@@ -171,11 +182,11 @@ class EmpleadoController extends Controller
     /** Revierte un cese o una suspensión. */
     public function reactivar(Empleado $empleado): RedirectResponse
     {
-        $empleado->update([
+        $empleado->fill([
             'estado' => 'ACTIVO',
             'fecha_cese' => null,
             'motivo_cese' => null,
-        ]);
+        ])->saveOrFail();
 
         Auditor::registrar('EMPLEADO_REACTIVADO', 'empleados', $empleado->id);
 

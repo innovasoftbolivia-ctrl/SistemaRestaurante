@@ -26,8 +26,10 @@ class UnSoloEnvio
     {
         $numero = (string) $request->input('_envio', '');
 
+        // Obligatorio: todos los formularios lo traen (`@unEnvio`). Sin él, una
+        // petición armada a mano podía repetir una venta sin que nada la frenara.
         if ($numero === '') {
-            return $next($request);
+            return back()->with('error', 'El formulario llegó incompleto. Recarga la página y vuelve a intentarlo.');
         }
 
         $clave = 'envio:'.($request->user()?->id ?? 'anonimo').':'.sha1($numero);

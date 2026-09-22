@@ -90,7 +90,7 @@ class ProductoController extends Controller
         $producto = DB::transaction(function () use ($datos, $request) {
             $producto = Producto::create($datos);
 
-            if ($producto->controla_stock) {
+            if ($producto->controla_stock && $request->user()->tienePermiso('inventario.gestionar')) {
                 Inventario::inicial($producto, (float) $request->input('stock_inicial', 0), $request->user());
             }
 
@@ -143,13 +143,25 @@ class ProductoController extends Controller
 
         $precioAnterior = (float) $producto->precio_venta;
 
-        DB::transaction(function () use ($producto, $datos, $request) {
+        // Vuelve a llevar inventario después de haberlo dejado: mientras estuvo
+        // apagado las ventas no descontaron, y el stock guardado es viejo. Se
+        // cuenta lo que hay y se ajusta, en la misma transacción.
+        $reactiva = ($datos['controla_stock'] ?? false) && ! $producto->controla_stock && $producto->movimientos()->exists();
+
+        if ($reactiva && ! $request->filled('stock_inicial')) {
+            return back()->withInput()->with('error', 'Vuelve a llevar inventario: escribe cuántas unidades hay hoy. Mientras no llevó inventario, las ventas no lo descontaron.');
+        }
+
+        DB::transaction(function () use ($producto, $datos, $request, $reactiva) {
             $producto->update($datos);
 
             // Recién empieza a llevar inventario: el stock con el que arranca.
             // Una sola vez; después el stock se mueve con compras y tomas.
             if ($producto->controla_stock && ! $producto->movimientos()->exists()) {
                 Inventario::inicial($producto->fresh(), (float) $request->input('stock_inicial', 0), $request->user());
+            } elseif ($reactiva) {
+                Inventario::ajuste($producto->fresh(), (float) $request->input('stock_inicial'),
+                    'Vuelve a llevar inventario: stock contado', $request->user());
             }
         });
 
@@ -337,6 +349,16 @@ class ProductoController extends Controller
         // llega aquí es el `UploadedFile`, no la ruta. El stock inicial
         // tampoco: entra por el kardex (Inventario::inicial), no a mano.
         unset($datos['imagen'], $datos['quitar_imagen'], $datos['stock_inicial']);
+
+        // El inventario (llevar stock, empaque, mínimo, costo) es de quien
+        // gestiona el inventario: con solo `productos.gestionar` se metía stock
+        // inicial al kardex y se editaba el costo que congela la ganancia. Sin
+        // ese permiso, esos campos quedan como estaban.
+        if (! $request->user()->tienePermiso('inventario.gestionar')) {
+            unset($datos['controla_stock'], $datos['stock_minimo'], $datos['nombre_empaque'], $datos['contenido_empaque'], $datos['costo']);
+
+            return $datos;
+        }
 
         $datos['controla_stock'] = $request->boolean('controla_stock');
         $datos['stock_minimo'] = (float) ($datos['stock_minimo'] ?? 0);

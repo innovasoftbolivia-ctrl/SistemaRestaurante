@@ -10,6 +10,13 @@
 
 const PALETA = ['#0a5cff', '#12b76a', '#f79009', '#f04438', '#0ba5ec'];
 
+function escaparHtml(valor) {
+    return String(valor ?? '').replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+    );
+}
+
 function esOscuro() {
     return document.documentElement.classList.contains('dark');
 }
@@ -99,6 +106,10 @@ function opciones(config) {
         legend: { show: config.leyenda ?? false, labels: { colors: tenue } },
         tooltip: {
             theme: oscuro ? 'dark' : 'light',
+            // ApexCharts pone el título del tooltip con innerHTML: el nombre de
+            // un plato (lo escribe quien edita el menú) va escapado, o un nombre
+            // con HTML se ejecutaría al pasar el mouse.
+            x: { formatter: escaparHtml },
             y: { formatter: dinero ? importe : (v) => Math.round(v) },
         },
         noData: {

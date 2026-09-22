@@ -35,7 +35,7 @@ class VentaDetalle extends Model
         return [
             'cantidad' => 'decimal:3',
             'precio_unitario' => 'decimal:2',
-            'costo_unitario' => 'decimal:2',
+            'costo_unitario' => 'decimal:4',
 
             'importe' => 'decimal:2',
             'tasa_impuesto' => 'decimal:4',

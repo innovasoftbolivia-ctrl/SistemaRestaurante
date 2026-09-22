@@ -18,7 +18,7 @@ class CompraDetalle extends Model
         return [
             'cantidad' => 'decimal:3',
             'cantidad_devuelta' => 'decimal:3',
-            'costo_unitario' => 'decimal:2',
+            'costo_unitario' => 'decimal:4',
             'importe' => 'decimal:2',
         ];
     }

@@ -285,6 +285,13 @@ class Ventas
 
         $total = round((float) $venta->total, 2);
 
+        // Una venta en cero no tiene con qué pagarse (cada pago es mayor que
+        // cero) y el error de abajo confundía: «ya cubren el total». Lo que
+        // no se cobra no es una venta.
+        if ($total <= 0) {
+            throw new RuntimeException('La venta quedó en '.Config::importe(0).': un descuento no puede cubrirla entera, y lo que no se cobra no se registra como venta.');
+        }
+
         /*
          * Un pago puede venir sin importe: significa «el resto». El mostrador
          * usa esa forma para el cobro simple, de modo que el total lo pone
@@ -356,6 +363,10 @@ class Ventas
                 throw new RuntimeException(
                     "Falta el número de operación del pago con {$metodo->nombre}: sin él no se puede conciliar con el banco."
                 );
+            }
+
+            if (ReglasEnPhp::activa()) {
+                ReglasEnPhp::antesDeInsertarPago($venta->id);
             }
 
             VentaPago::create([

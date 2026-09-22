@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Cookie;
 
 /**
  * Ingreso al sistema con nombre de usuario (no correo): la cuenta vive en
@@ -34,6 +35,17 @@ class LoginController extends Controller
     private const MAX_INTENTOS_CUENTA = 10;
 
     private const BLOQUEO_CUENTA_SEGUNDOS = 900;
+
+    /**
+     * Los dispositivos desde los que cada cuenta ya entró bien: una cookie
+     * firmada, un año. El bloqueo por cuenta NO los frena. Sin esto, cualquiera
+     * que supiera el nombre (`admin`, `cajero1`) dejaba afuera a todo el local
+     * mandando diez contraseñas malas cada 15 minutos. Siguen frenados por el
+     * tope por dirección, que es de minutos.
+     */
+    private const COOKIE_DISPOSITIVOS = 'dispositivos';
+
+    private const DISPOSITIVOS_MAX = 5;
 
     /** La misma regla con la que `UsuarioController` crea las cuentas. */
     private const PATRON_USUARIO = '/^[a-z0-9._-]+$/';
@@ -63,7 +75,9 @@ class LoginController extends Controller
             'password' => 'contraseña',
         ]);
 
-        $this->verificarBloqueo($request);
+        $conocido = $this->esDispositivoConocido($request);
+
+        $this->verificarBloqueo($request, $conocido);
 
         // Solo se busca un nombre que cumpla la regla con la que se crean las
         // cuentas. La columna compara sin distinguir acentos (`ai_ci`): sin
@@ -80,9 +94,18 @@ class LoginController extends Controller
         // columna `password_hash` (ver el docblock del propio método).
         $claveValida = Hash::check($datos['password'], $cuenta?->getAuthPassword() ?? self::HASH_DUMMY);
 
-        if (! $cuenta || ! $claveValida) {
+        // Una cuenta que no puede entrar (desactivada, empleado cesado) responde
+        // igual que una contraseña mala: el mensaje distinto confirmaba que la
+        // contraseña era correcta, y eso sirve si la cuenta se reactiva o la
+        // persona la repite en otro lado.
+        if (! $cuenta || ! $claveValida || ! $cuenta->puedeIngresar()) {
             RateLimiter::hit($this->claveThrottle($request), self::BLOQUEO_SEGUNDOS);
-            RateLimiter::hit($this->claveCuenta($request), self::BLOQUEO_CUENTA_SEGUNDOS);
+            // Desde un dispositivo conocido no se suma al bloqueo de la cuenta:
+            // quien se equivoca en su propia caja no se deja afuera a sí mismo
+            // (lo frena el tope por dirección).
+            if (! $conocido) {
+                RateLimiter::hit($this->claveCuenta($request), self::BLOQUEO_CUENTA_SEGUNDOS);
+            }
             // Con tope: la columna es TINYINT y el intento 256 reventaba con
             // un 500 antes de llegar a la bitácora.
             if ($cuenta) {
@@ -91,29 +114,23 @@ class LoginController extends Controller
                 ]);
             }
 
-            Auditor::registrar('LOGIN_FALLIDO', 'usuarios', $cuenta?->id, [
-                'usuario' => $datos['usuario'],
-            ], $cuenta?->id);
+            if ($cuenta && $claveValida) {
+                // Contraseña correcta en una cuenta sin acceso: queda en la
+                // bitácora con su motivo, para el administrador.
+                Auditor::registrar('LOGIN_BLOQUEADO', 'usuarios', $cuenta->id, [
+                    'activo' => $cuenta->activo,
+                    'estado_empleado' => $cuenta->empleado?->estado,
+                ], $cuenta->id);
+            } else {
+                // Solo un nombre con forma de usuario: si alguien escribió su
+                // contraseña en el campo del usuario, no queda legible.
+                Auditor::registrar('LOGIN_FALLIDO', 'usuarios', $cuenta?->id, [
+                    'usuario' => preg_match(self::PATRON_USUARIO, $nombre) ? $nombre : '(no es un nombre de usuario)',
+                ], $cuenta?->id);
+            }
 
             throw ValidationException::withMessages([
-                'usuario' => 'Usuario o contraseña incorrectos.',
-            ]);
-        }
-
-        // La cuenta existe y la contraseña es correcta, pero el acceso puede
-        // estar cerrado: cuenta desactivada o vínculo laboral no vigente.
-        if (! $cuenta->puedeIngresar()) {
-            RateLimiter::hit($this->claveThrottle($request), self::BLOQUEO_SEGUNDOS);
-
-            Auditor::registrar('LOGIN_BLOQUEADO', 'usuarios', $cuenta->id, [
-                'activo' => $cuenta->activo,
-                'estado_empleado' => $cuenta->empleado?->estado,
-            ], $cuenta->id);
-
-            throw ValidationException::withMessages([
-                'usuario' => $cuenta->activo
-                    ? 'El empleado no se encuentra activo en el negocio.'
-                    : 'La cuenta está desactivada. Comunícate con el administrador.',
+                'usuario' => 'Usuario o contraseña incorrectos, o la cuenta no tiene acceso.',
             ]);
         }
 
@@ -130,7 +147,8 @@ class LoginController extends Controller
 
         Auditor::registrar('LOGIN', 'usuarios', $cuenta->id);
 
-        return redirect()->intended(Menu::inicio());
+        return redirect()->intended(Menu::inicio())
+            ->withCookie($this->recordarDispositivo($request, $nombre));
     }
 
     public function destroy(Request $request): RedirectResponse
@@ -160,9 +178,36 @@ class LoginController extends Controller
         return 'login-cuenta:'.$this->nombreNormalizado($request);
     }
 
-    private function verificarBloqueo(Request $request): void
+    /** La marca de «esta cuenta ya entró desde aquí», firmada con la clave de la app. */
+    private function marcaDispositivo(string $nombre): string
     {
-        if (RateLimiter::tooManyAttempts($this->claveCuenta($request), self::MAX_INTENTOS_CUENTA)) {
+        return hash_hmac('sha256', 'dispositivo:'.$nombre, (string) config('app.key'));
+    }
+
+    /** @return array<int, string> */
+    private function dispositivos(Request $request): array
+    {
+        $marcas = json_decode((string) $request->cookie(self::COOKIE_DISPOSITIVOS, '[]'), true);
+
+        return is_array($marcas) ? array_values(array_filter($marcas, 'is_string')) : [];
+    }
+
+    private function esDispositivoConocido(Request $request): bool
+    {
+        return in_array($this->marcaDispositivo($this->nombreNormalizado($request)), $this->dispositivos($request), true);
+    }
+
+    private function recordarDispositivo(Request $request, string $nombre): Cookie
+    {
+        $marcas = array_values(array_unique([$this->marcaDispositivo($nombre), ...$this->dispositivos($request)]));
+
+        return cookie(self::COOKIE_DISPOSITIVOS, json_encode(array_slice($marcas, 0, self::DISPOSITIVOS_MAX)),
+            60 * 24 * 365, null, null, null, true, false, 'lax');
+    }
+
+    private function verificarBloqueo(Request $request, bool $conocido = false): void
+    {
+        if (! $conocido && RateLimiter::tooManyAttempts($this->claveCuenta($request), self::MAX_INTENTOS_CUENTA)) {
             $minutos = (int) ceil(RateLimiter::availableIn($this->claveCuenta($request)) / 60);
 
             throw ValidationException::withMessages([

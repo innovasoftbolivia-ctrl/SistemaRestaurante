@@ -152,7 +152,7 @@ class ReporteController extends Controller
         $indicadores = [
             ['etiqueta' => 'Operaciones', 'valor' => $resumen['operaciones'], 'formato' => 'entero', 'nota' => 'ventas cobradas, sin contar anuladas'],
             ['etiqueta' => self::rotuloVendidoConImpuesto(), 'valor' => $resumen['vendido'], 'formato' => 'moneda', 'nota' => 'suma de los totales cobrados'.($tasa > 0 ? ', con el impuesto' : '')],
-            ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas cobradas en efectivo, más ingresos y menos egresos: cuadra con los arqueos, sin el monto inicial'],
+            ['etiqueta' => 'Efectivo en cajas', 'valor' => $resumen['efectivo'], 'formato' => 'moneda', 'nota' => 'ventas cobradas en efectivo, más ingresos y menos egresos: cuadra con los arqueos de los turnos que abren y cierran dentro del período, sin su monto inicial'],
             ['etiqueta' => 'Ticket promedio', 'valor' => $resumen['ticket'], 'formato' => 'moneda', 'nota' => 'vendido entre operaciones'],
             ['etiqueta' => 'Descuentos otorgados', 'valor' => $resumen['descuentos'], 'formato' => 'moneda', 'nota' => 'en '.$resumen['con_descuento'].' venta(s): lo que se dejó de cobrar'],
             ['etiqueta' => 'Ventas anuladas', 'valor' => $resumen['anuladas'], 'formato' => 'entero', 'nota' => 'por '.Config::importe($resumen['monto_anulado']).'; no cuentan en lo vendido'],
@@ -529,8 +529,23 @@ class ReporteController extends Controller
         $hastaAnterior = $desde->copy()->subDay();
         $desdeAnterior = $hastaAnterior->copy()->subDays($dias - 1);
 
+        [$inicioActual, $finActual] = Config::momentosDeJornadas($desde, $hasta);
+        [$inicioAnterior, $finAnterior] = Config::momentosDeJornadas($desdeAnterior, $hastaAnterior);
+
+        // Si el período llega hasta hoy (o más allá), lo que falta todavía no
+        // se vendió: se compara hasta AHORA contra el anterior hasta el mismo
+        // punto. Sin esto, «Hoy» a mediodía contra ayer completo, o del 1 al 30
+        // consultado el 22, daban caídas que no eran.
+        if (now()->lt($finActual)) {
+            if (now()->lt($inicioActual)) {
+                return null;
+            }
+            $finActual = now()->toDateTimeString();
+            $finAnterior = min(Carbon::parse($finAnterior), now()->subDays($dias))->toDateTimeString();
+        }
+
         $vendidoAnterior = (float) DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desdeAnterior, $hastaAnterior))
+            ->whereBetween('fecha', [$inicioAnterior, $finAnterior])
             ->where('estado', '<>', 'ANULADA')
             ->sum('total');
 
@@ -539,7 +554,7 @@ class ReporteController extends Controller
         }
 
         $vendidoActual = (float) DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('fecha', [$inicioActual, $finActual])
             ->where('estado', '<>', 'ANULADA')
             ->sum('total');
 
@@ -636,7 +651,11 @@ class ReporteController extends Controller
      * impuesto incluido, sobre el precio final; si no, sobre la base. La
      * misma cuenta que `Venta::descuento_visible`.
      */
-    private const DESCUENTO_VISIBLE = 'IF(v.impuesto_incluido = 1, COALESCE(v.descuento_precio_final, v.descuento), v.descuento)';
+    private const DESCUENTO_VISIBLE = 'IF(v.impuesto_incluido = 1, COALESCE(v.descuento_precio_final, v.descuento), '
+        // Con el impuesto sumado aparte, el descuento sobre la base también
+        // baja el impuesto: lo que se dejó de cobrar es el descuento con su
+        // impuesto (tasa efectiva de la venta = impuesto / base descontada).
+        .'ROUND(v.descuento * IF(v.subtotal - v.descuento > 0, 1 + v.impuesto / (v.subtotal - v.descuento), 1), 2))';
 
     // ------------------------------------------------- cuándo y cómo se vende
 
@@ -687,6 +706,14 @@ class ReporteController extends Controller
     private function porDiaSemana(Carbon $desde, Carbon $hasta): array
     {
         $jornada = Config::jornadaSql('fecha');
+
+        // Solo jornadas terminadas: la de hoy va a medias y las futuras no
+        // pasaron, y contarlas bajaba el promedio de ese día. (Si el período es
+        // solo hoy, se muestra hoy.)
+        $hoy = Carbon::parse(Config::jornadaActual());
+        if ($hasta->copy()->startOfDay()->gte($hoy) && $desde->copy()->startOfDay()->lt($hoy)) {
+            $hasta = $hoy->copy()->subDay()->endOfDay();
+        }
 
         // WEEKDAY: 0 = lunes … 6 = domingo, sobre la fecha de la JORNADA.
         $filas = DB::table('ventas')
@@ -854,7 +881,8 @@ class ReporteController extends Controller
                     'vendido' => $vendido,
                     'costo' => $costo,
                     'ganancia' => round($vendido - $costo, 2),
-                    'margen' => $vendido > 0 ? ($vendido - $costo) / $vendido : 0,
+                    // Regalado (vendido en cero): no hay margen que calcular.
+                    'margen' => $vendido > 0 ? ($vendido - $costo) / $vendido : null,
                 ];
             })
             ->sortByDesc('ganancia')

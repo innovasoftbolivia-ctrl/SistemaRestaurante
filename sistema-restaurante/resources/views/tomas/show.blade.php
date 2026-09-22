@@ -109,9 +109,13 @@
                                         <label for="contado-{{ $linea->producto_id }}" class="sr-only">Contado de {{ $linea->producto?->nombre }}</label>
                                         <input id="contado-{{ $linea->producto_id }}" type="number" inputmode="numeric" step="1" min="0"
                                             name="contados[{{ $linea->producto_id }}]"
+                                            {{-- La hora en que se escribió: el stock del sistema se
+                                                 toma de esa hora (ver TomasInventario::contar). --}}
+                                            x-on:input="$el.nextElementSibling.value = Date.now()"
                                             value="{{ old('contados.'.$linea->producto_id) }}"
                                             placeholder="{{ $contada ? Config::cantidad($linea->contado) : '—' }}"
                                             class="shadow-theme-xs h-10 w-24 rounded-lg border border-gray-300 bg-transparent px-3 text-right text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/40" />
+                                        <input type="hidden" name="contado_en[{{ $linea->producto_id }}]" value="{{ old('contado_en.'.$linea->producto_id) }}" />
                                         @if ($contada)
                                             <span class="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
                                                 contado: <b>{{ Config::cantidad($linea->contado) }}</b>

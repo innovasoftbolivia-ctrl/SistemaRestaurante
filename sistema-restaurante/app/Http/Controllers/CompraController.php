@@ -182,7 +182,9 @@ class CompraController extends Controller
             $lineas[] = [
                 'producto_id' => $producto->id,
                 'cantidad' => $cantidad,
-                'costo_unitario' => $porEmpaque ? round($costo / $contenido, 2) : $costo,
+                // A cuatro decimales: una caja de 25,00 con 12 son 2,0833 por
+                // unidad; a dos, la compra ya no sumaba la factura.
+                'costo_unitario' => $porEmpaque ? round($costo / $contenido, 4) : $costo,
             ];
         }
 

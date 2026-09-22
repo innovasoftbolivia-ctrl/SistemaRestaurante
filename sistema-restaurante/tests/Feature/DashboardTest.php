@@ -207,16 +207,22 @@ class DashboardTest extends TestCase
     {
         $sesion = $this->turno();
         $antes = $this->vender($sesion, 2);
+        $masTarde = $this->vender($sesion, 7);
         $ayer = $this->vender($sesion, 5);
         $hoy = $this->vender($sesion, 4);
 
-        $jornada = Carbon::parse(Config::jornadaActual())->setTime(13, 0);
-        $antes->forceFill(['fecha' => $jornada->copy()->subWeek()])->saveQuietly();
-        $ayer->forceFill(['fecha' => $jornada->copy()->subDay()])->saveQuietly();
+        // Hace una semana: una venta al abrir la jornada, y otra más tarde que
+        // la hora de ahora (a esa hora, hoy todavía no llegamos).
+        $jornada = Carbon::parse(Config::jornadaActual());
+        [$inicio] = Config::momentosDeJornadas($jornada, $jornada);
+        $antes->forceFill(['fecha' => Carbon::parse($inicio)->subWeek()])->saveQuietly();
+        $masTarde->forceFill(['fecha' => now()->subWeek()->addMinutes(5)])->saveQuietly();
+        $ayer->forceFill(['fecha' => now()->subDay()])->saveQuietly();
 
         $datos = $this->actingAs($this->admin())->get('/inicio')->viewData('hoy');
 
         $this->assertSame((float) $hoy->fresh()->total, $datos['hoy']['monto']);
+        // Hasta la misma hora: la de más tarde no cuenta, la de ayer tampoco.
         $this->assertSame((float) $antes->fresh()->total, $datos['antes']['monto']);
         $this->assertSame(100.0, $datos['variacion'], '4 platos contra 2: el doble');
         $this->assertSame($jornada->locale('es')->isoFormat('dddd'), $datos['dia']);

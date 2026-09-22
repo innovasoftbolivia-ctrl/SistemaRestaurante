@@ -62,7 +62,10 @@ class ReportesDelNegocioTest extends TestCase
         $respuesta = $this->reporte();
         $resumen = $respuesta->viewData('resumen');
 
-        $this->assertSame(1.0, $resumen['descuentos']);
+        // Con el IVA de 13 % sumado aparte (la configuración de las pruebas),
+        // descontar 1,00 de la base baja también su impuesto: se dejó de
+        // cobrar 1,13.
+        $this->assertSame(1.13, $resumen['descuentos']);
         $this->assertSame(1, $resumen['con_descuento']);
         $this->assertSame((float) $anulada->fresh()->total, $resumen['monto_anulado']);
 
@@ -87,7 +90,10 @@ class ReportesDelNegocioTest extends TestCase
     /** En un mes hay cinco de unos días y cuatro de otros: el promedio es por jornada. */
     public function test_el_dia_de_la_semana_se_promedia_por_jornada(): void
     {
-        $venta = $this->vender();
+        // Una venta de ayer y otra de hoy.
+        $ayer = $this->vender();
+        $ayer->forceFill(['fecha' => Carbon::parse(Config::jornadaActual())->subDay()->setTime(13, 0)])->saveQuietly();
+        $this->vender();
 
         $semana = collect($this->actingAs($this->admin())
             ->get(route('reportes.ventas', [
@@ -96,11 +102,17 @@ class ReportesDelNegocioTest extends TestCase
             ]))
             ->viewData('porDiaSemana'));
 
-        // Catorce jornadas: dos de cada día.
-        $this->assertSame([2, 2, 2, 2, 2, 2, 2], $semana->pluck('jornadas')->all());
+        // Catorce jornadas, pero la de hoy va a medias y no se promedia: el día
+        // de hoy cuenta una sola jornada (la de hace una semana), el resto dos.
+        $dia = Carbon::parse(Config::jornadaActual())->dayOfWeekIso - 1;
+        $esperado = array_fill(0, 7, 2);
+        $esperado[$dia] = 1;
+        $this->assertSame($esperado, $semana->pluck('jornadas')->all());
 
-        $hoy = $semana->firstWhere('ventas', '>', 0);
-        $this->assertSame(round((float) $venta->fresh()->total / 2, 2), $hoy['promedio']);
+        // Solo la venta de ayer, promediada entre sus dos jornadas.
+        $this->assertSame(1, $semana->sum('ventas'));
+        $conVentas = $semana->firstWhere('ventas', '>', 0);
+        $this->assertSame(round((float) $ayer->fresh()->total / 2, 2), $conVentas['promedio']);
     }
 
     public function test_el_menu_muestra_lo_que_no_se_vendio(): void

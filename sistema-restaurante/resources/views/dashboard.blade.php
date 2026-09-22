@@ -147,7 +147,7 @@
                         <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">el {{ $hoy['dia'] }} pasado no hubo ventas</p>
                     @else
                         <p class="mt-1 text-theme-xs font-medium {{ $variacion >= 0 ? 'text-success-700 dark:text-success-500' : 'text-error-600 dark:text-error-400' }}" data-variacion>
-                            {{ $variacion > 0 ? '+' : '' }}{{ number_format($variacion, 1) }}% que el {{ $hoy['dia'] }} pasado
+                            {{ $variacion > 0 ? '+' : '' }}{{ number_format($variacion, 1) }}% que el {{ $hoy['dia'] }} pasado a esta hora
                         </p>
                     @endif
                 </div>

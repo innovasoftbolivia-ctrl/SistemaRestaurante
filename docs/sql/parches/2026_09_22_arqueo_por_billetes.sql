@@ -13,11 +13,11 @@ SET NAMES utf8mb4;
 --  por billetes es opcional: un turno cerrado escribiendo el total no tiene
 --  filas aquí.
 --
---  El mismo cambio está en 01_schema_mysql.sql. Se aplica una vez (lo anota
---  aplicar-parches.sh).
+--  El mismo cambio está en 01_schema_mysql.sql. Idempotente (IF NOT EXISTS).
+--  La cascada de la FK la cambia a RESTRICT el parche 2026_09_22_auditoria.
 -- =============================================================================
 
-CREATE TABLE arqueo_caja (
+CREATE TABLE IF NOT EXISTS arqueo_caja (
     sesion_caja_id  INT UNSIGNED  NOT NULL,
     denominacion    DECIMAL(8,2)  NOT NULL,   -- 200.00, 100.00 … 0.10
     cantidad        INT UNSIGNED  NOT NULL,   -- cuántos billetes o monedas

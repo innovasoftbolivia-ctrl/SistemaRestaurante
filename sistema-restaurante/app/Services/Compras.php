@@ -58,7 +58,9 @@ class Compras
             foreach ($lineas as $linea) {
                 $producto = Producto::findOrFail((int) $linea['producto_id']);
                 $cantidad = round((float) $linea['cantidad'], 3);
-                $costo = round((float) $linea['costo_unitario'], 2);
+                // Cuatro decimales: el costo por unidad sale de dividir la caja
+                // (25,00 / 12 = 2,0833), y a dos la compra ya no sumaba la factura.
+                $costo = round((float) $linea['costo_unitario'], 4);
 
                 if (! $producto->controla_stock) {
                     throw new RuntimeException("«{$producto->nombre}» no lleva inventario: actívalo en su ficha del menú antes de comprarlo.");
@@ -84,7 +86,12 @@ class Compras
                     'costo_unitario' => $costo,
                 ]);
 
-                $producto->forceFill(['costo' => $costo])->save();
+                // Una caja regalada (costo 0) no es el costo del producto: si lo
+                // fuera, todas las ventas siguientes se congelarían con 100 % de
+                // ganancia hasta la próxima compra.
+                if ($costo > 0) {
+                    $producto->forceFill(['costo' => $costo])->save();
+                }
             }
 
             Auditor::registrar('COMPRA_REGISTRADA', 'compras', $compra->id, [

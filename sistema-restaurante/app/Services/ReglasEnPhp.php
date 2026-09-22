@@ -10,7 +10,7 @@ use RuntimeException;
 /**
  * Las reglas que normalmente ejecuta la BASE, hechas en PHP.
  *
- * Réplica de los 6 procedimientos almacenados y los 7 triggers de
+ * Réplica de los 6 procedimientos almacenados y los triggers de
  * `docs/sql/01_schema_mysql.sql`, para poder correr el sistema en un hosting
  * que no permite crearlos (ver config/restaurante.php).
  *
@@ -51,6 +51,8 @@ class ReglasEnPhp
      */
     public static function antesDeInsertarLineaVenta(array $linea): array
     {
+        self::exigirVentaAbierta((int) $linea['venta_id'], 'líneas');
+
         // La línea sigue el modo de precio de su venta: todas iguales.
         $linea['impuesto_incluido'] = (int) DB::table('ventas')->where('id', $linea['venta_id'])->value('impuesto_incluido');
 
@@ -62,6 +64,27 @@ class ReglasEnPhp
         $linea['tasa_impuesto'] = $afecto ? self::tasaImpuesto() : 0;
 
         return $linea;
+    }
+
+    /**
+     * trg_venta_pagos_before_insert
+     *
+     * Una venta anulada, o que ya tiene su comprobante, está cerrada: un
+     * pago más descuadraría lo cobrado con lo impreso.
+     */
+    public static function antesDeInsertarPago(int $ventaId): void
+    {
+        self::exigirVentaAbierta($ventaId, 'pagos');
+    }
+
+    /** La guarda común de los dos triggers: el mismo mensaje que la base. */
+    private static function exigirVentaAbierta(int $ventaId, string $que): void
+    {
+        $estado = DB::table('ventas')->where('id', $ventaId)->value('estado');
+
+        if ($estado !== 'COMPLETADA' || DB::table('comprobantes')->where('venta_id', $ventaId)->exists()) {
+            throw new RuntimeException("La venta ya está cerrada: no admite más {$que}.");
+        }
     }
 
     /**

@@ -20,10 +20,19 @@ SET NAMES utf8mb4;
 --  la venta, la compra o la toma: así funciona igual con la lógica en la base
 --  y en un hosting sin triggers.
 --
---  El mismo cambio está en 01_schema_mysql.sql. Idempotente solo en el
---  permiso: el resto se aplica una vez (lo anota aplicar-parches.sh).
+--  El mismo cambio está en 01_schema_mysql.sql. Idempotente: las columnas se
+--  agregan solo si faltan (un procedimiento de uso único, que se borra al
+--  final) y las tablas con IF NOT EXISTS. Si se corta a la mitad, se vuelve a
+--  correr entero.
 -- =============================================================================
 
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS _parche_inventario$$
+CREATE PROCEDURE _parche_inventario()
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'productos' AND COLUMN_NAME = 'controla_stock') THEN
 ALTER TABLE productos
     ADD COLUMN controla_stock    TINYINT(1)    NOT NULL DEFAULT 0 AFTER afecto_impuesto,
     ADD COLUMN stock_actual      DECIMAL(12,3) NOT NULL DEFAULT 0.000 AFTER controla_stock,
@@ -38,11 +47,21 @@ ALTER TABLE productos
         (contenido_empaque IS NULL AND nombre_empaque IS NULL)
         OR (contenido_empaque > 1 AND nombre_empaque IS NOT NULL)
     );
+    END IF;
 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'venta_detalle' AND COLUMN_NAME = 'costo_unitario') THEN
 ALTER TABLE venta_detalle
     ADD COLUMN costo_unitario DECIMAL(12,2) NULL AFTER precio_unitario;
+    END IF;
+END$$
 
-CREATE TABLE proveedores (
+DELIMITER ;
+
+CALL _parche_inventario();
+DROP PROCEDURE _parche_inventario;
+
+CREATE TABLE IF NOT EXISTS proveedores (
     id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
     razon_social    VARCHAR(120) NOT NULL,
     documento       VARCHAR(20)  NULL,
@@ -56,7 +75,7 @@ CREATE TABLE proveedores (
     UNIQUE KEY uq_proveedores_razon (razon_social)
 ) ENGINE=InnoDB;
 
-CREATE TABLE compras (
+CREATE TABLE IF NOT EXISTS compras (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     proveedor_id        INT UNSIGNED NOT NULL,
     usuario_id          INT UNSIGNED NOT NULL,
@@ -71,7 +90,7 @@ CREATE TABLE compras (
     CONSTRAINT fk_compras_usuario   FOREIGN KEY (usuario_id)   REFERENCES usuarios (id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE compra_detalle (
+CREATE TABLE IF NOT EXISTS compra_detalle (
     id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     compra_id         INT UNSIGNED NOT NULL,
     producto_id       INT UNSIGNED NOT NULL,
@@ -89,7 +108,7 @@ CREATE TABLE compra_detalle (
     CONSTRAINT ck_compradet_devuelta CHECK (cantidad_devuelta >= 0 AND cantidad_devuelta <= cantidad)
 ) ENGINE=InnoDB;
 
-CREATE TABLE devoluciones_compra (
+CREATE TABLE IF NOT EXISTS devoluciones_compra (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     compra_id           INT UNSIGNED NOT NULL,
     usuario_id          INT UNSIGNED NOT NULL,
@@ -106,7 +125,7 @@ CREATE TABLE devoluciones_compra (
     CONSTRAINT fk_devcompra_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE devolucion_compra_detalle (
+CREATE TABLE IF NOT EXISTS devolucion_compra_detalle (
     id                    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     devolucion_compra_id  INT UNSIGNED    NOT NULL,
     compra_detalle_id     BIGINT UNSIGNED NOT NULL,
@@ -126,7 +145,7 @@ CREATE TABLE devolucion_compra_detalle (
     CONSTRAINT ck_devcompradet_repuesta CHECK (cantidad_repuesta >= 0 AND cantidad_repuesta <= cantidad)
 ) ENGINE=InnoDB;
 
-CREATE TABLE tomas_inventario (
+CREATE TABLE IF NOT EXISTS tomas_inventario (
     id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     estado              ENUM('ABIERTA','CERRADA','CANCELADA') NOT NULL DEFAULT 'ABIERTA',
     observacion         VARCHAR(255) NULL,
@@ -143,7 +162,7 @@ CREATE TABLE tomas_inventario (
     CONSTRAINT ck_tomas_cierre CHECK ((estado = 'ABIERTA') = (fecha_cierre IS NULL))
 ) ENGINE=InnoDB;
 
-CREATE TABLE movimientos_inventario (
+CREATE TABLE IF NOT EXISTS movimientos_inventario (
     id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     producto_id          INT UNSIGNED NOT NULL,
     usuario_id           INT UNSIGNED NOT NULL,
@@ -188,7 +207,7 @@ CREATE TABLE movimientos_inventario (
     CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
 ) ENGINE=InnoDB;
 
-CREATE TABLE toma_inventario_detalle (
+CREATE TABLE IF NOT EXISTS toma_inventario_detalle (
     id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     toma_id             INT UNSIGNED NOT NULL,
     producto_id         INT UNSIGNED NOT NULL,

@@ -6,10 +6,29 @@ use App\Services\Pedidos;
 use App\Support\Config;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Como el formulario de verdad (`@unEnvio`), cada envío que escribe lleva
+     * su número de envío, que las rutas `un.envio` exigen. Las pruebas que
+     * quieren un número fijo (el doble clic) lo mandan ellas; la que prueba
+     * que sin él se rechaza pone `$sinNumeroDeEnvio`.
+     */
+    protected bool $sinNumeroDeEnvio = false;
+
+    public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null)
+    {
+        if (! $this->sinNumeroDeEnvio && in_array(strtoupper($method), ['POST', 'PUT', 'PATCH', 'DELETE'], true)
+            && ! array_key_exists('_envio', $parameters)) {
+            $parameters['_envio'] = (string) Str::uuid();
+        }
+
+        return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+    }
+
     /**
      * Cerrojo de seguridad: ninguna prueba debe poder escribir en una base
      * que no sea de pruebas.

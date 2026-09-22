@@ -81,6 +81,16 @@ class DevolucionesCompra
                     throw new RuntimeException("De «{$nombre}» se pueden devolver hasta ".Config::cantidad($original->devolvible).' unidades.');
                 }
 
+                // Lo que se entrega al proveedor tiene que estar en la bodega: si
+                // ya se vendió, devolverlo es un error de carga que dejaba el stock
+                // en negativo. (Cambiado en el acto no mueve el stock.)
+                if ($espera !== 'REPUESTO') {
+                    $hay = Inventario::bloquear($original->producto_id);
+                    if ($cantidad > $hay) {
+                        throw new RuntimeException("De «{$nombre}» hay ".Config::cantidad(max(0, $hay)).' en stock: no se puede devolver más de lo que hay.');
+                    }
+                }
+
                 DevolucionCompraDetalle::create([
                     'devolucion_compra_id' => $devolucion->id,
                     'compra_detalle_id' => $original->id,
@@ -90,7 +100,12 @@ class DevolucionesCompra
                     'costo_unitario' => $original->costo_unitario,
                 ]);
 
-                $original->increment('cantidad_devuelta', $cantidad);
+                // Lo cambiado en el acto no cuenta como devuelto: el reemplazo es
+                // mercadería nueva de esa misma línea, y si también viene mala se
+                // tiene que poder devolver.
+                if ($espera !== 'REPUESTO') {
+                    $original->increment('cantidad_devuelta', $cantidad);
+                }
 
                 Inventario::mover($original->producto_id, $cantidad, 'SALIDA', 'DEVOLUCION_COMPRA', $usuario->id, [
                     'devolucion_compra_id' => $devolucion->id,
@@ -144,6 +159,9 @@ class DevolucionesCompra
                 }
 
                 $linea->increment('cantidad_repuesta', $cantidad);
+                // Lo repuesto vuelve a ser devolvible, igual que lo cambiado en
+                // el acto: el reemplazo también puede venir malo.
+                CompraDetalle::whereKey($linea->compra_detalle_id)->decrement('cantidad_devuelta', $cantidad);
 
                 Inventario::mover($linea->producto_id, $cantidad, 'ENTRADA', 'REPOSICION', $usuario->id, [
                     'devolucion_compra_id' => $devolucion->id,

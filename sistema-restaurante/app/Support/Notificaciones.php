@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Http\Controllers\CocinaController;
 use App\Models\DevolucionCompra;
 use App\Models\Pedido;
+use App\Models\PedidoDetalle;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use Illuminate\Support\Carbon;
@@ -149,7 +150,10 @@ class Notificaciones
                 continue;
             }
 
-            $minutos = $tanda['desde'] ? (int) floor($tanda['desde']->diffInSeconds(now()) / 60) : 0;
+            // Desde el plato más viejo que sigue por hacer o en preparación: uno
+            // que ya salió no espera, y medir desde él inflaba la demora.
+            $pendiente = $tanda['lineas']->whereIn('estado_cocina', PedidoDetalle::EN_COCINA)->min('creado_en');
+            $minutos = $pendiente ? (int) floor(Carbon::parse($pendiente)->diffInSeconds(now()) / 60) : 0;
 
             if ($demorados && $minutos >= self::MINUTOS_DEMORA) {
                 $avisos[] = [
@@ -223,7 +227,10 @@ class Notificaciones
         $porCajero = DB::table('ventas as v')
             ->join('usuarios as u', 'u.id', '=', 'v.usuario_id')
             ->where('v.estado', 'ANULADA')
-            ->whereBetween('v.anulada_en', Config::momentosDeJornadas($jornada, $jornada))
+            // Por la fecha de la VENTA, como el listado al que lleva el aviso y el
+            // reporte: con la de anulación, una venta de anoche anulada de
+            // madrugada salía acá y en el listado no.
+            ->whereBetween('v.fecha', Config::momentosDeJornadas($jornada, $jornada))
             ->groupBy('u.usuario')
             ->selectRaw('u.usuario, COUNT(*) AS cuantas, SUM(v.total) AS monto')
             ->orderByDesc('cuantas')
@@ -237,7 +244,7 @@ class Notificaciones
 
         return [[
             'nivel' => 'info',
-            'titulo' => $cuantas.' '.($cuantas === 1 ? 'venta anulada' : 'ventas anuladas').' hoy · '.Config::importe($porCajero->sum('monto')),
+            'titulo' => $cuantas.' '.($cuantas === 1 ? 'venta de hoy anulada' : 'ventas de hoy anuladas').' · '.Config::importe($porCajero->sum('monto')),
             'detalle' => $porCajero->map(fn ($f) => $f->usuario.' ('.$f->cuantas.')')->implode(', '),
             'url' => route('ventas.index', ['estado' => 'ANULADA', 'desde' => $jornada, 'hasta' => $jornada]),
         ]];

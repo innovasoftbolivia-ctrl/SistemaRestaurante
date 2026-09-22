@@ -77,7 +77,10 @@ class VisorDeErroresTest extends TestCase
         $entrar->assertRedirect(route('errores', ['archivo' => 'laravel-2099-01-01.log']));
         $entrar->assertCookie('visor_errores');
 
-        $this->withCookie('visor_errores', hash('sha256', self::CLAVE))
+        $vence = now()->addHour()->getTimestamp();
+        $cookie = $vence.'.'.hash_hmac('sha256', 'visor-errores:'.$vence, self::CLAVE);
+
+        $this->withCookie('visor_errores', $cookie)
             ->get(route('errores', ['archivo' => 'laravel-2099-01-01.log']))
             ->assertOk()
             ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
@@ -86,6 +89,21 @@ class VisorDeErroresTest extends TestCase
             ->assertSee('El banco no contestó el QR')
             // La traza de la última vez.
             ->assertSee('Bar.php(21)');
+    }
+
+    /** La cookie vence en el servidor: una vieja, o una con la firma cambiada, no abre. */
+    public function test_la_cookie_vence_y_no_se_falsifica(): void
+    {
+        $vencida = now()->subMinute()->getTimestamp();
+        $this->withCookie('visor_errores', $vencida.'.'.hash_hmac('sha256', 'visor-errores:'.$vencida, self::CLAVE))
+            ->get(route('errores'))->assertNotFound();
+
+        $lejos = now()->addYears(10)->getTimestamp();
+        $this->withCookie('visor_errores', $lejos.'.'.hash_hmac('sha256', 'visor-errores:'.$lejos, 'otra-clave'))
+            ->get(route('errores'))->assertNotFound();
+
+        // La vieja forma (la huella fija de la clave) ya no abre.
+        $this->withCookie('visor_errores', hash('sha256', self::CLAVE))->get(route('errores'))->assertNotFound();
     }
 
     public function test_agrupa_filtra_y_no_sale_de_la_carpeta_de_logs(): void
