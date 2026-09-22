@@ -43,7 +43,8 @@
         <h1>Registro de errores</h1>
         <p class="tenue">
             Solo para el desarrollador: no aparece en el menú y nadie más puede abrirla. Lo mismo que escribe Laravel
-            en storage/logs, con los errores iguales juntos. Los archivos se guardan 14 días.
+            en storage/logs, con los errores iguales juntos. En el servidor hay un archivo por día y se guardan los
+            últimos 14.
         </p>
 
         <form method="GET" action="{{ route('errores') }}">
