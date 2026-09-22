@@ -149,6 +149,14 @@
             font-size: 11px;
         }
 
+        /* La nota del pedido («sin hielo»): en negro y en negrita, es lo que
+           mira quien entrega. */
+        .lineas .nota-linea {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
         .totales td { padding: 2px 0; }
         .total-final td {
             border-top: 1px solid #101828;
@@ -403,10 +411,17 @@
                 </tr>
             </thead>
             <tbody>
+                @php $notas = $venta->notasPorProducto(); @endphp
                 @foreach ($venta->detalle as $linea)
                     <tr>
                         <td class="desc">
                             {{ $linea->descripcion }}
+
+                            {{-- La nota va en el ticket: con él se entrega en el
+                                 mostrador lo que no pasa por la cocina. --}}
+                            @if ($notas[$linea->producto_id] ?? null)
+                                <span class="nota-linea" data-nota-linea>» {{ $notas[$linea->producto_id] }}</span>
+                            @endif
 
                             @if ($ticket)
                                 <span class="detalle-linea">

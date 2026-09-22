@@ -111,6 +111,12 @@ class CocinaController extends Controller
                     'hora' => $l->creado_en?->format('H:i'),
                     'minutos' => $l->creado_en ? (int) $l->creado_en->diffInMinutes(now()) : 0,
                 ])->values(),
+                // Lo del mostrador que el pedido lleva además, con su nota.
+                'ademas' => $tanda['sinCocina']->map(fn (PedidoDetalle $l) => [
+                    'descripcion' => $l->descripcion,
+                    'cantidad' => (float) $l->cantidad,
+                    'nota' => $l->nota,
+                ])->values(),
             ])->values(),
         ]);
     }
@@ -221,7 +227,7 @@ class CocinaController extends Controller
      * listo, «por hacer» si la cocina no tocó nada, y «cocinando» en cualquier
      * otro caso —también si un plato ya salió y otro sigue sin empezar—.
      *
-     * @return Collection<int, array{pedido: Pedido, lineas: Collection<int, PedidoDetalle>, listo: bool, columna: string, desde: ?CarbonInterface}>
+     * @return Collection<int, array{pedido: Pedido, lineas: Collection<int, PedidoDetalle>, sinCocina: Collection<int, PedidoDetalle>, listo: bool, columna: string, desde: ?CarbonInterface}>
      */
     private function tandas(): Collection
     {
@@ -238,14 +244,26 @@ class CocinaController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Lo que el pedido lleva además y no pasa por la cocina —la gaseosa,
+        // el agua—, con su nota: quien arma el pedido y lo entrega lo tiene
+        // que ver, y la nota («sin hielo») no salía en ningún otro lado.
+        $sinCocina = PedidoDetalle::query()
+            ->whereIn('pedido_id', $lineas->pluck('pedido_id')->unique())
+            ->where('pasa_por_cocina', false)
+            ->where('estado_cocina', '<>', PedidoDetalle::CANCELADO)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('pedido_id');
+
         return $lineas
             ->groupBy('pedido_id')
-            ->map(function (Collection $grupo) {
+            ->map(function (Collection $grupo) use ($sinCocina) {
                 $listo = $grupo->every(fn (PedidoDetalle $l) => $l->estado_cocina === PedidoDetalle::LISTO);
 
                 return [
                     'pedido' => $grupo->first()->pedido,
                     'lineas' => $grupo,
+                    'sinCocina' => $sinCocina->get($grupo->first()->pedido_id, collect()),
                     'listo' => $listo,
                     'columna' => match (true) {
                         $listo => 'entregar',

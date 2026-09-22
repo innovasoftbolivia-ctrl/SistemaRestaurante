@@ -107,6 +107,25 @@
         @endforeach
     </ul>
 
+    {{-- Lo que el pedido lleva además, del mostrador (las bebidas): no lo
+         prepara la cocina, pero quien arma el pedido lo junta, y su nota
+         («sin hielo», «bien helada») es para él. --}}
+    @if ($tanda['sinCocina']->isNotEmpty())
+        <div class="border-t border-dashed border-gray-200 px-4 py-2.5 dark:border-gray-700" data-sin-cocina>
+            <p class="text-theme-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Además lleva</p>
+            <ul class="mt-1 space-y-1">
+                @foreach ($tanda['sinCocina'] as $extra)
+                    <li class="text-base text-gray-700 dark:text-gray-300">
+                        {{ Config::cantidad($extra->cantidad) }} × {{ $extra->descripcion }}
+                        @if ($extra->nota)
+                            <span class="mt-0.5 block rounded-lg bg-brand-50 px-3 py-1 text-base font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-400">{{ $extra->nota }}</span>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     @if ($listo)
         <p class="border-t border-success-200 bg-success-50 px-4 py-2 text-center text-base font-bold text-success-700 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-500">
             ¡Listo! Canta el {{ $pedido->numero_dia }}

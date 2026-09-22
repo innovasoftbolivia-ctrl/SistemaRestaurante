@@ -169,7 +169,10 @@ class VentaDeMostradorTest extends TestCase
             ->assertSee('data-pedido-cocina="'.$pedido->id.'"', false)
             ->assertSee('una sin ensalada')
             ->assertSee('Comer aquí')
-            ->assertDontSee($bebida->nombre);
+            // La gaseosa no es un plato de la cocina: no se puede tocar ni
+            // avanzar. Sale aparte, en «Además lleva», para quien arma el pedido.
+            ->assertDontSee(route('cocina.estado', $deLaBebida), false)
+            ->assertSeeInOrder(['data-sin-cocina', 'Además lleva', $bebida->nombre], false);
 
         // El ticket: el número del pedido, lo más grande del papel.
         $ticket = $this->actingAs($this->cajero())->get(route('comprobantes.imprimir', $venta->comprobante))->assertOk()->getContent();

@@ -73,6 +73,31 @@ class Venta extends Model
     }
 
     /**
+     * Las notas del pedido («sin hielo», «bien cocido»), por producto: la
+     * línea de la venta no las guarda, las guarda la del pedido. Sin esto la
+     * nota de lo que no pasa por la cocina —la gaseosa— no salía en ningún
+     * lado, y es justo lo que se entrega en el mostrador con el ticket.
+     *
+     * @return array<int, string>
+     */
+    public function notasPorProducto(): array
+    {
+        if (! $this->pedido_id) {
+            return [];
+        }
+
+        return PedidoDetalle::where('pedido_id', $this->pedido_id)
+            ->where('estado_cocina', '<>', PedidoDetalle::CANCELADO)
+            ->whereNotNull('nota')
+            ->where('nota', '<>', '')
+            ->orderBy('id')
+            ->get(['producto_id', 'nota'])
+            ->groupBy('producto_id')
+            ->map(fn ($lineas) => $lineas->pluck('nota')->unique()->implode(' · '))
+            ->all();
+    }
+
+    /**
      * Lo que se le debe al cliente al anular una venta que se cobró, en todo o
      * en parte, por QR, tarjeta o transferencia: el efectivo se devuelve en el
      * mostrador, pero eso sigue en el banco.

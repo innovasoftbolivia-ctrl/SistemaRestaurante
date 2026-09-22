@@ -173,12 +173,18 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                                @php $notas = $venta->notasPorProducto(); @endphp
                                 @foreach ($venta->detalle as $linea)
                                     <tr>
                                         <td class="px-5 py-4">
                                             <span class="block text-theme-sm text-gray-800 dark:text-white/90">
                                                 {{ $linea->descripcion }}
                                             </span>
+                                            @if ($notas[$linea->producto_id] ?? null)
+                                                <span class="block text-theme-xs font-medium text-brand-600 dark:text-brand-400" data-nota-linea>
+                                                    {{ $notas[$linea->producto_id] }}
+                                                </span>
+                                            @endif
                                             <span class="font-mono text-theme-xs text-gray-500 dark:text-gray-400">
                                                 {{ $linea->producto?->codigo }}
                                             </span>
