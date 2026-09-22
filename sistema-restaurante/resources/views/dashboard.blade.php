@@ -136,9 +136,9 @@
                     $sinVentas = $hoy['hoy']['operaciones'] === 0;
                 @endphp
 
-                <div class="{{ $tarjeta }} p-5" data-kpi="vendido">
+                <div class="{{ $tarjeta }} p-4 sm:p-4 sm:p-5" data-kpi="vendido">
                     <p class="mb-1 {{ $rotulo }}">Vendido hoy</p>
-                    <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">{{ Config::importe($hoy['hoy']['monto']) }}</p>
+                    <p class="text-2xl font-semibold sm:text-title-sm text-gray-800 dark:text-white/90">{{ Config::importe($hoy['hoy']['monto']) }}</p>
                     {{-- Sin ventas todavía hoy, la comparación daría −100% en rojo
                          cada mañana: una alarma que no es. Se espera a la primera. --}}
                     @if ($sinVentas)
@@ -152,9 +152,9 @@
                     @endif
                 </div>
 
-                <div class="{{ $tarjeta }} p-5" data-kpi="ventas">
+                <div class="{{ $tarjeta }} p-4 sm:p-4 sm:p-5" data-kpi="ventas">
                     <p class="mb-1 {{ $rotulo }}">Ventas</p>
-                    <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">{{ number_format($hoy['hoy']['operaciones']) }}</p>
+                    <p class="text-2xl font-semibold sm:text-title-sm text-gray-800 dark:text-white/90">{{ number_format($hoy['hoy']['operaciones']) }}</p>
                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">ticket promedio {{ Config::importe($hoy['hoy']['ticket']) }}</p>
                 </div>
 
@@ -164,10 +164,10 @@
                 @endphp
                 @php $veCocina = $usuario->tienePermiso('cocina.ver'); @endphp
                 <{{ $veCocina ? 'a' : 'div' }} @if ($veCocina) href="{{ route('cocina.index') }}" @endif
-                    class="{{ $tarjeta }} {{ $veCocina ? $enlace : '' }} p-5" data-kpi="cocina">
+                    class="{{ $tarjeta }} {{ $veCocina ? $enlace : '' }} p-4 sm:p-4 sm:p-5" data-kpi="cocina">
                     <p class="mb-1 {{ $rotulo }}">En cocina</p>
-                    <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">
-                        {{ $enCocina }} {{ $enCocina === 1 ? 'pedido' : 'pedidos' }}
+                    <p class="text-2xl font-semibold sm:text-title-sm text-gray-800 dark:text-white/90">
+                        {{ $enCocina }} <span class="text-base font-medium text-gray-500 dark:text-gray-400">{{ $enCocina === 1 ? 'pedido' : 'pedidos' }}</span>
                     </p>
                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400" data-cocina-desglose>
                         {{ $cocina['hacer'] }} por hacer · {{ $cocina['cocinando'] }} cocinando · {{ $cocina['entregar'] }} listos
@@ -180,10 +180,10 @@
                 </{{ $veCocina ? 'a' : 'div' }}>
 
                 @if ($stock !== null)
-                    <a href="{{ route('inventario.index') }}" class="{{ $tarjeta }} {{ $enlace }} p-5" data-kpi="stock">
+                    <a href="{{ route('inventario.index') }}" class="{{ $tarjeta }} {{ $enlace }} p-4 sm:p-4 sm:p-5" data-kpi="stock">
                         <p class="mb-1 {{ $rotulo }}">Por comprar</p>
-                        <p class="text-title-sm font-semibold {{ $stock['total'] > 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">
-                            {{ $stock['total'] }} {{ $stock['total'] === 1 ? 'producto' : 'productos' }}
+                        <p class="text-2xl font-semibold sm:text-title-sm {{ $stock['total'] > 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">
+                            {{ $stock['total'] }} <span class="text-base font-medium text-gray-500 dark:text-gray-400">{{ $stock['total'] === 1 ? 'producto' : 'productos' }}</span>
                         </p>
                         @if ($stock['total'] > 0)
                             <p class="mt-1 truncate text-theme-xs text-gray-500 dark:text-gray-400">
@@ -194,9 +194,9 @@
                         @endif
                     </a>
                 @else
-                    <div class="{{ $tarjeta }} p-5" data-kpi="listos">
+                    <div class="{{ $tarjeta }} p-4 sm:p-4 sm:p-5" data-kpi="listos">
                         <p class="mb-1 {{ $rotulo }}">Para entregar</p>
-                        <p class="text-title-sm font-semibold text-gray-800 dark:text-white/90">{{ $cocina['entregar'] }}</p>
+                        <p class="text-2xl font-semibold sm:text-title-sm text-gray-800 dark:text-white/90">{{ $cocina['entregar'] }}</p>
                         <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400">pedidos listos en la cocina</p>
                     </div>
                 @endif
