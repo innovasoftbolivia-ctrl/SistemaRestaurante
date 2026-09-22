@@ -170,7 +170,7 @@
                         {{ $enCocina }} {{ $enCocina === 1 ? 'pedido' : 'pedidos' }}
                     </p>
                     <p class="mt-1 text-theme-xs text-gray-500 dark:text-gray-400" data-cocina-desglose>
-                        {{ $cocina['hacer'] }} por hacer · {{ $cocina['cocinando'] }} cocinando · {{ $cocina['entregar'] }} para entregar
+                        {{ $cocina['hacer'] }} por hacer · {{ $cocina['cocinando'] }} cocinando · {{ $cocina['entregar'] }} listos
                     </p>
                     @if ($cocina['espera'] !== null && $cocina['espera'] >= CocinaController::MINUTOS_AVISO)
                         <p class="mt-0.5 text-theme-xs font-medium {{ $cocina['espera'] >= CocinaController::MINUTOS_TARDE ? 'text-error-600 dark:text-error-400' : 'text-warning-700 dark:text-orange-400' }}">
