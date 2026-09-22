@@ -13,8 +13,10 @@
         'hoy' => ['boton' => 'Hoy', 'nota' => 'Por hora, frente al promedio de los últimos '.($hoy ? (str_ends_with($hoy['dia'], 's') ? $hoy['dia'] : $hoy['dia'].'s') : 'días').' a la misma hora.'],
         '30' => ['boton' => '30 días', 'nota' => 'Lo vendido cada día del último mes.'],
     ];
+    // Los 30 días son una tendencia: en área, con una fecha de cada tanto en
+    // el eje (en barras, treinta fechas se amontonan).
     $configGrafico = fn (string $clave) => [
-        'tipo' => 'bar',
+        'tipo' => $clave === '30' ? 'area' : 'bar',
         'moneda' => $moneda,
         'categorias' => $graficos[$clave]['categorias'],
         'series' => $graficos[$clave]['series'],
