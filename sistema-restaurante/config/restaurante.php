@@ -107,4 +107,19 @@ return [
 
     'desarrollado_por' => (string) env('DESARROLLADO_POR', 'InnovaDevs'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Visor de errores del desarrollador
+    |--------------------------------------------------------------------------
+    |
+    | /_errores muestra el registro de errores (storage/logs) sin entrar al
+    | servidor. No depende de usuarios ni permisos —el administrador del
+    | cliente puede darse cualquier permiso y cambiar contraseñas—: solo entra
+    | quien tiene esta clave, que vive en el .env del servidor. Vacía = el
+    | visor no existe (404 para todos). Mínimo 24 caracteres.
+    |
+    */
+
+    'clave_desarrollador' => (string) env('CLAVE_DESARROLLADOR', ''),
+
 ];

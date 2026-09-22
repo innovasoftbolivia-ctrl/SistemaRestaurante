@@ -16,6 +16,7 @@ use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\EmpleadoController;
+use App\Http\Controllers\ErroresController;
 use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\NotificacionController;
 use App\Http\Controllers\PedidoController;
@@ -58,6 +59,10 @@ Route::post('logout', [LoginController::class, 'destroy'])
 | `cuenta.vigente` corta la sesión si la cuenta dejó de tener acceso mientras
 | el usuario seguía navegando (por ejemplo, si se cesa al empleado).
 */
+
+// El visor de errores del desarrollador: fuera del login y de los permisos, a
+// propósito (ver ErroresController). Sin CLAVE_DESARROLLADOR, 404.
+Route::get('_errores', ErroresController::class)->middleware('throttle:20,1')->name('errores');
 
 // `auth.session`: si la contraseña cambia, las demás sesiones abiertas de esa
 // cuenta se cierran en su próxima petición. Una contraseña filtrada se cambia
