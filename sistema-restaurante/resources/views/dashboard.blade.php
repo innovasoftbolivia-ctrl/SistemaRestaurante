@@ -247,8 +247,8 @@
                 </div>
             </div>
 
-            {{-- ------------------------- pedidos, cocina y lo más vendido hoy --}}
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {{-- --------------------------------- pedidos y lo más vendido hoy --}}
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div class="{{ $tarjeta }}" data-ultimos-pedidos>
                     <div class="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
                         <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Últimos pedidos</h2>
