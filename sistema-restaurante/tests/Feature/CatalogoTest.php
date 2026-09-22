@@ -399,8 +399,12 @@ class CatalogoTest extends TestCase
         }
     }
 
-    /** El mostrador arma sus tarjetas con Alpine y necesita el mismo ajuste. */
-    public function test_el_mostrador_tambien_acomoda_la_foto(): void
+    /**
+     * En el mostrador la foto ocupa el costado entero de la tarjeta, a lo
+     * alto: ahí sí llena su espacio (`object-cover`), para que no quede como
+     * una estampilla blanca sobre la tarjeta oscura.
+     */
+    public function test_el_mostrador_llena_el_costado_con_la_foto(): void
     {
         // Sin turno abierto el mostrador no pinta la cuadrícula, sino el aviso
         // de abrir caja: no habría marcado que comprobar.
@@ -408,8 +412,7 @@ class CatalogoTest extends TestCase
 
         $html = $this->actingAs($this->admin())->get('/pos')->assertOk()->getContent();
 
-        $this->assertStringContainsString('object-scale-down', $html);
-        $this->assertStringNotContainsString('object-cover', $this->sinFondos($html));
+        $this->assertMatchesRegularExpression('/data-foto-tarjeta>\s*<img[^>]*object-cover/', $html);
     }
 
     /** El HTML sin las fotos de fondo difuminadas (decorativas, `aria-hidden`). */

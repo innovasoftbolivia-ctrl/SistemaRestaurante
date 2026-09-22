@@ -158,19 +158,13 @@
                                  tarjeta. --}}
                             <span class="w-1.5 flex-none" :class="franjaCategoria(p.categoria_id)" aria-hidden="true"></span>
 
-                            {{-- Si hay foto, va como miniatura cuadrada DENTRO de la
-                                 tarjeta, y el nombre conserva el ancho. La foto entra
-                                 entera (`object-scale-down`: una botella alta no pierde
-                                 la mitad) y detrás la misma foto, difuminada, llena el
-                                 recuadro: no queda flotando sobre un bloque blanco. --}}
+                            {{-- Si hay foto, ocupa todo el costado de la tarjeta, de
+                                 borde a borde y a lo alto (`object-cover`): es parte de
+                                 la tarjeta, no una estampilla blanca pegada encima. --}}
                             <template x-if="p.imagen">
-                                <span class="flex flex-none items-center py-3 pl-3">
-                                    <span class="relative flex h-13 w-13 items-center justify-center overflow-hidden rounded-lg bg-gray-100 ring-1 ring-gray-200 dark:bg-white/[0.06] dark:ring-gray-700">
-                                        <img :src="p.imagen" alt="" aria-hidden="true" loading="lazy"
-                                            class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-md" data-foto-fondo />
-                                        <img :src="p.imagen" alt="" loading="lazy"
-                                            class="relative max-h-full max-w-full object-scale-down" />
-                                    </span>
+                                <span class="relative w-20 flex-none overflow-hidden bg-gray-100 dark:bg-gray-800" data-foto-tarjeta>
+                                    <img :src="p.imagen" alt="" loading="lazy"
+                                        class="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100" />
                                 </span>
                             </template>
 
