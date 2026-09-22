@@ -58,7 +58,7 @@
             <div class="flex items-center gap-2 2xsm:gap-3">
                 <x-header.estado-caja />
 
-                <x-header.alertas-stock />
+                <x-header.notificaciones />
 
                 <!-- Claro / oscuro -->
                 <button

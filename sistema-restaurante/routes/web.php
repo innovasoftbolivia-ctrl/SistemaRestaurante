@@ -17,6 +17,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\InventarioController;
+use App\Http\Controllers\NotificacionController;
 use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\PosController;
@@ -67,6 +68,10 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
     Route::get('/', fn () => redirect(Menu::inicio()))->name('raiz');
 
     Route::get('inicio', DashboardController::class)->name('inicio');
+
+    // La campana de la cabecera, para refrescarla sin recargar la página.
+    Route::get('notificaciones', NotificacionController::class)
+        ->middleware('throttle:30,1')->name('notificaciones');
 
     Route::get('perfil', [PerfilController::class, 'edit'])->name('perfil.edit');
     Route::put('perfil/password', [PerfilController::class, 'actualizarPassword'])->name('perfil.password');
