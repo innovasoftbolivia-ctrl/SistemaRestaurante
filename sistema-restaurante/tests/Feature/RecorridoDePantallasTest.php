@@ -24,6 +24,7 @@ use Tests\TestCase;
  */
 class RecorridoDePantallasTest extends TestCase
 {
+    use ConDatosDeInventario;
     use DatabaseTransactions;
 
     /** @return array<string, array{0: bool}> */
@@ -69,16 +70,23 @@ class RecorridoDePantallasTest extends TestCase
         $cerrado = Cajas::abrir(Caja::create(['nombre' => 'Caja recorrido', 'activo' => 1]), $admin, 50);
         Cajas::cerrar($cerrado->fresh(), $admin, 50, null, 0, $cerrado->fresh()->huella(), conCuentasAbiertas: true);
 
+        $inventario = $this->datosDeInventario($admin);
+
         $valores = [
             'sesion' => $turno->id,
             'comprobante' => $venta->comprobante->id,
             'empleado' => DB::table('empleados')->value('id'),
-            'producto' => $producto->id,
+            // La bebida: lleva stock, así el kardex también se recorre.
+            'producto' => $inventario['bebida'],
             'usuario' => $cajero->id,
             'venta' => $venta->id,
             'cobro' => $cobro->id,
             'pedido' => $pedido->id,
             'linea' => $pedido->detalle()->value('id'),
+            'proveedor' => $inventario['proveedor'],
+            'compra' => $inventario['compra'],
+            'devolucion' => $inventario['devolucion'],
+            'toma' => $inventario['toma'],
         ];
 
         $fallas = [];

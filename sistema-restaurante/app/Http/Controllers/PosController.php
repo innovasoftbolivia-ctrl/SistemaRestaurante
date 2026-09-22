@@ -134,6 +134,9 @@ class PosController extends Controller
                 'precio' => (float) $p->precio_venta,
                 'precio_estante' => $p->precio_estante,
                 'afecto' => (bool) $p->afecto_impuesto,
+                // Lo que lleva inventario (bebidas): cuántas quedan. El
+                // mostrador avisa, pero vende igual aunque no alcance.
+                'stock' => $p->controla_stock ? (float) $p->stock_actual : null,
                 'imagen' => $p->imagen_url,
                 // Tiñe la pieza con la inicial mientras no tenga foto.
                 'categoria_id' => $p->categoria_id,
@@ -170,6 +173,7 @@ class PosController extends Controller
                 // El régimen de impuesto también puede cambiar mientras el
                 // carrito está armado, y en modo incluido no mueve el precio.
                 'afecto' => (bool) $p->afecto_impuesto,
+                'stock' => $p->controla_stock ? (float) $p->stock_actual : null,
             ])
         );
     }

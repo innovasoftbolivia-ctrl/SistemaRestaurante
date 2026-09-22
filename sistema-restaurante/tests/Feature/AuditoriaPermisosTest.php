@@ -30,6 +30,7 @@ use Tests\TestCase;
  */
 class AuditoriaPermisosTest extends TestCase
 {
+    use ConDatosDeInventario;
     use DatabaseTransactions;
 
     /**
@@ -63,6 +64,8 @@ class AuditoriaPermisosTest extends TestCase
         $pedido = Pedidos::abrir(Pedido::LOCAL, $cajero);
         $linea = Pedidos::agregarLinea($pedido, $producto, 1, null, $cajero);
 
+        $inventario = $this->datosDeInventario(Usuario::where('usuario', 'admin')->firstOrFail());
+
         return [
             'venta' => $venta->id,
             'pedido' => $pedido->id,
@@ -78,6 +81,10 @@ class AuditoriaPermisosTest extends TestCase
             'empleado' => DB::table('empleados')->max('id'),
             'usuario' => DB::table('usuarios')->max('id'),
             'rol' => DB::table('roles')->max('id'),
+            'proveedor' => $inventario['proveedor'],
+            'compra' => $inventario['compra'],
+            'devolucion' => $inventario['devolucion'],
+            'toma' => $inventario['toma'],
         ];
     }
 

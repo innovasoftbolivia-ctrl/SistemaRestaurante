@@ -20,6 +20,11 @@
     // depende de pocos platos.
     $pesoTop5 = $totalVendido > 0 ? $masVendidos->take(5)->sum('monto_vendido') / $totalVendido * 100 : 0;
     $masPedido = $masVendidos->sortByDesc('unidades_vendidas')->first();
+
+    // Lo que tiene costo (se compra al proveedor): cuánto deja de verdad.
+    $ganancias = \App\Http\Controllers\ReporteController::ganancias($masVendidos);
+    $gananciaTotal = $ganancias->sum('ganancia');
+    $vendidoConCosto = $ganancias->sum('vendido');
 @endphp
 
 @section('content')
@@ -150,6 +155,50 @@
                 </table>
             </div>
         </div>
+
+        {{-- Ganancia: solo lo que tiene costo, congelado al vender. --}}
+        @if ($ganancias->isNotEmpty())
+            <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]" data-ganancias>
+                <div class="px-6 py-5">
+                    <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ganancia</h2>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        De lo que se compra al proveedor (las bebidas que llevan stock) quedaron
+                        <b class="text-gray-800 dark:text-white/90">{{ Config::importe($gananciaTotal) }}</b>
+                        de ganancia sobre {{ Config::importe($vendidoConCosto) }} vendidos
+                        ({{ $vendidoConCosto > 0 ? number_format($gananciaTotal / $vendidoConCosto * 100, 0) : 0 }}% de margen).
+                        El costo es el de la última compra al momento de cada venta.
+                    </p>
+                </div>
+
+                <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+                    <table class="min-w-full">
+                        <thead class="border-b border-gray-100 dark:border-gray-800">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-theme-xs font-medium text-gray-500 dark:text-gray-400">Ítem del menú</th>
+                                <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">{{ $rotulo }}</th>
+                                <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Costo</th>
+                                <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Ganancia</th>
+                                <th class="px-6 py-3 text-right text-theme-xs font-medium text-gray-500 dark:text-gray-400">Margen</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                            @foreach ($ganancias as $g)
+                                <tr class="transition hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                    <td class="px-6 py-3">
+                                        <a href="{{ route('productos.show', $g->id) }}" class="block text-theme-sm text-gray-800 hover:text-brand-500 dark:text-white/90">{{ $g->nombre }}</a>
+                                        <span class="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{{ $g->codigo }}</span>
+                                    </td>
+                                    <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($g->vendido) }}</td>
+                                    <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ Config::importe($g->costo) }}</td>
+                                    <td class="px-6 py-3 text-right text-theme-sm font-medium {{ $g->ganancia < 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">{{ Config::importe($g->ganancia) }}</td>
+                                    <td class="px-6 py-3 text-right text-theme-sm text-gray-500 dark:text-gray-400">{{ number_format($g->margen * 100, 1) }}%</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
 
         {{-- Lo que nadie pidió: el primer candidato a revisar o a sacar. --}}
         <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]" data-sin-ventas>

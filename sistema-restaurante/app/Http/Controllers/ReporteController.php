@@ -278,6 +278,7 @@ class ReporteController extends Controller
         $categorias = $this->porCategoria($desde, $hasta);
         $sinVentas = $this->sinVentas($desde, $hasta);
         $totalVendido = $this->totalVendidoNeto($desde, $hasta);
+        $ganancias = self::ganancias($ranking);
 
         $indicadores = [
             ['etiqueta' => 'Ítems en el menú', 'valor' => Producto::where('activo', 1)->count(), 'formato' => 'entero', 'nota' => 'disponibles hoy'],
@@ -285,6 +286,9 @@ class ReporteController extends Controller
             ['etiqueta' => 'Sin ninguna venta', 'valor' => $sinVentas->count(), 'formato' => 'entero', 'nota' => 'en la carta, pero nadie los pidió'],
             ['etiqueta' => self::rotuloVendidoSinImpuesto(), 'valor' => $totalVendido, 'formato' => 'moneda', 'nota' => 'neto de descuentos'.(Config::tasaImpuesto() > 0 ? ', antes del impuesto: no es el «Vendido (con impuesto)» del reporte de ventas' : ''), 'destacar' => true],
         ];
+        if ($ganancias->isNotEmpty()) {
+            $indicadores[] = ['etiqueta' => 'Ganancia', 'valor' => $ganancias->sum('ganancia'), 'formato' => 'moneda', 'nota' => 'de lo que tiene costo: lo vendido menos lo que costó'];
+        }
 
         $doc = $this->documento('Reporte del menú', $desde, $hasta, $indicadores, [
             [
@@ -305,6 +309,16 @@ class ReporteController extends Controller
                 'totales' => [null, null, 'Total', null, (float) $ranking->sum('unidades_vendidas'), (float) $ranking->sum('monto_vendido'), $totalVendido > 0 ? (float) $ranking->sum('monto_vendido') / $totalVendido : 0],
                 'vacia' => 'No se vendió nada del menú en el período.',
             ],
+            ...($ganancias->isEmpty() ? [] : [[
+                'nombre' => 'Ganancia',
+                'nota' => 'Solo lo que tiene costo (lo que se compra al proveedor): lo vendido menos lo que costó al momento de venderlo.',
+                'cabeceras' => ['Código', 'Ítem del menú', 'Categoría', self::rotuloVendidoSinImpuesto(), 'Costo', 'Ganancia', 'Margen'],
+                'formatos' => [null, null, null, 'moneda', 'moneda', 'moneda', 'porcentaje'],
+                'alineacion' => ['izq', 'izq', 'izq', 'der', 'der', 'der', 'der'],
+                'filas' => $ganancias->map(fn ($g) => [$g->codigo, $g->nombre, $g->categoria, $g->vendido, $g->costo, $g->ganancia, $g->margen])->all(),
+                'totales' => [null, 'Total', null, $ganancias->sum('vendido'), $ganancias->sum('costo'), $ganancias->sum('ganancia'), $ganancias->sum('vendido') > 0 ? $ganancias->sum('ganancia') / $ganancias->sum('vendido') : 0],
+                'vacia' => 'Nada con costo se vendió en el período.',
+            ]]),
             [
                 'nombre' => 'Por categoría',
                 'cabeceras' => ['Categoría', 'Unidades', self::rotuloVendidoSinImpuesto(), '% del total'],
@@ -808,8 +822,43 @@ class ReporteController extends Controller
             ->selectRaw('p.id, p.codigo, p.nombre, c.nombre AS categoria')
             ->selectRaw("SUM({$unidades}) AS unidades_vendidas")
             ->selectRaw("SUM({$neto}) AS monto_vendido")
+            // El costo queda congelado en cada línea al vender (solo lo que
+            // lleva stock: las bebidas que se compran). Lo vendido de esas
+            // mismas líneas va aparte, para que la ganancia no mezcle líneas
+            // sin costo conocido.
+            ->selectRaw('SUM(IF(d.costo_unitario IS NULL, 0, ROUND(d.cantidad * d.costo_unitario, 2))) AS costo')
+            ->selectRaw("SUM(IF(d.costo_unitario IS NULL, 0, {$neto})) AS vendido_con_costo")
+            ->selectRaw('SUM(d.costo_unitario IS NOT NULL) AS lineas_con_costo')
             ->orderByDesc('monto_vendido')
             ->get();
+    }
+
+    /**
+     * Cuánto deja lo que tiene costo: lo vendido menos lo que costó, por
+     * ítem, de lo que más deja a lo que menos. Los platos no tienen costo
+     * cargado —se preparan con insumos que no se inventarían— y no salen.
+     */
+    public static function ganancias(Collection $masVendidos): Collection
+    {
+        return $masVendidos
+            ->filter(fn ($p) => (int) $p->lineas_con_costo > 0)
+            ->map(function ($p) {
+                $vendido = (float) $p->vendido_con_costo;
+                $costo = (float) $p->costo;
+
+                return (object) [
+                    'id' => $p->id,
+                    'codigo' => $p->codigo,
+                    'nombre' => $p->nombre,
+                    'categoria' => $p->categoria,
+                    'vendido' => $vendido,
+                    'costo' => $costo,
+                    'ganancia' => round($vendido - $costo, 2),
+                    'margen' => $vendido > 0 ? ($vendido - $costo) / $vendido : 0,
+                ];
+            })
+            ->sortByDesc('ganancia')
+            ->values();
     }
 
     /** Cuánto aporta cada sección de la carta: bebidas, entradas, platos… */

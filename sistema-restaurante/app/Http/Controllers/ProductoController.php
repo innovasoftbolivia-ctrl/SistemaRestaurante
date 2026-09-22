@@ -6,9 +6,11 @@ use App\Http\Controllers\Concerns\OrdenaTablas;
 use App\Models\Categoria;
 use App\Models\Producto;
 use App\Services\Auditor;
+use App\Services\Inventario;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -85,7 +87,15 @@ class ProductoController extends Controller
         // Sin código escrito, el correlativo que ya se proponía en pantalla.
         $datos['codigo'] = filled($datos['codigo'] ?? null) ? $datos['codigo'] : $this->siguienteCodigo();
 
-        $producto = Producto::create($datos);
+        $producto = DB::transaction(function () use ($datos, $request) {
+            $producto = Producto::create($datos);
+
+            if ($producto->controla_stock) {
+                Inventario::inicial($producto, (float) $request->input('stock_inicial', 0), $request->user());
+            }
+
+            return $producto;
+        });
 
         Auditor::registrar('PRODUCTO_CREADO', 'productos', $producto->id, [
             'codigo' => $producto->codigo,
@@ -133,7 +143,15 @@ class ProductoController extends Controller
 
         $precioAnterior = (float) $producto->precio_venta;
 
-        $producto->update($datos);
+        DB::transaction(function () use ($producto, $datos, $request) {
+            $producto->update($datos);
+
+            // Recién empieza a llevar inventario: el stock con el que arranca.
+            // Una sola vez; después el stock se mueve con compras y tomas.
+            if ($producto->controla_stock && ! $producto->movimientos()->exists()) {
+                Inventario::inicial($producto->fresh(), (float) $request->input('stock_inicial', 0), $request->user());
+            }
+        });
 
         // El cambio de precio se audita aparte: es la operación sensible
         // del menú (C3: precios no centralizados).
@@ -281,6 +299,13 @@ class ProductoController extends Controller
             'precio_venta' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'afecto_impuesto' => ['boolean'],
             'activo' => ['boolean'],
+            // Inventario: solo para lo que se compra hecho (las bebidas).
+            'controla_stock' => ['boolean'],
+            'stock_minimo' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'nombre_empaque' => ['nullable', 'string', 'max:20', 'required_with:contenido_empaque'],
+            'contenido_empaque' => ['nullable', 'numeric', 'gt:1', 'max:9999999', 'required_with:nombre_empaque'],
+            'costo' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'stock_inicial' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
             // La foto es opcional. 2 MB alcanza de sobra para una miniatura de
             // mostrador y evita que el menú se vuelva pesado de cargar.
             'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
@@ -293,17 +318,41 @@ class ProductoController extends Controller
             'imagen.image' => 'La foto debe ser una imagen.',
             'imagen.mimes' => 'La foto tiene que ser JPG, PNG o WEBP.',
             'imagen.max' => 'La foto no puede pesar más de 2 MB.',
+            'contenido_empaque.gt' => 'El empaque tiene que traer más de una unidad (una caja de 12, un paquete de 6).',
+            'nombre_empaque.required_with' => 'Ponle nombre al empaque: Caja, Paquete, Six-pack…',
+            'contenido_empaque.required_with' => 'Di cuántas unidades trae el empaque.',
         ], [
             'categoria_id' => 'categoría',
             'codigo' => 'código',
             'precio_venta' => 'precio de venta',
             'afecto_impuesto' => 'afecto a impuesto',
             'imagen' => 'foto',
+            'stock_minimo' => 'stock mínimo',
+            'nombre_empaque' => 'nombre del empaque',
+            'contenido_empaque' => 'unidades por empaque',
+            'stock_inicial' => 'stock inicial',
         ]);
 
         // La foto no se asigna en masa: el archivo se guarda aparte y lo que
-        // llega aquí es el `UploadedFile`, no la ruta.
-        unset($datos['imagen'], $datos['quitar_imagen']);
+        // llega aquí es el `UploadedFile`, no la ruta. El stock inicial
+        // tampoco: entra por el kardex (Inventario::inicial), no a mano.
+        unset($datos['imagen'], $datos['quitar_imagen'], $datos['stock_inicial']);
+
+        $datos['controla_stock'] = $request->boolean('controla_stock');
+        $datos['stock_minimo'] = (float) ($datos['stock_minimo'] ?? 0);
+
+        // O las dos cosas del empaque, o ninguna (lo exige también la base).
+        if (blank($datos['nombre_empaque'] ?? null) || blank($datos['contenido_empaque'] ?? null)) {
+            $datos['nombre_empaque'] = null;
+            $datos['contenido_empaque'] = null;
+        }
+
+        if (! $datos['controla_stock']) {
+            // Un plato no tiene empaque de compra. El costo se conserva: la
+            // ganancia de lo ya vendido lo sigue necesitando.
+            $datos['nombre_empaque'] = null;
+            $datos['contenido_empaque'] = null;
+        }
 
         return $datos;
     }

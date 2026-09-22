@@ -10,16 +10,21 @@ use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\CobroQrController;
 use App\Http\Controllers\CocinaController;
 use App\Http\Controllers\ComandaController;
+use App\Http\Controllers\CompraController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DevolucionCompraController;
 use App\Http\Controllers\EmpleadoController;
+use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\PerfilController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductoController;
+use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\RolController;
+use App\Http\Controllers\TomaInventarioController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\VentaController;
 use App\Support\Menu;
@@ -296,6 +301,47 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
         Route::post('categorias', [CategoriaController::class, 'store'])->name('categorias.store');
         Route::put('categorias/{categoria}', [CategoriaController::class, 'update'])->name('categorias.update');
         Route::delete('categorias/{categoria}', [CategoriaController::class, 'destroy'])->middleware('permiso:registros.eliminar')->name('categorias.destroy');
+    });
+
+    // ---- Inventario: lo que se compra hecho (las bebidas embotelladas) ----
+    // Todo con `inventario.gestionar`, que por omisión tiene el Administrador.
+    Route::middleware('permiso:inventario.gestionar')->group(function () {
+        Route::get('inventario', [InventarioController::class, 'index'])->name('inventario.index');
+        Route::get('inventario/{producto}/kardex', [InventarioController::class, 'kardex'])
+            ->whereNumber('producto')->name('inventario.kardex');
+        Route::post('inventario/{producto}/ajuste', [InventarioController::class, 'ajuste'])
+            ->whereNumber('producto')->middleware('un.envio')->name('inventario.ajuste');
+
+        Route::get('proveedores', [ProveedorController::class, 'index'])->name('proveedores.index');
+        Route::post('proveedores', [ProveedorController::class, 'store'])->name('proveedores.store');
+        Route::put('proveedores/{proveedor}', [ProveedorController::class, 'update'])->name('proveedores.update');
+        Route::delete('proveedores/{proveedor}', [ProveedorController::class, 'destroy'])
+            ->middleware('permiso:registros.eliminar')->name('proveedores.destroy');
+
+        Route::get('compras', [CompraController::class, 'index'])->name('compras.index');
+        Route::get('compras/nueva', [CompraController::class, 'create'])->name('compras.create');
+        Route::post('compras', [CompraController::class, 'store'])->middleware('un.envio')->name('compras.store');
+        Route::get('compras/{compra}', [CompraController::class, 'show'])->whereNumber('compra')->name('compras.show');
+
+        Route::get('devoluciones-proveedor', [DevolucionCompraController::class, 'index'])->name('devoluciones-compra.index');
+        Route::get('compras/{compra}/devolucion', [DevolucionCompraController::class, 'create'])
+            ->whereNumber('compra')->name('devoluciones-compra.create');
+        Route::post('compras/{compra}/devolucion', [DevolucionCompraController::class, 'store'])
+            ->whereNumber('compra')->middleware('un.envio')->name('devoluciones-compra.store');
+        Route::get('devoluciones-proveedor/{devolucion}', [DevolucionCompraController::class, 'show'])
+            ->whereNumber('devolucion')->name('devoluciones-compra.show');
+        Route::post('devoluciones-proveedor/{devolucion}/reposicion', [DevolucionCompraController::class, 'reponer'])
+            ->whereNumber('devolucion')->middleware('un.envio')->name('devoluciones-compra.reponer');
+
+        Route::get('toma-inventario', [TomaInventarioController::class, 'index'])->name('tomas.index');
+        Route::post('toma-inventario', [TomaInventarioController::class, 'store'])->name('tomas.store');
+        Route::get('toma-inventario/{toma}', [TomaInventarioController::class, 'show'])->whereNumber('toma')->name('tomas.show');
+        Route::post('toma-inventario/{toma}/conteo', [TomaInventarioController::class, 'contar'])
+            ->whereNumber('toma')->name('tomas.contar');
+        Route::post('toma-inventario/{toma}/cerrar', [TomaInventarioController::class, 'cerrar'])
+            ->whereNumber('toma')->middleware('un.envio')->name('tomas.cerrar');
+        Route::post('toma-inventario/{toma}/cancelar', [TomaInventarioController::class, 'cancelar'])
+            ->whereNumber('toma')->name('tomas.cancelar');
     });
 
     // ---- Usuarios y roles ----

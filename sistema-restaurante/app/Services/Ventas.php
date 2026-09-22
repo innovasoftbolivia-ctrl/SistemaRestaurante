@@ -157,6 +157,10 @@ class Ventas
             self::registrarPagos($venta, $pagos);
             self::emitirComprobante($venta, $cliente);
 
+            // Lo que controla stock (las bebidas) sale del inventario. Nunca
+            // frena la venta: sin stock, queda negativo para revisarlo.
+            Inventario::salidaPorVenta($venta, $usuario);
+
             Auditor::registrar('VENTA_REGISTRADA', 'ventas', $venta->id, [
                 'total' => $venta->fresh()->total,
                 'lineas' => count($lineas),
@@ -257,6 +261,9 @@ class Ventas
                 // decide el precio de una venta real.
                 'precio_unitario' => $linea['precio_unitario'] ?? $producto->precio_venta,
                 // Sin descuento por línea: el descuento es de la venta entera.
+                // El costo de lo que se compra hecho, congelado: la ganancia
+                // de este mes no cambia con la compra del mes que viene.
+                'costo_unitario' => $producto->controla_stock ? $producto->costo : null,
             ];
 
             // Sin triggers en la base, el régimen de impuesto lo copia PHP
@@ -524,6 +531,9 @@ class Ventas
             ReglasEnPhp::activa()
                 ? ReglasEnPhp::anularVenta($venta->id, $usuario->id, $motivo)
                 : DB::statement('CALL sp_anular_venta(?, ?, ?)', [$venta->id, $usuario->id, $motivo]);
+
+            // Las botellas vuelven al stock, las mismas que salieron.
+            Inventario::reponerVenta($venta, $usuario);
 
             Pedidos::reabrirTrasAnular($venta, $usuario, $motivo);
         });

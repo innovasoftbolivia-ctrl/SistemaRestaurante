@@ -81,6 +81,20 @@ class Menu
             ];
         }
 
+        // Lo que se compra hecho y se revende (las bebidas embotelladas).
+        if (self::puede('inventario.gestionar')) {
+            $grupos[] = [
+                'title' => 'Inventario',
+                'items' => [
+                    ['icon' => 'inventario', 'name' => 'Stock', 'path' => '/inventario'],
+                    ['icon' => 'compras', 'name' => 'Compras', 'path' => '/compras'],
+                    ['icon' => 'proveedores', 'name' => 'Proveedores', 'path' => '/proveedores'],
+                    ['icon' => 'devoluciones', 'name' => 'Devoluciones', 'path' => '/devoluciones-proveedor'],
+                    ['icon' => 'toma', 'name' => 'Toma de inventario', 'path' => '/toma-inventario'],
+                ],
+            ];
+        }
+
         if (self::puede('reportes.ver')) {
             $grupos[] = [
                 'title' => 'Reportes',
@@ -246,6 +260,22 @@ class Menu
 
         'bitacora' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 3.75h9l3 3v13.5H6V3.75Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 9.75h6M9 13.5h6M9 17.25h3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
 
+        'inventario' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 7.25 12 3.5l8.25 3.75-8.25 3.75L3.75 7.25Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3.75 12 12 15.75 20.25 12M3.75 16.75 12 20.5l8.25-3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
+        // Toma de inventario: la planilla con sus tildes de contado.
+        'toma' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8.75 4.75h-2a2 2 0 0 0-2 2v12.5a2 2 0 0 0 2 2h10.5a2 2 0 0 0 2-2V6.75a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="8.75" y="3" width="6.5" height="3.5" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="m8 11.5 1.5 1.5 2.5-2.5M8 16.5l1.5 1.5 2.5-2.5M14.5 12h1.75M14.5 17h1.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
+        // Kardex: entra y sale. Las dos flechas dicen de qué va la pantalla sin
+        // tener que leer la etiqueta.
+        'kardex' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 8.25h11.5m0 0-3-3m3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.25 15.75H8.75m0 0 3-3m-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        'toma' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8.75 4.75h-2a2 2 0 0 0-2 2v12.5a2 2 0 0 0 2 2h10.5a2 2 0 0 0 2-2V6.75a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="8.75" y="3" width="6.5" height="3.5" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="m8 11.5 1.5 1.5 2.5-2.5M8 16.5l1.5 1.5 2.5-2.5M14.5 12h1.75M14.5 17h1.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
+        // Kardex: entra y sale. Las dos flechas dicen de qué va la pantalla sin
+        // tener que leer la etiqueta.
+        'kardex' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 8.25h11.5m0 0-3-3m3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.25 15.75H8.75m0 0 3-3m-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        'compras' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.75 8.25h11.5m0 0-3-3m3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.25 15.75H8.75m0 0 3-3m-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        'devoluciones' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.25 12a8.25 8.25 0 1 1-2.42-5.83" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M20.25 4.5V10h-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 12h5M12 9.5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+        'proveedores' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.75 8.25h10.5v8.5H2.75z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.25 11.25h3.9l3.1 3v2.5h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="6.75" cy="17.75" r="1.75" stroke="currentColor" stroke-width="1.5"/><circle cx="16.75" cy="17.75" r="1.75" stroke="currentColor" stroke-width="1.5"/></svg>',
         'perfil' => '<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 3.5C7.30558 3.5 3.5 7.30558 3.5 12C3.5 14.1526 4.3002 16.1184 5.61936 17.616C6.17279 15.3096 8.24852 13.5955 10.7246 13.5955H13.2746C15.7509 13.5955 17.8268 15.31 18.38 17.6167C19.6996 16.119 20.5 14.153 20.5 12C20.5 7.30558 16.6944 3.5 12 3.5ZM17.0246 18.8566V18.8455C17.0246 16.7744 15.3457 15.0955 13.2746 15.0955H10.7246C8.65354 15.0955 6.97461 16.7744 6.97461 18.8455V18.856C8.38223 19.8895 10.1198 20.5 12 20.5C13.8798 20.5 15.6171 19.8898 17.0246 18.8566ZM2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM11.9991 7.25C10.8847 7.25 9.98126 8.15342 9.98126 9.26784C9.98126 10.3823 10.8847 11.2857 11.9991 11.2857C13.1135 11.2857 14.0169 10.3823 14.0169 9.26784C14.0169 8.15342 13.1135 7.25 11.9991 7.25ZM8.48126 9.26784C8.48126 7.32499 10.0563 5.75 11.9991 5.75C13.9419 5.75 15.5169 7.32499 15.5169 9.26784C15.5169 11.2107 13.9419 12.7857 11.9991 12.7857C10.0563 12.7857 8.48126 11.2107 8.48126 9.26784Z" fill="currentColor"/></svg>',
     ];
 }

@@ -135,6 +135,61 @@
                     </div>
                 @endif
             </x-common.component-card>
+
+            {{-- Solo para lo que se compra hecho (bebidas embotelladas): el plato
+                 se prepara en la casa y no tiene stock. --}}
+            @php
+                $conMovimientos = $esEdicion && $producto->movimientos()->exists();
+            @endphp
+            <div x-data="{ stock: @js((bool) old('controla_stock', $producto->controla_stock ?? false)) }" data-inventario-producto>
+                <x-common.component-card title="Inventario"
+                    desc="Para lo que se compra hecho al proveedor y se vende por unidad, como las bebidas embotelladas. Los platos no llevan stock.">
+                    <x-form.check name="controla_stock" :checked="$producto->controla_stock ?? false" model="stock"
+                        label="Lleva inventario: se compra al proveedor y se descuenta al vender" />
+
+                    <div x-show="stock" x-cloak class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+                        <x-form.campo label="Empaque en que llega" for="nombre_empaque" name="nombre_empaque"
+                            help="Caja, Paquete, Six-pack… Déjalo vacío si llega suelto.">
+                            <x-form.input id="nombre_empaque" name="nombre_empaque" maxlength="20" placeholder="Caja"
+                                :value="old('nombre_empaque', $producto->nombre_empaque)" />
+                        </x-form.campo>
+
+                        <x-form.campo label="Unidades por empaque" for="contenido_empaque" name="contenido_empaque"
+                            help="Cuántas botellas trae: así la compra se carga por cajas y sueltas.">
+                            <x-form.input id="contenido_empaque" name="contenido_empaque" type="number" step="1" min="2"
+                                placeholder="12" :value="old('contenido_empaque', $producto->contenido_empaque ? Config::cantidad($producto->contenido_empaque) : null)" />
+                        </x-form.campo>
+
+                        <x-form.campo label="Stock mínimo" for="stock_minimo" name="stock_minimo"
+                            help="Con esto o menos, avisa que hay que comprar.">
+                            <x-form.input id="stock_minimo" name="stock_minimo" type="number" step="1" min="0"
+                                :value="old('stock_minimo', $producto->stock_minimo !== null ? Config::cantidad($producto->stock_minimo) : 0)" />
+                        </x-form.campo>
+
+                        <x-form.campo :label="'Costo por unidad ('.$moneda.')'" for="costo" name="costo"
+                            help="El último costo de compra. Se actualiza solo con cada compra; sirve para calcular la ganancia.">
+                            <x-form.input id="costo" name="costo" type="number" step="0.01" min="0"
+                                :value="old('costo', $producto->costo)" />
+                        </x-form.campo>
+
+                        @if ($conMovimientos)
+                            <div class="sm:col-span-2 rounded-xl bg-gray-50 p-4 text-theme-sm text-gray-600 dark:bg-white/[0.03] dark:text-gray-400">
+                                Stock actual: <b class="{{ (float) $producto->stock_actual < 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-white/90' }}">{{ Config::cantidad($producto->stock_actual) }} u.</b>
+                                ({{ $producto->stock_en_empaques }}). Se mueve con las compras, las ventas y la toma de inventario.
+                                @puede('inventario.gestionar')
+                                    <a href="{{ route('inventario.kardex', $producto) }}" class="font-medium text-brand-600 hover:underline dark:text-brand-400">Ver kardex</a>
+                                @endpuede
+                            </div>
+                        @else
+                            <x-form.campo label="Stock inicial (unidades)" for="stock_inicial" name="stock_inicial" class="sm:col-span-2"
+                                help="Las botellas que ya tienes hoy. Queda como primer movimiento del kardex; después el stock se mueve solo.">
+                                <x-form.input id="stock_inicial" name="stock_inicial" type="number" step="1" min="0"
+                                    :value="old('stock_inicial', 0)" />
+                            </x-form.campo>
+                        @endif
+                    </div>
+                </x-common.component-card>
+            </div>
         </div>
 
         <div class="space-y-6">

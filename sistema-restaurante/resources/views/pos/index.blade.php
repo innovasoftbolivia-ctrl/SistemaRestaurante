@@ -171,8 +171,16 @@
                             <span class="flex min-w-0 flex-1 flex-col justify-between gap-1.5 p-3 pr-8">
                                 <span class="line-clamp-2 text-theme-sm font-semibold leading-snug text-gray-800 dark:text-white/90"
                                     x-text="p.nombre"></span>
-                                <span class="whitespace-nowrap text-base font-bold tabular-nums text-brand-600 dark:text-brand-400"
-                                    x-text="'{{ $moneda }} ' + p.precio_estante.toFixed(2)"></span>
+                                <span class="flex items-baseline justify-between gap-2">
+                                    <span class="whitespace-nowrap text-base font-bold tabular-nums text-brand-600 dark:text-brand-400"
+                                        x-text="'{{ $moneda }} ' + p.precio_estante.toFixed(2)"></span>
+                                    {{-- Solo lo que lleva inventario (bebidas): cuántas quedan. --}}
+                                    <template x-if="p.stock !== null && p.stock !== undefined">
+                                        <span class="whitespace-nowrap text-theme-xs font-medium tabular-nums"
+                                            :class="p.stock <= 0 ? 'text-error-600 dark:text-error-400' : 'text-gray-500 dark:text-gray-400'"
+                                            x-text="p.stock <= 0 ? 'Sin stock' : 'Quedan ' + cantidadTexto(p.stock)" data-stock-producto></span>
+                                    </template>
+                                </span>
                             </span>
 
                             {{-- Lo que ya va en el pedido, con su cantidad: evita
@@ -306,6 +314,12 @@
                                     <div class="min-w-0 flex-1">
                                         <p class="truncate text-theme-sm font-medium text-gray-800 dark:text-white/90"
                                             x-text="l.nombre"></p>
+                                        {{-- Se vende igual: en hora pico no se frena una venta
+                                             porque falte registrar una compra. El stock queda en
+                                             negativo y el administrador lo ve en Inventario. --}}
+                                        <p x-show="l.stock !== null && l.stock !== undefined && l.cantidad > l.stock" x-cloak
+                                            class="text-theme-xs font-medium text-warning-700 dark:text-orange-400" data-aviso-stock
+                                            x-text="(l.stock <= 0 ? 'Sin stock en el sistema' : 'Quedan ' + cantidadTexto(l.stock)) + ': se vende igual y se avisa al administrador'"></p>
                                         <p class="flex items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
                                             <span x-show="l.cantidad > 1" class="tabular-nums"
                                                 x-text="'{{ $moneda }} ' + l.precio_estante.toFixed(2) + ' c/u'"></span>
@@ -1386,6 +1400,7 @@
                                     precio: p.precio,
                                     precio_estante: p.precio_estante,
                                     afecto: p.afecto,
+                                    stock: p.stock ?? null,
                                     cantidad: 1,
                                     nota: '',
                                     conNota: false,
@@ -1963,6 +1978,9 @@
                                     l.afecto = p.afecto;
                                     cambio = true;
                                 }
+
+                                // El stock no cambia el total: se actualiza sin avisar.
+                                if (p.stock !== undefined) l.stock = p.stock;
                             });
 
                             return cambio;

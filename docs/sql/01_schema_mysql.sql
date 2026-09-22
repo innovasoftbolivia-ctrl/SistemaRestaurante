@@ -203,6 +203,19 @@ CREATE TABLE productos (
     -- el modo con que se calculó (`ventas.impuesto_incluido`).
     precio_venta        DECIMAL(12,2) NOT NULL,
     afecto_impuesto     TINYINT(1)   NOT NULL DEFAULT 1,       -- 1 = se le agrega el impuesto al vender
+    -- Inventario, solo para lo que se compra hecho (las bebidas embotelladas):
+    -- el plato se prepara en la casa y no tiene stock. `stock_actual` se
+    -- cuenta en la unidad en que se VENDE y puede quedar negativo: el
+    -- mostrador avisa pero no frena una venta en hora pico (se revisa en la
+    -- toma de inventario). El empaque es cómo llega del proveedor («Caja» de
+    -- 12), para ingresar «3 cajas y 5 sueltas» sin calculadora. `costo` es el
+    -- último costo de compra por unidad; cada venta lo congela en su línea.
+    controla_stock      TINYINT(1)    NOT NULL DEFAULT 0,
+    stock_actual        DECIMAL(12,3) NOT NULL DEFAULT 0.000,
+    stock_minimo        DECIMAL(12,3) NOT NULL DEFAULT 0.000,
+    contenido_empaque   DECIMAL(10,3) UNSIGNED NULL,
+    nombre_empaque      VARCHAR(20)   NULL,
+    costo               DECIMAL(12,2) NULL,
     imagen              VARCHAR(255) NULL,
     activo              TINYINT(1)   NOT NULL DEFAULT 1,
     creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -212,8 +225,16 @@ CREATE TABLE productos (
     KEY ix_productos_categoria (categoria_id),
     KEY ix_productos_nombre    (nombre),
     KEY ix_productos_activo    (activo),
+    KEY ix_productos_stock     (controla_stock, activo),
     CONSTRAINT fk_productos_categoria FOREIGN KEY (categoria_id)     REFERENCES categorias (id),
-    CONSTRAINT ck_productos_precios   CHECK (precio_venta >= 0)
+    CONSTRAINT ck_productos_precios   CHECK (precio_venta >= 0),
+    CONSTRAINT ck_productos_stock_minimo CHECK (stock_minimo >= 0),
+    CONSTRAINT ck_productos_costo     CHECK (costo IS NULL OR costo >= 0),
+    -- O no viene en empaque, o viene en uno con nombre y más de una unidad.
+    CONSTRAINT ck_productos_empaque   CHECK (
+        (contenido_empaque IS NULL AND nombre_empaque IS NULL)
+        OR (contenido_empaque > 1 AND nombre_empaque IS NOT NULL)
+    )
 ) ENGINE=InnoDB;
 
 -- =============================================================================
@@ -516,6 +537,10 @@ CREATE TABLE venta_detalle (
     descripcion         VARCHAR(120)  NOT NULL,      -- copia histórica del nombre
     cantidad            DECIMAL(12,3) NOT NULL,
     precio_unitario     DECIMAL(12,2) NOT NULL,      -- copia histórica del precio
+    -- El costo por unidad al momento de vender (solo lo que controla stock):
+    -- congelado, para que la ganancia de un mes viejo no cambie con la compra
+    -- de hoy.
+    costo_unitario      DECIMAL(12,2) NULL,
     -- Sin descuento por línea: el descuento se aplica al total de la venta
     -- (`ventas.descuento`), nunca por plato. La columna valía siempre 0 y se
     -- retiró el 2026-09-19.
@@ -861,6 +886,192 @@ CREATE TABLE pedido_detalle (
     -- Todo va por porción. La tabla nació con el restaurante, sin historial
     -- pesado al gramo (a diferencia de `venta_detalle`).
     CONSTRAINT ck_pedidodet_entera   CHECK (cantidad = FLOOR(cantidad))
+) ENGINE=InnoDB;
+
+-- =============================================================================
+--  7.b INVENTARIO (lo que se compra hecho: bebidas embotelladas)
+-- =============================================================================
+--
+-- Proveedores, compras (la factura entera, por empaque), devoluciones al
+-- proveedor, el kardex y la toma de inventario. Lo mueve PHP
+-- (App\Services\Inventario) en la misma transacción de la venta, la compra o
+-- la toma, así funciona igual con la lógica en la base y sin triggers.
+--
+-- Una devolución al proveedor termina de tres maneras: REPUESTO (lo cambió en
+-- el acto), PENDIENTE (traerá el reemplazo: el stock bajó y subirá cuando
+-- llegue) o NOTA_CREDITO (no repone).
+--
+-- La toma guarda en cada línea lo que decía el sistema al contarla y aplica
+-- la DIFERENCIA al cerrar: el local sigue vendiendo mientras se cuenta.
+
+CREATE TABLE proveedores (
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    razon_social    VARCHAR(120) NOT NULL,
+    documento       VARCHAR(20)  NULL,
+    telefono        VARCHAR(30)  NULL,
+    email           VARCHAR(120) NULL,
+    direccion       VARCHAR(200) NULL,
+    activo          TINYINT(1)   NOT NULL DEFAULT 1,
+    creado_en       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_proveedores_documento (documento),
+    UNIQUE KEY uq_proveedores_razon (razon_social)
+) ENGINE=InnoDB;
+
+CREATE TABLE compras (
+    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    proveedor_id        INT UNSIGNED NOT NULL,
+    usuario_id          INT UNSIGNED NOT NULL,
+    documento_externo   VARCHAR(30)  NULL,
+    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    observacion         VARCHAR(255) NULL,
+    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_compras_proveedor (proveedor_id, fecha),
+    KEY ix_compras_fecha     (fecha),
+    CONSTRAINT fk_compras_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores (id),
+    CONSTRAINT fk_compras_usuario   FOREIGN KEY (usuario_id)   REFERENCES usuarios (id)
+) ENGINE=InnoDB;
+
+CREATE TABLE compra_detalle (
+    id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    compra_id         INT UNSIGNED NOT NULL,
+    producto_id       INT UNSIGNED NOT NULL,
+    cantidad          DECIMAL(12,3) NOT NULL,
+    cantidad_devuelta DECIMAL(12,3) NOT NULL DEFAULT 0.000,
+    costo_unitario    DECIMAL(12,2) NOT NULL,
+    importe           DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_compradet_producto (compra_id, producto_id),
+    KEY ix_compradet_producto (producto_id),
+    CONSTRAINT fk_compradet_compra   FOREIGN KEY (compra_id)   REFERENCES compras (id),
+    CONSTRAINT fk_compradet_producto FOREIGN KEY (producto_id) REFERENCES productos (id),
+    CONSTRAINT ck_compradet_cantidad CHECK (cantidad > 0),
+    CONSTRAINT ck_compradet_costo    CHECK (costo_unitario >= 0),
+    CONSTRAINT ck_compradet_devuelta CHECK (cantidad_devuelta >= 0 AND cantidad_devuelta <= cantidad)
+) ENGINE=InnoDB;
+
+CREATE TABLE devoluciones_compra (
+    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    compra_id           INT UNSIGNED NOT NULL,
+    usuario_id          INT UNSIGNED NOT NULL,
+    fecha               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    motivo              ENUM('DEFECTO','VENCIMIENTO','ERROR','OTRO') NOT NULL,
+    espera              ENUM('REPUESTO','PENDIENTE','NOTA_CREDITO') NOT NULL DEFAULT 'NOTA_CREDITO',
+    documento_externo   VARCHAR(30)  NULL,
+    observacion         VARCHAR(255) NULL,
+    creado_en           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_devcompra_compra (compra_id),
+    KEY ix_devcompra_espera (espera, fecha),
+    CONSTRAINT fk_devcompra_compra  FOREIGN KEY (compra_id)  REFERENCES compras (id),
+    CONSTRAINT fk_devcompra_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+) ENGINE=InnoDB;
+
+CREATE TABLE devolucion_compra_detalle (
+    id                    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    devolucion_compra_id  INT UNSIGNED    NOT NULL,
+    compra_detalle_id     BIGINT UNSIGNED NOT NULL,
+    producto_id           INT UNSIGNED    NOT NULL,
+    cantidad              DECIMAL(12,3)   NOT NULL,
+    cantidad_repuesta     DECIMAL(12,3)   NOT NULL DEFAULT 0.000,
+    costo_unitario        DECIMAL(12,2)   NOT NULL,
+    importe               DECIMAL(12,2) GENERATED ALWAYS AS (ROUND(cantidad * costo_unitario, 2)) STORED,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_devcompradet_linea (devolucion_compra_id, compra_detalle_id),
+    KEY ix_devcompradet_linea    (compra_detalle_id),
+    KEY ix_devcompradet_producto (producto_id),
+    CONSTRAINT fk_devcompradet_cabecera FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id),
+    CONSTRAINT fk_devcompradet_linea    FOREIGN KEY (compra_detalle_id)    REFERENCES compra_detalle (id),
+    CONSTRAINT fk_devcompradet_producto FOREIGN KEY (producto_id)          REFERENCES productos (id),
+    CONSTRAINT ck_devcompradet_cantidad CHECK (cantidad > 0 AND costo_unitario >= 0),
+    CONSTRAINT ck_devcompradet_repuesta CHECK (cantidad_repuesta >= 0 AND cantidad_repuesta <= cantidad)
+) ENGINE=InnoDB;
+
+CREATE TABLE tomas_inventario (
+    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    estado              ENUM('ABIERTA','CERRADA','CANCELADA') NOT NULL DEFAULT 'ABIERTA',
+    observacion         VARCHAR(255) NULL,
+    usuario_apertura_id INT UNSIGNED NOT NULL,
+    fecha_apertura      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    usuario_cierre_id   INT UNSIGNED NULL,
+    fecha_cierre        DATETIME     NULL,
+    abierta             TINYINT(1) GENERATED ALWAYS AS (IF(estado = 'ABIERTA', 1, NULL)) STORED,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_tomas_una_abierta (abierta),
+    KEY ix_tomas_fecha (fecha_apertura),
+    CONSTRAINT fk_tomas_apertura FOREIGN KEY (usuario_apertura_id) REFERENCES usuarios (id),
+    CONSTRAINT fk_tomas_cierre   FOREIGN KEY (usuario_cierre_id)   REFERENCES usuarios (id),
+    CONSTRAINT ck_tomas_cierre CHECK ((estado = 'ABIERTA') = (fecha_cierre IS NULL))
+) ENGINE=InnoDB;
+
+CREATE TABLE movimientos_inventario (
+    id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    producto_id          INT UNSIGNED NOT NULL,
+    usuario_id           INT UNSIGNED NOT NULL,
+    tipo                 ENUM('ENTRADA','SALIDA') NOT NULL,
+    origen               ENUM('INICIAL','COMPRA','VENTA','ANULACION','AJUSTE','TOMA','DEVOLUCION_COMPRA','REPOSICION') NOT NULL,
+    venta_id             BIGINT UNSIGNED NULL,
+    compra_id            INT UNSIGNED NULL,
+    devolucion_compra_id INT UNSIGNED NULL,
+    toma_id              INT UNSIGNED NULL,
+    cantidad             DECIMAL(12,3) NOT NULL,
+    stock_anterior       DECIMAL(12,3) NOT NULL,
+    stock_resultante     DECIMAL(12,3) NOT NULL,
+    costo_unitario       DECIMAL(12,2) NULL,
+    motivo               VARCHAR(255) NULL,
+    fecha                DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_movinv_producto (producto_id, fecha),
+    KEY ix_movinv_venta    (venta_id),
+    KEY ix_movinv_compra   (compra_id),
+    KEY ix_movinv_devcompra (devolucion_compra_id),
+    KEY ix_movinv_toma     (toma_id),
+    KEY ix_movinv_fecha    (fecha),
+    CONSTRAINT fk_movinv_producto  FOREIGN KEY (producto_id)          REFERENCES productos (id),
+    CONSTRAINT fk_movinv_usuario   FOREIGN KEY (usuario_id)           REFERENCES usuarios (id),
+    CONSTRAINT fk_movinv_venta     FOREIGN KEY (venta_id)             REFERENCES ventas (id),
+    CONSTRAINT fk_movinv_compra    FOREIGN KEY (compra_id)            REFERENCES compras (id),
+    CONSTRAINT fk_movinv_devcompra FOREIGN KEY (devolucion_compra_id) REFERENCES devoluciones_compra (id),
+    CONSTRAINT fk_movinv_toma      FOREIGN KEY (toma_id)              REFERENCES tomas_inventario (id),
+    CONSTRAINT ck_movinv_cantidad  CHECK (cantidad > 0),
+    CONSTRAINT ck_movinv_origen CHECK (
+        (origen IN ('VENTA','ANULACION') AND venta_id IS NOT NULL
+             AND compra_id IS NULL AND devolucion_compra_id IS NULL AND toma_id IS NULL)
+     OR (origen = 'COMPRA' AND compra_id IS NOT NULL
+             AND venta_id IS NULL AND devolucion_compra_id IS NULL AND toma_id IS NULL)
+     OR (origen IN ('DEVOLUCION_COMPRA','REPOSICION') AND devolucion_compra_id IS NOT NULL
+             AND venta_id IS NULL AND compra_id IS NULL AND toma_id IS NULL)
+     OR (origen = 'TOMA' AND toma_id IS NOT NULL
+             AND venta_id IS NULL AND compra_id IS NULL AND devolucion_compra_id IS NULL)
+     OR (origen IN ('INICIAL','AJUSTE')
+             AND venta_id IS NULL AND compra_id IS NULL AND devolucion_compra_id IS NULL AND toma_id IS NULL)
+    ),
+    CONSTRAINT ck_movinv_motivo CHECK (origen <> 'AJUSTE' OR motivo IS NOT NULL)
+) ENGINE=InnoDB;
+
+CREATE TABLE toma_inventario_detalle (
+    id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    toma_id             INT UNSIGNED NOT NULL,
+    producto_id         INT UNSIGNED NOT NULL,
+    contado             DECIMAL(12,3) NULL,
+    stock_sistema       DECIMAL(12,3) NULL,
+    diferencia          DECIMAL(12,3) GENERATED ALWAYS AS (contado - stock_sistema) STORED,
+    costo_unitario      DECIMAL(12,2) NULL,
+    usuario_id          INT UNSIGNED NULL,
+    fecha_conteo        DATETIME     NULL,
+    movimiento_id       BIGINT UNSIGNED NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_toma_detalle_producto (toma_id, producto_id),
+    KEY ix_toma_detalle_producto (producto_id),
+    CONSTRAINT fk_toma_detalle_toma       FOREIGN KEY (toma_id)       REFERENCES tomas_inventario (id),
+    CONSTRAINT fk_toma_detalle_producto   FOREIGN KEY (producto_id)   REFERENCES productos (id),
+    CONSTRAINT fk_toma_detalle_usuario    FOREIGN KEY (usuario_id)    REFERENCES usuarios (id),
+    CONSTRAINT fk_toma_detalle_movimiento FOREIGN KEY (movimiento_id) REFERENCES movimientos_inventario (id),
+    CONSTRAINT ck_toma_detalle_contado CHECK (
+        (contado IS NULL AND stock_sistema IS NULL)
+     OR (contado >= 0 AND stock_sistema IS NOT NULL)
+    )
 ) ENGINE=InnoDB;
 
 -- =============================================================================
@@ -1594,6 +1805,7 @@ CREATE TABLE parches_aplicados (
 ) ENGINE=InnoDB;
 
 INSERT INTO parches_aplicados (archivo) VALUES
-    ('2026_09_21_cocina_entregar.sql');
+    ('2026_09_21_cocina_entregar.sql'),
+    ('2026_09_22_inventario_de_bebidas.sql');
 
 

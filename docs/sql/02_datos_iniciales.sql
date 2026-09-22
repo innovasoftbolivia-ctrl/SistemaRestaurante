@@ -33,6 +33,7 @@ INSERT INTO permisos (codigo, modulo, descripcion) VALUES
     ('pedidos.registrar',    'Pedidos',    'Cancelar un pedido por cobrar o uno de sus platos'),
     ('cocina.ver',           'Cocina',     'Ver y actualizar el estado de preparación'),
     ('cocina.entregar',      'Cocina',     'Ver la pantalla de la cocina y marcar entregado lo que ya está listo'),
+    ('inventario.gestionar', 'Inventario', 'Proveedores, compras, stock, toma de inventario y devoluciones al proveedor'),
     ('caja.abrir',           'Caja',       'Abrir sesión de caja'),
     ('caja.cerrar',          'Caja',       'Cerrar sesión de caja'),
     ('reportes.ver',         'Reportes',   'Consultar reportes y dashboard'),

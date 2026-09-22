@@ -26,7 +26,7 @@ class VentaDetalle extends Model
     // él los pisa, así que estar en esta lista no cambia nada en esa vía.
     protected $fillable = [
         'venta_id', 'producto_id', 'descripcion',
-        'cantidad', 'precio_unitario',
+        'cantidad', 'precio_unitario', 'costo_unitario',
         'afecto_impuesto', 'tasa_impuesto', 'impuesto_incluido',
     ];
 
@@ -35,6 +35,7 @@ class VentaDetalle extends Model
         return [
             'cantidad' => 'decimal:3',
             'precio_unitario' => 'decimal:2',
+            'costo_unitario' => 'decimal:2',
 
             'importe' => 'decimal:2',
             'tasa_impuesto' => 'decimal:4',
