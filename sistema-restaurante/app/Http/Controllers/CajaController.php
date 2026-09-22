@@ -209,6 +209,10 @@ class CajaController extends Controller
             // mientras contabas» simplemente no mandando el campo.
             'huella' => ['required', 'string', 'max:100'],
             'con_cuentas_abiertas' => ['nullable', 'boolean'],
+            // El arqueo por billetes y monedas: si viene, el efectivo contado
+            // es su suma (ver abajo).
+            'arqueo' => ['nullable', 'array'],
+            'arqueo.*' => ['nullable', 'integer', 'min:0', 'max:99999'],
         ], [], [
             'monto_declarado' => 'efectivo contado',
             'observacion' => 'observación',
@@ -222,15 +226,23 @@ class CajaController extends Controller
             ? 'Tu caja la cierra un administrador, contando el cajón junto a ti.'
             : 'Solo quien abrió la caja o un administrador puede cerrarla.');
 
+        // Contado por billetes: el efectivo contado es lo que suman, calculado
+        // aquí. Lo que mostró la pantalla no decide nada.
+        $arqueo = array_filter($datos['arqueo'] ?? [], fn ($c) => (int) $c > 0);
+        $declarado = $arqueo
+            ? round(collect($arqueo)->sum(fn ($c, $d) => (float) $d * (int) $c), 2)
+            : (float) $datos['monto_declarado'];
+
         try {
             $sesion = Cajas::cerrar(
                 $sesion,
                 Auth::user(),
-                (float) $datos['monto_declarado'],
+                $declarado,
                 $datos['observacion'] ?? null,
                 isset($datos['fondo_dejado']) ? (float) $datos['fondo_dejado'] : null,
                 $datos['huella'],
                 $request->boolean('con_cuentas_abiertas'),
+                $arqueo ?: null,
             );
         } catch (RuntimeException $e) {
             return back()->with('error', Mensaje::de($e));

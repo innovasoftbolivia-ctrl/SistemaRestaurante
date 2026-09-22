@@ -10,8 +10,9 @@
         .'focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 '
         .'dark:focus:border-brand-800';
 
-    // Si la validación rebotó, las líneas vuelven como se habían escrito.
-    $lineasIniciales = collect(old('lineas', []))
+    // Si la validación rebotó, las líneas vuelven como se habían escrito; si
+    // se viene de la compra sugerida, llegan llenas con lo que falta.
+    $lineasIniciales = collect(old('lineas', $lineasSugeridas ?? []))
         ->map(fn ($l) => [
             'producto_id' => (string) ($l['producto_id'] ?? ''),
             'empaques' => (string) ($l['empaques'] ?? ''),
@@ -143,7 +144,7 @@
                     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
                         <x-form.campo label="Proveedor" for="proveedor_id" name="proveedor_id" required>
                             <x-form.select id="proveedor_id" name="proveedor_id" placeholder="Elige el proveedor"
-                                :opciones="$proveedores" required />
+                                :opciones="$proveedores" :value="old('proveedor_id', $proveedorSugerido ?? null)" required />
                         </x-form.campo>
 
                         <x-form.campo label="N.º de factura o nota" for="documento_externo" name="documento_externo">

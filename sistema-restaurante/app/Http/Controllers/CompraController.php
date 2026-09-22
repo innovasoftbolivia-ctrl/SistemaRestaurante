@@ -7,6 +7,7 @@ use App\Models\Compra;
 use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Services\Compras;
+use App\Services\CompraSugerida;
 use App\Support\Config;
 use App\Support\Mensaje;
 use Illuminate\Http\RedirectResponse;
@@ -77,7 +78,21 @@ class CompraController extends Controller
         ]);
     }
 
-    public function create(): View
+    /**
+     * La compra sugerida: lo que está en su mínimo o por debajo, en cajas
+     * cerradas y por proveedor. Cada grupo se abre como una compra nueva ya
+     * llena, para revisarla y guardarla.
+     */
+    public function sugerida(): View
+    {
+        return view('compras.sugerida', [
+            'title' => 'Compra sugerida',
+            'trail' => ['Inventario' => route('inventario.index'), 'Compras' => route('compras.index')],
+            'grupos' => CompraSugerida::porProveedor(),
+        ]);
+    }
+
+    public function create(Request $request): View
     {
         $productos = Producto::conStock()->activos()
             ->with('categoria:id,nombre')
@@ -96,8 +111,14 @@ class CompraController extends Controller
             ])
             ->values();
 
+        // Desde la compra sugerida: las líneas de ese proveedor, ya llenas. Lo
+        // escrito a mano (una validación que rebotó) manda sobre la sugerencia.
+        $sugerido = $request->has('sugerida') ? $request->integer('sugerida') : null;
+
         return view('compras.create', [
             'title' => 'Registrar compra',
+            'lineasSugeridas' => $sugerido !== null ? CompraSugerida::paraElFormulario($sugerido) : [],
+            'proveedorSugerido' => $sugerido ?: null,
             'trail' => ['Inventario' => route('inventario.index'), 'Compras' => route('compras.index')],
             'proveedores' => Proveedor::activos()->orderBy('razon_social')->pluck('razon_social', 'id'),
             'productos' => $productos,

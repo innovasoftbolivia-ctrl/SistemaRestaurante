@@ -52,6 +52,12 @@ class SesionCaja extends Model
         return $this->belongsTo(Usuario::class, 'usuario_cierre_id');
     }
 
+    /** El arqueo por billetes y monedas del cierre, de mayor a menor. */
+    public function arqueo(): HasMany
+    {
+        return $this->hasMany(ArqueoCaja::class, 'sesion_caja_id')->orderByDesc('denominacion');
+    }
+
     public function ventas(): HasMany
     {
         return $this->hasMany(Venta::class, 'sesion_caja_id');

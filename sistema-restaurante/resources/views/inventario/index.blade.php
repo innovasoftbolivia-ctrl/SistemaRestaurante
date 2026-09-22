@@ -83,6 +83,7 @@
                     <div class="flex gap-2">
                         <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
                         <x-ui.button variant="outline" size="sm" :href="route('inventario.index')">Limpiar</x-ui.button>
+                        <x-ui.button size="sm" :href="route('compras.sugerida')">Compra sugerida</x-ui.button>
                     </div>
                 </form>
             </div>

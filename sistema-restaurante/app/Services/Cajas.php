@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ArqueoCaja;
 use App\Models\Caja;
 use App\Models\CobroQr;
 use App\Models\MovimientoCaja;
@@ -190,6 +191,53 @@ class Cajas
      * turno), o quien lo abrió, si el negocio encendió «el cajero cierra su
      * propia caja». Ese cierre es a ciegas: ver `cierraACiegas()`.
      */
+    /**
+     * El arqueo, limpio: solo las denominaciones que existen, solo las que se
+     * contaron, y su suma igual a lo declarado. El servidor rehace la cuenta:
+     * lo que sumó el navegador no decide nada.
+     *
+     * @param  ?array<string, int|string|null>  $arqueo
+     * @return array<string, int> denominación («200», «0.5») => cantidad
+     */
+    public static function arqueoValido(?array $arqueo, float $declarado): array
+    {
+        if (! $arqueo) {
+            return [];
+        }
+
+        $validas = collect(ArqueoCaja::denominaciones())->mapWithKeys(fn ($d) => [ArqueoCaja::clave($d) => $d]);
+        $limpio = [];
+        $suma = 0.0;
+
+        foreach ($arqueo as $clave => $cantidad) {
+            $clave = ArqueoCaja::clave((float) $clave);
+
+            if (! $validas->has($clave)) {
+                throw new RuntimeException("No existe el billete o la moneda de {$clave}.");
+            }
+
+            $cantidad = (int) $cantidad;
+
+            if ($cantidad < 0) {
+                throw new RuntimeException('Las cantidades del arqueo no pueden ser negativas.');
+            }
+
+            if ($cantidad > 0) {
+                $limpio[$clave] = $cantidad;
+                $suma += $validas[$clave] * $cantidad;
+            }
+        }
+
+        if ($limpio && abs(round($suma, 2) - round($declarado, 2)) > 0.001) {
+            throw new RuntimeException(sprintf(
+                'El arqueo suma %s y el efectivo contado dice %s: vuelve a contar.',
+                Config::importe($suma), Config::importe($declarado),
+            ));
+        }
+
+        return $limpio;
+    }
+
     public static function puedeCerrar(?Usuario $usuario, SesionCaja $sesion): bool
     {
         if ($usuario === null) {
@@ -295,6 +343,8 @@ class Cajas
      * @param  ?float  $fondo  lo que queda en el cajón para el siguiente turno
      * @param  ?string  $huella  `SesionCaja::huella()` de cuando se empezó a contar
      * @param  bool  $conCuentasAbiertas  quien cierra vio los pedidos de cobro anulado y cierra igual
+     * @param  ?array<string, int>  $arqueo  cuántos billetes y monedas de cada denominación se contaron
+     *                                       («200» => 3, «0.5» => 4); su suma tiene que ser el declarado
      */
     public static function cerrar(
         SesionCaja $sesion,
@@ -304,7 +354,10 @@ class Cajas
         ?float $fondo = null,
         ?string $huella = null,
         bool $conCuentasAbiertas = false,
+        ?array $arqueo = null,
     ): SesionCaja {
+        $arqueo = self::arqueoValido($arqueo, $declarado);
+
         if (! $sesion->estaAbierta()) {
             throw new RuntimeException('Esta caja ya fue cerrada.');
         }
@@ -334,7 +387,7 @@ class Cajas
         // consulta de la conexión falla.
         $abiertas = [];
 
-        DB::transaction(function () use ($sesion, $usuario, $declarado, $observacion, $fondo, $huella, $conCuentasAbiertas, &$abiertas) {
+        DB::transaction(function () use ($sesion, $usuario, $declarado, $observacion, $fondo, $huella, $conCuentasAbiertas, $arqueo, &$abiertas) {
             // Primero el turno bloqueado: una venta, un movimiento o una
             // anulación que llegue ahora espera a que el cierre termine y lo
             // encuentra cerrado. Lo que se compara con el conteo es lo que hay
@@ -390,6 +443,16 @@ class Cajas
             if ($fondo !== null) {
                 SesionCaja::whereKey($sesion->id)->update(['fondo_dejado' => $fondo]);
             }
+
+            // El detalle del conteo, con el cierre: si el cierre no se guarda,
+            // tampoco su arqueo.
+            if ($arqueo) {
+                DB::table('arqueo_caja')->insert(array_map(fn ($denominacion, $cantidad) => [
+                    'sesion_caja_id' => $sesion->id,
+                    'denominacion' => $denominacion,
+                    'cantidad' => $cantidad,
+                ], array_keys($arqueo), $arqueo));
+            }
         }, self::REINTENTOS);
 
         $sesion->refresh();
@@ -420,7 +483,8 @@ class Cajas
             'declarado' => $sesion->monto_declarado,
             'diferencia' => $sesion->diferencia,
             'fondo_dejado' => $sesion->fondo_dejado,
-        ] + ($abiertas !== [] ? ['cuentas_abiertas' => $abiertas] : []), $usuario->id);
+        ] + ($abiertas !== [] ? ['cuentas_abiertas' => $abiertas] : [])
+          + ($arqueo ? ['arqueo' => $arqueo] : []), $usuario->id);
 
         return $sesion;
     }

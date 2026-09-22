@@ -28,7 +28,8 @@
                 <div class="flex flex-wrap gap-2 sm:col-span-3">
                     <x-ui.button type="submit" size="sm">Filtrar</x-ui.button>
                     <x-ui.button variant="outline" size="sm" :href="route('compras.index')">Limpiar</x-ui.button>
-                    <x-ui.button size="sm" class="ml-auto" :href="route('compras.create')">Registrar compra</x-ui.button>
+                    <x-ui.button size="sm" variant="outline" class="ml-auto" :href="route('compras.sugerida')">Compra sugerida</x-ui.button>
+                    <x-ui.button size="sm" :href="route('compras.create')">Registrar compra</x-ui.button>
                 </div>
             </form>
         </div>

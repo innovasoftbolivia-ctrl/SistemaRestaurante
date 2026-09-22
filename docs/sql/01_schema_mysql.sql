@@ -362,6 +362,20 @@ CREATE TABLE sesiones_caja (
     CONSTRAINT ck_sesion_declarado CHECK (monto_declarado IS NULL OR monto_declarado >= 0)
 ) ENGINE=InnoDB;
 
+-- El arqueo del cierre, por billetes y monedas: cuántos de cada uno contó el
+-- cajero. El efectivo contado (`monto_declarado`) es su suma. Opcional: un
+-- turno cerrado escribiendo el total no tiene filas. Una fila por
+-- denominación (1FN), no una lista en un texto.
+CREATE TABLE arqueo_caja (
+    sesion_caja_id  INT UNSIGNED  NOT NULL,
+    denominacion    DECIMAL(8,2)  NOT NULL,   -- 200.00, 100.00 … 0.10
+    cantidad        INT UNSIGNED  NOT NULL,   -- cuántos billetes o monedas
+    PRIMARY KEY (sesion_caja_id, denominacion),
+    CONSTRAINT fk_arqueo_sesion FOREIGN KEY (sesion_caja_id) REFERENCES sesiones_caja (id) ON DELETE CASCADE,
+    CONSTRAINT ck_arqueo_denominacion CHECK (denominacion > 0),
+    CONSTRAINT ck_arqueo_cantidad CHECK (cantidad > 0)
+) ENGINE=InnoDB;
+
 -- Solo una sesión ABIERTA por caja: se garantiza con esta columna generada + índice único.
 ALTER TABLE sesiones_caja
     ADD COLUMN caja_abierta_uk INT UNSIGNED
@@ -1806,6 +1820,7 @@ CREATE TABLE parches_aplicados (
 
 INSERT INTO parches_aplicados (archivo) VALUES
     ('2026_09_21_cocina_entregar.sql'),
-    ('2026_09_22_inventario_de_bebidas.sql');
+    ('2026_09_22_inventario_de_bebidas.sql'),
+    ('2026_09_22_arqueo_por_billetes.sql');
 
 

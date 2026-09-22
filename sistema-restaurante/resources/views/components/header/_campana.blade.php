@@ -59,9 +59,9 @@
                                 </li>
                             @endforeach
                         </ul>
-                        @if ($clave === 'inventario' && $grupo['stock'] > \App\Support\AlertasStock::MOSTRAR)
-                            <a href="{{ route('inventario.index') }}" class="block px-4 py-2 text-theme-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400">
-                                Ver los {{ $grupo['stock'] }} en el inventario
+                        @if ($clave === 'inventario' && $grupo['stock'] > 0)
+                            <a href="{{ route('compras.sugerida') }}" class="block px-4 py-2 text-theme-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400">
+                                Armar la compra sugerida{{ $grupo['stock'] > \App\Support\AlertasStock::MOSTRAR ? " ({$grupo['stock']} productos)" : '' }}
                             </a>
                         @endif
                     </section>

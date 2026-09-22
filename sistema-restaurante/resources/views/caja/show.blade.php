@@ -346,14 +346,70 @@
                             </div>
                             @endif
 
-                            {{-- Vacío hasta que se cuente de verdad: sin esto, el
-                                 campo ya venía igualado al esperado y cerrar sin
-                                 tocar nada reportaba «cuadrado» sin contar nada. --}}
-                            <x-form.campo label="Efectivo contado" for="monto_declarado" name="monto_declarado" required>
-                                <x-form.input id="monto_declarado" name="monto_declarado" type="number" step="0.01"
-                                    min="0" placeholder="Cuenta el cajón y escribe lo que hay" x-model.number="declarado"
-                                    required autofocus />
-                            </x-form.campo>
+                            {{-- El arqueo por billetes y monedas: se cuenta cuántos hay de
+                                 cada uno y el sistema suma. Contar el total de cabeza era
+                                 donde se equivocaba la cuenta. Los campos van
+                                 deshabilitados si se escribe el total a mano: así no se
+                                 envían. El servidor rehace la suma (CajaController). --}}
+                            @php
+                                $denominaciones = collect(\App\Models\ArqueoCaja::denominaciones())
+                                    ->map(fn ($d) => ['clave' => \App\Models\ArqueoCaja::clave($d), 'valor' => $d,
+                                        'billete' => $d >= 10]);
+                            @endphp
+                            <div x-data="{
+                                    porBilletes: true,
+                                    cuenta: {},
+                                    valores: @js($denominaciones->pluck('valor', 'clave')),
+                                    get suma() {
+                                        return Math.round(Object.entries(this.cuenta)
+                                            .reduce((s, [clave, n]) => s + (Number(n) || 0) * this.valores[clave], 0) * 100) / 100;
+                                    },
+                                    subtotal(clave) {
+                                        return ((Number(this.cuenta[clave]) || 0) * this.valores[clave]).toFixed(2);
+                                    },
+                                }"
+                                x-effect="if (porBilletes) declarado = suma > 0 ? suma : null" data-arqueo-billetes>
+                                <div class="mb-2 flex items-center justify-between gap-3">
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-400">Arqueo</span>
+                                    <button type="button" @click="porBilletes = !porBilletes; if (!porBilletes) declarado = null"
+                                        class="text-theme-xs font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400"
+                                        x-text="porBilletes ? 'Prefiero escribir el total' : 'Contar por billetes y monedas'"></button>
+                                </div>
+                                <div x-show="porBilletes" class="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+                                    @foreach ([true => 'Billetes', false => 'Monedas'] as $esBillete => $titulo)
+                                        <p class="mb-1.5 text-theme-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 {{ $esBillete ? '' : 'mt-3' }}">{{ $titulo }}</p>
+                                        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                            @foreach ($denominaciones->where('billete', $esBillete) as $d)
+                                                <label class="flex items-center gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 dark:bg-white/[0.03]">
+                                                    <span class="w-12 flex-none text-theme-sm font-medium tabular-nums text-gray-700 dark:text-gray-300">{{ $d['valor'] >= 1 ? (int) $d['valor'] : number_format($d['valor'], 2) }}</span>
+                                                    <span class="text-theme-xs text-gray-400" aria-hidden="true">×</span>
+                                                    <input type="number" min="0" step="1" inputmode="numeric" placeholder="0"
+                                                        name="arqueo[{{ $d['clave'] }}]" :disabled="!porBilletes"
+                                                        x-model="cuenta['{{ $d['clave'] }}']"
+                                                        aria-label="Cantidad de {{ $esBillete ? 'billetes' : 'monedas' }} de {{ Config::moneda() }} {{ $d['clave'] }}"
+                                                        class="h-9 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 text-right text-sm tabular-nums text-gray-800 focus:border-brand-300 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90" />
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    @endforeach
+                                    <div class="mt-3 flex items-baseline justify-between border-t border-gray-100 pt-2 text-theme-sm dark:border-gray-800">
+                                        <span class="text-gray-500 dark:text-gray-400">Suma</span>
+                                        <b class="tabular-nums text-gray-800 dark:text-white/90" x-text="'{{ Config::moneda() }} ' + suma.toFixed(2)" data-suma-arqueo></b>
+                                    </div>
+                                </div>
+
+                                {{-- Vacío hasta que se cuente de verdad: sin esto, el
+                                     campo ya venía igualado al esperado y cerrar sin
+                                     tocar nada reportaba «cuadrado» sin contar nada. Con
+                                     el arqueo, lo llena la suma y no se escribe. --}}
+                                <div class="mt-4">
+                                    <x-form.campo label="Efectivo contado" for="monto_declarado" name="monto_declarado" required>
+                                        <x-form.input id="monto_declarado" name="monto_declarado" type="number" step="0.01"
+                                            min="0" placeholder="Cuenta el cajón y escribe lo que hay" x-model.number="declarado"
+                                            x-bind:readonly="porBilletes" required />
+                                    </x-form.campo>
+                                </div>
+                            </div>
 
                             @if ($veArqueo)
                             <div x-show="declarado !== null" x-cloak class="rounded-xl p-4"

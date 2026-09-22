@@ -325,6 +325,7 @@ Route::middleware(['auth', 'auth.session', 'cuenta.vigente', 'password.propia'])
 
         Route::get('compras', [CompraController::class, 'index'])->name('compras.index');
         Route::get('compras/nueva', [CompraController::class, 'create'])->name('compras.create');
+        Route::get('compras/sugerida', [CompraController::class, 'sugerida'])->name('compras.sugerida');
         Route::post('compras', [CompraController::class, 'store'])->middleware('un.envio')->name('compras.store');
         Route::get('compras/{compra}', [CompraController::class, 'show'])->whereNumber('compra')->name('compras.show');
 

@@ -311,6 +311,28 @@
             @endif
         </table>
 
+        {{-- El conteo por billetes y monedas, si se contó así: es lo que se
+             firma, y con él se revisa después un faltante. --}}
+        @php $arqueo = $sesion->arqueo; @endphp
+        @if ($arqueo->isNotEmpty())
+            <table data-arqueo-impreso>
+                <tr>
+                    <td class="tenue fuerte" colspan="3">Arqueo</td>
+                </tr>
+                @foreach ($arqueo as $linea)
+                    <tr>
+                        <td class="tenue">{{ Config::importe($linea->denominacion) }}</td>
+                        <td class="derecha tenue">× {{ $linea->cantidad }}</td>
+                        <td class="derecha">{{ Config::importe($linea->subtotal) }}</td>
+                    </tr>
+                @endforeach
+                <tr>
+                    <td class="tenue" colspan="2">Total contado</td>
+                    <td class="derecha fuerte">{{ Config::importe($arqueo->sum('subtotal')) }}</td>
+                </tr>
+            </table>
+        @endif
+
         @if ($sesion->observacion)
             <p class="tenue"><span class="fuerte">Observación al abrir:</span> {{ $sesion->observacion }}</p>
         @endif
