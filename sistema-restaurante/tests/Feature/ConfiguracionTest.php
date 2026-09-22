@@ -366,7 +366,8 @@ class ConfiguracionTest extends TestCase
             pagos: [['metodo_pago_id' => MetodoPago::where('codigo', 'EFECTIVO')->value('id'), 'monto' => null]],
         );
 
-        foreach ([route('ventas.index'), route('caja.show', $turno), route('inicio')] as $url) {
+        // El inicio ya no lista ventas: las últimas están en «Ventas».
+        foreach ([route('ventas.index'), route('caja.show', $turno)] as $url) {
             $this->actingAs($this->admin())->get($url)->assertOk()
                 ->assertSee('Consumidor final')
                 ->assertDontSee('Cliente varios');

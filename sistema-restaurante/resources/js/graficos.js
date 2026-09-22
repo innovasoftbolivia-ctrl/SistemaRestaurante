@@ -16,6 +16,8 @@ function esOscuro() {
 
 function formateador(moneda) {
     return (valor) =>
+        // Con el mismo formato que los importes del servidor (`Config::importe`):
+        // 1,234.56. Solo el separador; la moneda es la del negocio.
         `${moneda} ${Number(valor ?? 0).toLocaleString('es-PE', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -23,7 +25,7 @@ function formateador(moneda) {
 }
 
 function opciones(config) {
-    const { tipo = 'area', categorias = [], series = [], moneda = 'S/', dinero = true } = config;
+    const { tipo = 'area', categorias = [], series = [], moneda = 'Bs', dinero = true } = config;
     // Barras acostadas: el nombre de cada una va en su propio renglón y no se
     // pisa con el de al lado. Los importes pasan al eje de abajo.
     const acostado = tipo === 'bar' && config.horizontal === true;

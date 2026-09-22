@@ -54,7 +54,7 @@ class CocinaController extends Controller
 
     public function index(): View
     {
-        $tandas = $this->tandas();
+        $tandas = self::tandas();
 
         return view('cocina.index', [
             'title' => 'Cocina',
@@ -87,7 +87,7 @@ class CocinaController extends Controller
         return response()->json([
             // Sirve para que la pantalla sepa si algo cambió sin comparar todo.
             'actualizado' => now()->toIso8601String(),
-            'tandas' => $this->tandas()->map(fn (array $tanda) => [
+            'tandas' => self::tandas()->map(fn (array $tanda) => [
                 'pedido_id' => $tanda['pedido']->id,
                 // El número que se canta: lo que la pantalla muestra en grande.
                 'numero' => $tanda['pedido']->numero_dia,
@@ -229,7 +229,7 @@ class CocinaController extends Controller
      *
      * @return Collection<int, array{pedido: Pedido, lineas: Collection<int, PedidoDetalle>, sinCocina: Collection<int, PedidoDetalle>, listo: bool, columna: string, desde: ?CarbonInterface}>
      */
-    private function tandas(): Collection
+    public static function tandas(): Collection
     {
         $jornada = Config::jornadaActual();
 

@@ -330,7 +330,13 @@ class ConfiguracionYJornadaTest extends TestCase
             Carbon::setTestNow('2031-05-10 06:00:00');
             $hoy = $this->actingAs($this->admin())->get(route('inicio'))->viewData('hoy');
             $this->assertSame(0.0, $hoy['hoy']['monto']);
-            $this->assertSame($total, $hoy['ayer']['monto']);
+
+            // Y la portada compara con el mismo día de la semana anterior: a
+            // las 02:00 del 17 es la jornada del 16, y la de hace una semana
+            // es la del 9, con esta venta de la madrugada.
+            Carbon::setTestNow('2031-05-17 02:00:00');
+            $hoy = $this->actingAs($this->admin())->get(route('inicio'))->viewData('hoy');
+            $this->assertSame($total, $hoy['antes']['monto']);
         } finally {
             Carbon::setTestNow();
         }
