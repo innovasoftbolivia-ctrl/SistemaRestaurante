@@ -6,25 +6,24 @@
 
     $moneda = Config::moneda();
 
-    // Hoy contra un día normal (el promedio del mismo día, las últimas
-    // semanas): el color apagado es la referencia, el de la marca es hoy.
-    $grafico = $porHora ? [
+    // Las tres vistas del gráfico de ventas. El gris es la referencia (la
+    // semana anterior, un día normal); el color de la marca, lo de ahora.
+    $vistas = [
+        '7' => ['boton' => '7 días', 'nota' => 'Cada día, junto al mismo día de la semana anterior.'],
+        'hoy' => ['boton' => 'Hoy', 'nota' => 'Por hora, frente al promedio de los últimos '.($hoy ? (str_ends_with($hoy['dia'], 's') ? $hoy['dia'] : $hoy['dia'].'s') : 'días').' a la misma hora.'],
+        '30' => ['boton' => '30 días', 'nota' => 'Lo vendido cada día del último mes.'],
+    ];
+    $configGrafico = fn (string $clave) => [
         'tipo' => 'bar',
         'moneda' => $moneda,
-        'categorias' => $porHora['horas'],
-        'series' => [
-            ['name' => 'Hoy', 'data' => $porHora['hoy']],
-            ['name' => 'Un '.($hoy['dia'] ?? 'día').' normal', 'data' => $porHora['promedio']],
-        ],
+        'categorias' => $graficos[$clave]['categorias'],
+        'series' => $graficos[$clave]['series'],
         'colores' => ['#0a5cff', '#98a2b3'],
-        'leyenda' => true,
-        'alto' => 250,
-    ] : null;
+        'leyenda' => count($graficos[$clave]['series']) > 1,
+        'alto' => 260,
+    ];
 
     $totalPagos = $pagos ? (float) $pagos->sum('monto') : 0;
-
-    // «los últimos lunes», «los últimos sábados».
-    $dias = $hoy ? (str_ends_with($hoy['dia'], 's') ? $hoy['dia'] : $hoy['dia'].'s') : '';
 
     $clasePedido = fn (string $clase) => match ($clase) {
         'exito' => 'bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-500',
@@ -203,22 +202,40 @@
 
             {{-- -------------------------------------- por hora y formas de pago --}}
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div class="{{ $tarjeta }} xl:col-span-2" data-por-hora>
+                {{-- Un gráfico, tres vistas. Los tres se dibujan al cargar y los
+                     botones solo muestran uno: el que estaba oculto se ajusta a su
+                     ancho al aparecer (`seguirAlContenedor` en graficos.js). --}}
+                <div class="{{ $tarjeta }} xl:col-span-2" data-grafico-ventas x-data="{ vista: '7' }">
                     <div class="flex flex-wrap items-start justify-between gap-3 px-6 pt-5">
                         <div>
-                            <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ventas por hora</h2>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                Hoy, frente al promedio de los últimos {{ $dias }} a la misma hora.
-                            </p>
+                            <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Ventas</h2>
+                            @foreach ($vistas as $clave => $vista)
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400" x-show="vista === '{{ $clave }}'" @if ($clave !== '7') x-cloak @endif>
+                                    {{ $vista['nota'] }}
+                                </p>
+                            @endforeach
                         </div>
-                        <x-ui.button size="xs" variant="outline" :href="route('reportes.ventas')">Reporte completo</x-ui.button>
+                        @if ($graficos)
+                            <div class="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-white/5" role="group" aria-label="Período del gráfico">
+                                @foreach ($vistas as $clave => $vista)
+                                    <button type="button" @click="vista = '{{ $clave }}'" :aria-pressed="vista === '{{ $clave }}'"
+                                        data-vista="{{ $clave }}"
+                                        class="rounded-md px-3 py-1.5 text-theme-sm font-medium transition"
+                                        :class="vista === '{{ $clave }}' ? 'bg-white text-gray-900 shadow-theme-xs dark:bg-gray-800 dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white'">
+                                        {{ $vista['boton'] }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
                     </div>
-                    @if ($grafico)
-                        <div class="px-3 pb-3">
-                            <div data-apexchart="{{ json_encode($grafico) }}"></div>
-                        </div>
+                    @if ($graficos)
+                        @foreach ($vistas as $clave => $vista)
+                            <div class="px-3 pb-3" x-show="vista === '{{ $clave }}'" @if ($clave !== '7') x-cloak @endif>
+                                <div data-apexchart="{{ json_encode($configGrafico($clave)) }}"></div>
+                            </div>
+                        @endforeach
                     @else
-                        <p class="px-6 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no hay ventas para comparar.</p>
+                        <p class="px-6 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no hay ventas para mostrar.</p>
                     @endif
                 </div>
 

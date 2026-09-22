@@ -87,7 +87,7 @@ class DashboardTest extends TestCase
     {
         $respuesta = $this->actingAs($this->cajero())->get('/inicio')->assertOk();
 
-        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
+        foreach (['hoy', 'graficos', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
             $this->assertNull($respuesta->viewData($bloque), "el cajero no debería ver «{$bloque}»");
         }
         $this->assertFalse($respuesta->viewData('gestion'));
@@ -101,7 +101,7 @@ class DashboardTest extends TestCase
 
         $respuesta = $this->actingAs($this->admin())->get('/inicio')->assertOk();
 
-        foreach (['hoy', 'porHora', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
+        foreach (['hoy', 'graficos', 'pagos', 'pedidos', 'cocina', 'top', 'stock'] as $bloque) {
             $this->assertNotNull($respuesta->viewData($bloque), "falta «{$bloque}» en el panel");
         }
         $this->assertTrue($respuesta->viewData('gestion'));
@@ -259,23 +259,42 @@ class DashboardTest extends TestCase
         $respuesta->assertSee('#'.$pedido['pedido']->numero_dia);
     }
 
-    public function test_ventas_por_hora_frente_a_un_dia_normal(): void
+    /**
+     * El gráfico tiene tres vistas: 7 días (la que abre) contra la semana
+     * anterior, hoy por hora con todo el horario de atención, y 30 días.
+     */
+    public function test_el_grafico_de_ventas_tiene_tres_vistas(): void
     {
-        $this->assertNull($this->actingAs($this->admin())->get('/inicio')->viewData('porHora'));
+        $this->assertNull($this->actingAs($this->admin())->get('/inicio')->viewData('graficos'));
 
         $sesion = $this->turno();
-        $venta = $this->vender($sesion, 2);
-        $hora = (int) $venta->fresh()->fecha->format('G');
+        $hoy = $this->vender($sesion, 2);
+        $antes = $this->vender($sesion, 1);
+        $jornada = Carbon::parse(Config::jornadaActual());
+        $antes->forceFill(['fecha' => $jornada->copy()->subWeek()->setTime(20, 0)])->saveQuietly();
 
-        $porHora = $this->actingAs($this->admin())->get('/inicio')->viewData('porHora');
+        $respuesta = $this->actingAs($this->admin())->get('/inicio');
+        $graficos = $respuesta->viewData('graficos');
 
-        $i = array_search($hora.'h', $porHora['horas'], true);
-        $this->assertNotFalse($i);
-        $this->assertSame((float) $venta->fresh()->total, $porHora['hoy'][$i]);
-        $this->assertSame(0.0, $porHora['promedio'][$i]);
+        // 7 días: la última barra es hoy; la gris, la misma jornada una semana antes.
+        $this->assertCount(7, $graficos['7']['categorias']);
+        $this->assertSame((float) $hoy->fresh()->total, end($graficos['7']['series'][0]['data']));
+        $this->assertSame((float) $antes->fresh()->total, end($graficos['7']['series'][1]['data']));
 
-        $this->actingAs($this->admin())->get('/inicio')
-            ->assertSee('data-apexchart', false)
-            ->assertSee('Ventas por hora');
+        // Hoy: el horario va de la hora de la venta de hoy a la de las 20h, no
+        // solo la hora con ventas.
+        $horas = $graficos['hoy']['categorias'];
+        $this->assertContains($hoy->fresh()->fecha->format('G').'h', $horas);
+        $this->assertContains('20h', $horas);
+
+        // 30 días: una barra por jornada, con las vacías en cero.
+        $this->assertCount(30, $graficos['30']['categorias']);
+        $this->assertSame($jornada->format('d/m'), end($graficos['30']['categorias']));
+        $this->assertContains(0.0, $graficos['30']['series'][0]['data']);
+
+        $respuesta->assertSee('data-grafico-ventas', false)
+            ->assertSee('data-vista="7"', false)
+            ->assertSee('data-vista="hoy"', false)
+            ->assertSee('data-vista="30"', false);
     }
 }

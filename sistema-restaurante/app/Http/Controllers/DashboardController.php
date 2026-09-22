@@ -26,9 +26,9 @@ use Illuminate\View\View;
  * El panel es lo que pasa AHORA, sin repetir lo que ya está a la vista (las
  * cajas abiertas en la barra de arriba, lo que falta comprar en la campana):
  * cuatro números —vendido frente al mismo día de la semana pasada, ventas,
- * cocina, por comprar—, las ventas por hora, cómo se cobra, los últimos
- * pedidos y lo más pedido. El turno propio es del cajero. La historia (el
- * gráfico de semanas, el listado de ventas) está en Reportes y en Ventas.
+ * cocina, por comprar—, el gráfico de ventas (7 días, hoy o 30 días), cómo
+ * se cobra, los últimos pedidos y lo más pedido. El turno propio es del
+ * cajero. El listado de ventas está en Ventas, y lo de meses, en Reportes.
  *
  * Un cajero entra al mostrador, no aquí (ver {@see Menu::inicio()}), pero
  * puede abrir la portada para ver cómo va su turno.
@@ -61,7 +61,7 @@ class DashboardController extends Controller
             'mias' => $vende ? $this->ventasPropias($usuario) : null,
             'gestion' => $gestion,
             'hoy' => $gestion ? $this->comparativaDelDia($jornada) : null,
-            'porHora' => $gestion ? $this->porHora($jornada) : null,
+            'graficos' => $gestion ? $this->graficos($jornada) : null,
             'pagos' => $gestion ? $this->porMetodoPago($jornada) : null,
             'pedidos' => $gestion ? $this->ultimosPedidos($jornada) : null,
             'cocina' => $gestion ? $this->cocina() : null,
@@ -141,14 +141,74 @@ class DashboardController extends Controller
     }
 
     /**
-     * Lo vendido por hora en la jornada, junto al promedio de las mismas horas
-     * en las últimas semanas, el mismo día: dice si hoy va flojo o bien a esta
-     * hora, antes de que termine el día. En el orden de la jornada (de la hora
-     * de corte en adelante) y solo de la primera a la última hora con ventas.
+     * El gráfico de ventas, en sus tres vistas (los botones de la portada):
      *
-     * @return array{horas: array<int, string>, hoy: array<int, float>, promedio: array<int, float>}|null
+     *   - «7 días», la que abre: cada jornada de la semana junto a la misma
+     *     jornada de la semana anterior. Dice de un vistazo si la semana va
+     *     mejor o peor, y qué día flojeó.
+     *   - «Hoy», por hora, con TODO el horario de atención y no solo las horas
+     *     con ventas: el día se va llenando, y una venta sola no ocupa el
+     *     gráfico entero. Al lado, el promedio del mismo día de la semana.
+     *   - «30 días», una barra por jornada: la tendencia del mes. Las jornadas
+     *     sin ventas van en cero, para que no desaparezcan.
+     *
+     * @return array<string, array{categorias: array<int, string>, series: array<int, array{name: string, data: array<int, float>}>}>|null
      */
-    private function porHora(Carbon $jornada): ?array
+    private function graficos(Carbon $jornada): ?array
+    {
+        $dia = $jornada->locale('es')->isoFormat('dddd');
+
+        $porDia = $this->ventasPorDia($jornada->copy()->subDays(36), $jornada);
+        if ($porDia->isEmpty()) {
+            return null;
+        }
+        $monto = fn (Carbon $d) => round((float) ($porDia[$d->toDateString()] ?? 0), 2);
+
+        $semana = collect(range(6, 0))->map(fn ($i) => $jornada->copy()->subDays($i));
+        $mes = collect(range(29, 0))->map(fn ($i) => $jornada->copy()->subDays($i));
+
+        return [
+            '7' => [
+                'categorias' => $semana->map(fn (Carbon $d) => $d->locale('es')->isoFormat('ddd D'))->all(),
+                'series' => [
+                    ['name' => 'Esta semana', 'data' => $semana->map($monto)->all()],
+                    ['name' => 'La semana anterior', 'data' => $semana->map(fn (Carbon $d) => $monto($d->copy()->subWeek()))->all()],
+                ],
+            ],
+            'hoy' => $this->porHora($jornada, $dia),
+            '30' => [
+                'categorias' => $mes->map(fn (Carbon $d) => $d->format('d/m'))->all(),
+                'series' => [
+                    ['name' => 'Vendido', 'data' => $mes->map($monto)->all()],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Lo vendido por jornada, con la misma fórmula que los reportes
+     * (`Config::jornadaSql`) contra la tabla base, filtrando antes de agrupar.
+     *
+     * @return Collection<string, float>
+     */
+    private function ventasPorDia(Carbon $desde, Carbon $hasta): Collection
+    {
+        return DB::table('ventas')
+            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->where('estado', '<>', 'ANULADA')
+            ->groupBy(DB::raw(Config::jornadaSql('fecha')))
+            ->selectRaw(Config::jornadaSql('fecha').' AS dia, SUM(total) AS monto')
+            ->pluck('monto', 'dia')
+            ->mapWithKeys(fn ($m, $d) => [(string) $d => (float) $m]);
+    }
+
+    /**
+     * Hoy por hora frente al promedio de las mismas horas el mismo día de la
+     * semana, en las últimas semanas. El eje es el horario de atención: las
+     * horas en que se vendió algo en el último mes (en el orden de la jornada,
+     * de la hora de corte en adelante), más las de hoy.
+     */
+    private function porHora(Carbon $jornada, string $dia): array
     {
         $sumar = fn (Carbon $desde, Carbon $hasta, ?array $dias = null) => DB::table('ventas')
             ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
@@ -160,6 +220,7 @@ class DashboardController extends Controller
             ->map(fn ($m) => (float) $m);
 
         $hoy = $sumar($jornada, $jornada);
+        $mes = $sumar($jornada->copy()->subDays(30), $jornada);
 
         $dias = [];
         for ($i = 1; $i <= self::SEMANAS_PROMEDIO; $i++) {
@@ -167,21 +228,21 @@ class DashboardController extends Controller
         }
         $antes = $sumar($jornada->copy()->subWeeks(self::SEMANAS_PROMEDIO), $jornada->copy()->subWeek(), $dias);
 
-        if ($hoy->isEmpty() && $antes->isEmpty()) {
-            return null;
-        }
-
         $corte = Config::horaCorteJornada();
         $orden = array_map(fn ($i) => ($corte + $i) % 24, range(0, 23));
-        $conDatos = array_values(array_filter($orden, fn ($h) => $hoy->has($h) || $antes->has($h)));
-        $desde = array_search($conDatos[0], $orden, true);
-        $hasta = array_search(end($conDatos), $orden, true);
-        $tramo = array_slice($orden, $desde, $hasta - $desde + 1);
+        $abierto = array_values(array_filter($orden, fn ($h) => $mes->has($h) || $hoy->has($h)));
+        // Sin ventas en el último mes: un horario de almuerzo y cena.
+        $abierto = $abierto ?: [11, 23];
+        $desde = array_search($abierto[0], $orden, true);
+        $hasta = array_search(end($abierto), $orden, true);
+        $horario = array_slice($orden, $desde, $hasta - $desde + 1);
 
         return [
-            'horas' => array_map(fn ($h) => $h.'h', $tramo),
-            'hoy' => array_map(fn ($h) => round($hoy[$h] ?? 0, 2), $tramo),
-            'promedio' => array_map(fn ($h) => round(($antes[$h] ?? 0) / self::SEMANAS_PROMEDIO, 2), $tramo),
+            'categorias' => array_map(fn ($h) => $h.'h', $horario),
+            'series' => [
+                ['name' => 'Hoy', 'data' => array_map(fn ($h) => round($hoy[$h] ?? 0, 2), $horario)],
+                ['name' => 'Un '.$dia.' normal', 'data' => array_map(fn ($h) => round(($antes[$h] ?? 0) / self::SEMANAS_PROMEDIO, 2), $horario)],
+            ],
         ];
     }
 
