@@ -158,17 +158,24 @@
                                  tarjeta. --}}
                             <span class="w-1.5 flex-none" :class="franjaCategoria(p.categoria_id)" aria-hidden="true"></span>
 
-                            {{-- Si hay foto, va chica a un costado. `object-scale-down`
-                                 y NO `object-cover`: la foto entra entera, sin
-                                 recortar lo que la hace reconocible. --}}
+                            {{-- Si hay foto, va como miniatura cuadrada DENTRO de la
+                                 tarjeta, y el nombre conserva el ancho. La foto entra
+                                 entera (`object-scale-down`: una botella alta no pierde
+                                 la mitad) y detrás la misma foto, difuminada, llena el
+                                 recuadro: no queda flotando sobre un bloque blanco. --}}
                             <template x-if="p.imagen">
-                                <span class="flex w-16 flex-none items-center justify-center bg-white p-1 dark:bg-white/[0.06]">
-                                    <img :src="p.imagen" :alt="p.nombre" loading="lazy"
-                                        class="max-h-16 max-w-full object-scale-down" />
+                                <span class="flex flex-none items-center py-3 pl-3">
+                                    <span class="relative flex h-13 w-13 items-center justify-center overflow-hidden rounded-lg bg-gray-100 ring-1 ring-gray-200 dark:bg-white/[0.06] dark:ring-gray-700">
+                                        <img :src="p.imagen" alt="" aria-hidden="true" loading="lazy"
+                                            class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-md" data-foto-fondo />
+                                        <img :src="p.imagen" alt="" loading="lazy"
+                                            class="relative max-h-full max-w-full object-scale-down" />
+                                    </span>
                                 </span>
                             </template>
 
-                            <span class="flex min-w-0 flex-1 flex-col justify-between gap-1.5 p-3 pr-8">
+                            <span class="flex min-w-0 flex-1 flex-col justify-between gap-1.5 p-3"
+                                :class="enCarrito(p.id) ? 'pr-9' : ''">
                                 <span class="line-clamp-2 text-theme-sm font-semibold leading-snug text-gray-800 dark:text-white/90"
                                     x-text="p.nombre"></span>
                                 <span class="flex items-baseline justify-between gap-2">

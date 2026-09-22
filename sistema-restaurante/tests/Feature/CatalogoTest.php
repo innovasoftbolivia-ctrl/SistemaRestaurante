@@ -393,8 +393,9 @@ class CatalogoTest extends TestCase
 
             $this->assertStringContainsString('object-scale-down', $html, "Falta el ajuste en {$ruta}");
             $this->assertStringContainsString('max-h-full max-w-full', $html, "Falta el límite en {$ruta}");
-            // Recortar la foto dejaría fuera parte del producto.
-            $this->assertStringNotContainsString('object-cover', $html, "Se está recortando en {$ruta}");
+            // Recortar la foto dejaría fuera parte del producto: lo único que
+            // llena el recuadro es el fondo difuminado, que no se lee.
+            $this->assertStringNotContainsString('object-cover', $this->sinFondos($html), "Se está recortando en {$ruta}");
         }
     }
 
@@ -408,7 +409,13 @@ class CatalogoTest extends TestCase
         $html = $this->actingAs($this->admin())->get('/pos')->assertOk()->getContent();
 
         $this->assertStringContainsString('object-scale-down', $html);
-        $this->assertStringNotContainsString('object-cover', $html);
+        $this->assertStringNotContainsString('object-cover', $this->sinFondos($html));
+    }
+
+    /** El HTML sin las fotos de fondo difuminadas (decorativas, `aria-hidden`). */
+    private function sinFondos(string $html): string
+    {
+        return preg_replace('/<img[^>]*data-foto-fondo[^>]*>/', '', $html);
     }
 
     public function test_un_producto_sin_foto_no_rompe_el_mostrador(): void

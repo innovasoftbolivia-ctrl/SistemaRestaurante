@@ -40,20 +40,20 @@
 @if ($imagen)
     {{--
         `object-scale-down` y no `object-cover`: la foto entra entera, sin
-        recortes ni deformación, sea cuadrada, vertical o apaisada. Y a
-        diferencia de `object-contain`, no agranda una imagen pequeña más allá
-        de su tamaño real, que solo la vería pixelada.
+        recortes ni deformación, sea cuadrada, vertical o apaisada, y una
+        imagen diminuta no se agranda hasta verse pixelada.
 
-        El fondo se mantiene claro en ambos temas: casi todas las fotos de
-        producto vienen recortadas sobre blanco y sobre oscuro se verían con un
-        marco fantasma alrededor.
+        Detrás, la misma foto difuminada llena el recuadro: una foto apaisada
+        o chica ya no queda como una estampilla sobre un bloque blanco.
     --}}
     <span
         {{ $attributes->merge([
-            'class' => $marco.' border-gray-200 bg-white dark:border-gray-700',
+            'class' => str_replace($medida['aire'], '', $marco).' relative border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-white/[0.06]',
         ]) }}>
+        <img src="{{ $imagen }}" alt="" aria-hidden="true" loading="lazy"
+            class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-md" data-foto-fondo />
         <img src="{{ $imagen }}" alt="{{ $titulo }}" loading="lazy"
-            class="max-h-full max-w-full object-scale-down" />
+            class="relative max-h-full max-w-full object-scale-down" />
     </span>
 @else
     {{-- Marcador: la misma caja, para que la fila no se descuadre sin foto. --}}
