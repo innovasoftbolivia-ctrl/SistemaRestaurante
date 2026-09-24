@@ -26,7 +26,7 @@
     <header class="flex items-start justify-between gap-3 px-4 pt-3 pb-2">
         <div class="min-w-0">
             <p class="sr-only">Pedido</p>
-            <p class="font-mono text-5xl font-black leading-none text-gray-900 dark:text-white"
+            <p class="font-mono text-4xl font-black leading-none text-gray-900 lg:text-5xl dark:text-white"
                 data-numero-pedido>{{ $pedido->numero_dia }}</p>
             <p class="mt-1.5 text-theme-sm font-bold uppercase tracking-wide {{ $llevar ? 'text-warning-700 dark:text-orange-400' : 'text-brand-600 dark:text-brand-400' }}">
                 {{ $pedido->destino }}
@@ -77,7 +77,7 @@
                     <button type="submit" @disabled(! $puedeTocar)
                         aria-label="{{ Config::cantidad($linea->cantidad) }} × {{ $linea->descripcion }}: {{ mb_strtolower($linea->estado_visible) }}{{ $puedeTocar ? '. Marcar como '.$enPalabras : '' }}"
                         title="{{ $puedeTocar ? 'Toca para marcarlo '.$enPalabras : 'Lo mueve la cocina' }}"
-                        class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-white/[0.03] dark:focus-visible:bg-white/[0.03]">
+                        class="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-gray-50 lg:gap-3 lg:px-4 focus-visible:bg-gray-50 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-white/[0.03] dark:focus-visible:bg-white/[0.03]">
                         <span aria-hidden="true" class="flex h-7 w-7 flex-none items-center justify-center rounded-full {{ match ($linea->estado_cocina) {
                             PedidoDetalle::EN_PREPARACION => 'bg-warning-100 text-warning-700 dark:bg-warning-500/20 dark:text-orange-400',
                             PedidoDetalle::LISTO => 'bg-success-500 text-white',
@@ -89,10 +89,15 @@
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>
                             @endif
                         </span>
-                        <span class="min-w-0 flex-1 text-lg font-semibold text-gray-800 dark:text-white/90">
-                            {{ Config::cantidad($linea->cantidad) }} × {{ $linea->descripcion }}
+                        {{-- El estado va DEBAJO del nombre, no al lado: al lado le
+                             comía el ancho y «Chicharrón de cerdo» salía en tres
+                             renglones en una tableta. --}}
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-base font-semibold leading-snug text-gray-800 dark:text-white/90 lg:text-lg">
+                                {{ Config::cantidad($linea->cantidad) }} × {{ $linea->descripcion }}
+                            </span>
+                            <span class="block text-theme-xs text-gray-400 dark:text-gray-500">{{ $linea->estado_visible }}</span>
                         </span>
-                        <span class="flex-none text-theme-xs text-gray-400 dark:text-gray-500">{{ $linea->estado_visible }}</span>
                     </button>
                 </form>
 
@@ -132,7 +137,9 @@
         </p>
     @endif
 
-    <footer class="flex items-center gap-2 border-t border-gray-100 px-4 py-3 dark:border-gray-800">
+    {{-- `flex-wrap`: si el botón de imprimir no entra al lado, baja completo en
+         vez de salirse de la tarjeta. --}}
+    <footer class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-3 dark:border-gray-800 lg:px-4">
         {{-- El botón del pedido entero: lo pasa a la columna siguiente. Quien
              solo entrega lo ve recién cuando todo está listo. --}}
         @if ($soloEntrega && $columna !== 'entregar')
@@ -140,7 +147,7 @@
                 {{ $columna === 'hacer' ? 'Esperando a la cocina' : 'La cocina lo está preparando' }}
             </p>
         @else
-        <form method="POST" class="flex-1"
+        <form method="POST" class="min-w-[8rem] flex-1"
             action="{{ $columna === 'entregar' ? route('cocina.entregar', $pedido) : route('cocina.avanzar', $pedido) }}">
             @csrf
             @unEnvio
@@ -168,12 +175,12 @@
              solo entrega no la imprime desde aquí (la del cobro sale en el
              mostrador). --}}
         @unless ($soloEntrega)
-        <form method="POST" target="_blank"
+        <form method="POST" target="_blank" class="flex-none"
             action="{{ route($porImprimir ? 'pedidos.comanda.imprimir' : 'pedidos.comanda.reimprimir', $pedido) }}">
             @csrf
             <button type="submit" data-comanda-boton="{{ $porImprimir ? 'imprimir' : 'reimprimir' }}"
                 title="{{ $porImprimir ? 'Imprimir comanda' : 'Reimprimir comanda' }}"
-                class="flex min-h-12 items-center gap-1.5 rounded-xl border px-3 text-theme-sm font-medium transition {{ $porImprimir
+                class="flex min-h-12 items-center gap-1.5 rounded-xl border px-2.5 text-theme-sm font-medium transition lg:px-3 {{ $porImprimir
                     ? 'border-brand-300 text-brand-600 hover:bg-brand-50 dark:border-brand-500/40 dark:text-brand-400 dark:hover:bg-brand-500/10'
                     : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/[0.03]' }}">
                 <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7z"/></svg>

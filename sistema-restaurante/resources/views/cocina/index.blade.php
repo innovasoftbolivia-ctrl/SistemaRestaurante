@@ -30,14 +30,17 @@
             <div class="flex flex-wrap items-center gap-2 text-theme-sm">
                 {{-- El título de la página ya lo dice; en pantalla completa, que lo esconde, lo dice esto. --}}
                 <span class="mr-1 hidden text-base font-semibold text-gray-800 dark:text-white/90 [.modo-cocina_&]:inline">Cocina</span>
+                {{-- Cada contador baja a su columna: en una tableta de pie, «para
+                     entregar» queda debajo de las otras dos y así se llega de un
+                     toque. --}}
                 @foreach ($columnas as $clave => $columna)
-                    <span data-contador="{{ $clave }}" class="rounded-full px-3 py-1 font-medium {{ match ($clave) {
+                    <a href="#columna-{{ $clave }}" data-contador="{{ $clave }}" class="rounded-full px-3 py-1 font-medium transition hover:brightness-95 {{ match ($clave) {
                         'hacer' => 'bg-gray-100 text-gray-700 dark:bg-white/[0.06] dark:text-gray-300',
                         'cocinando' => 'bg-warning-50 text-warning-700 dark:bg-warning-500/15 dark:text-orange-400',
                         default => 'bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-500',
                     } }}">
                         {{ $columna['tandas']->count() }} {{ mb_strtolower($columna['titulo']) }}
-                    </span>
+                    </a>
                 @endforeach
                 <span class="flex items-center gap-1.5 text-theme-xs text-gray-400 dark:text-gray-500">
                     <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500"></span>
@@ -60,16 +63,23 @@
             </p>
         @endif
 
-        <div class="grid grid-cols-1 items-start gap-4 md:grid-cols-3">
+        {{-- En una tableta de pie, tres columnas quedan de 244 px y el nombre del
+             plato se parte en dos o tres renglones. Ahí van dos columnas de
+             trabajo —por hacer y cocinando— y «para entregar» a lo ancho debajo,
+             con sus tarjetas de a dos: se ve entero sin apretar nada. Desde
+             1024 px (tableta acostada o pantalla de cocina) vuelven las tres. --}}
+        <div class="grid grid-cols-1 items-start gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             @foreach ($columnas as $clave => $columna)
                 <section data-columna="{{ $clave }}" aria-labelledby="columna-{{ $clave }}"
-                    class="min-w-0 rounded-2xl p-3 {{ match ($clave) {
+                    class="min-w-0 rounded-2xl p-3 {{ $clave === 'entregar' ? 'md:col-span-2 lg:col-span-1' : '' }} {{ match ($clave) {
                         'hacer' => 'bg-gray-100 dark:bg-white/[0.03]',
                         'cocinando' => 'bg-warning-50/70 dark:bg-warning-500/[0.06]',
                         default => 'bg-success-50 dark:bg-success-500/10',
                     } }}">
+                    {{-- `scroll-mt`: con la cabecera pegada arriba, el salto desde
+                         el contador no deja el título tapado. --}}
                     <h2 id="columna-{{ $clave }}"
-                        class="flex items-center justify-between px-1 pb-3 text-theme-sm font-semibold uppercase tracking-wide {{ match ($clave) {
+                        class="scroll-mt-24 flex items-center justify-between px-1 pb-3 text-theme-sm font-semibold uppercase tracking-wide {{ match ($clave) {
                             'hacer' => 'text-gray-600 dark:text-gray-400',
                             'cocinando' => 'text-warning-700 dark:text-orange-400',
                             default => 'text-success-700 dark:text-success-500',
@@ -78,7 +88,7 @@
                         <span class="rounded-full bg-white px-2.5 py-0.5 font-mono text-theme-sm dark:bg-gray-900">{{ $columna['tandas']->count() }}</span>
                     </h2>
 
-                    <div class="space-y-3">
+                    <div class="space-y-3 {{ $clave === 'entregar' ? 'md:grid md:grid-cols-2 md:gap-3 md:space-y-0 lg:block lg:space-y-3' : '' }}">
                         @forelse ($columna['tandas'] as $tanda)
                             @include('cocina._pedido', ['tanda' => $tanda, 'columna' => $clave])
                         @empty
