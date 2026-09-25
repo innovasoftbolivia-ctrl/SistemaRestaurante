@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Cookie;
+use Throwable;
 
 /**
  * Ingreso al sistema con nombre de usuario (no correo): la cuenta vive en
@@ -74,6 +75,12 @@ class LoginController extends Controller
             'usuario' => 'usuario',
             'password' => 'contraseña',
         ]);
+
+        // La pantalla de acceso se dibuja aunque la base esté caída (ver
+        // `Config::leer`), así que la falta de base aparece recién aquí. Se
+        // avisa en el formulario y no con un error 500 en la primera consulta:
+        // el cajero entiende que no es su contraseña y que debe reintentar.
+        $this->verificarBase();
 
         $conocido = $this->esDispositivoConocido($request);
 
@@ -149,6 +156,28 @@ class LoginController extends Controller
 
         return redirect()->intended(Menu::inicio())
             ->withCookie($this->recordarDispositivo($request, $nombre));
+    }
+
+    /**
+     * Frena el ingreso si la base no responde.
+     *
+     * Pregunta por la conexión, no por una consulta: así un error de datos
+     * —una columna que falta, una restricción— sigue saliendo como el error
+     * que es, y no disfrazado de «la base no contesta». Queda registrado con
+     * `report()` para el visor de errores. No suma intentos fallidos: nadie se
+     * queda bloqueado por una caída del servidor.
+     */
+    private function verificarBase(): void
+    {
+        try {
+            DB::connection()->getPdo();
+        } catch (Throwable $e) {
+            report($e);
+
+            throw ValidationException::withMessages([
+                'usuario' => 'Ahora mismo no se puede entrar: el sistema no logra conectarse a su base de datos. Vuelve a intentar en unos minutos.',
+            ]);
+        }
     }
 
     public function destroy(Request $request): RedirectResponse

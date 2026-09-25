@@ -3,8 +3,10 @@
 namespace App\Support;
 
 use DateTimeInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Lee los parámetros del negocio de la tabla `configuracion` (tasa de impuesto,
@@ -17,9 +19,38 @@ class Config
 
     public static function get(string $clave, ?string $porDefecto = null): ?string
     {
-        self::$valores ??= DB::table('configuracion')->pluck('valor', 'clave')->all();
+        self::$valores ??= self::leer();
 
         return self::$valores[$clave] ?? $porDefecto;
+    }
+
+    /**
+     * Los valores de la tabla; ninguno si la base no contesta.
+     *
+     * Sin esto, una base caída tumbaba la pantalla de acceso con un error 500:
+     * la dibuja `Config::negocio()`, que consulta esta tabla. Con la lista
+     * vacía cada parámetro cae en su valor por omisión y la pantalla se ve, así
+     * que quien entra encuentra el formulario y no una pantalla de error.
+     *
+     * No esconde la falla: queda en el registro de errores, y cualquier otra
+     * pantalla —que sí necesita la base— sigue fallando como siempre. Tampoco
+     * se cobra de menos con la configuración vacía: sin base no se graba
+     * ninguna venta.
+     *
+     * @return array<string, string>
+     */
+    private static function leer(): array
+    {
+        try {
+            return DB::table('configuracion')->pluck('valor', 'clave')->all();
+        } catch (QueryException $e) {
+            // Una vez por petición: el `??=` de get() guarda la lista vacía y
+            // no se vuelve a intentar (cada intento espera el tiempo de
+            // conexión, y son varios por pantalla).
+            Log::warning('No se pudo leer la configuración del negocio: '.$e->getMessage());
+
+            return [];
+        }
     }
 
     /**
