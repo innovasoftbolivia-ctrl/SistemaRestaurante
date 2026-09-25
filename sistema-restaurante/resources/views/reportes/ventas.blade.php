@@ -267,7 +267,7 @@
                     </p>
                 </div>
 
-                <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+                <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                     <table class="min-w-full">
                         <thead class="border-b border-gray-100 dark:border-gray-800">
                             <tr>
@@ -362,7 +362,7 @@
                     </p>
                 </div>
                 @if ($cuadres->isNotEmpty())
-                    <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+                    <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                         <table class="min-w-full">
                             <thead class="border-b border-gray-100 dark:border-gray-800">
                                 <tr>
@@ -414,7 +414,7 @@
                     </p>
                 </div>
                 @if ($anuladas->isNotEmpty())
-                    <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+                    <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                         <table class="min-w-full">
                             <thead class="border-b border-gray-100 dark:border-gray-800">
                                 <tr>
@@ -451,7 +451,7 @@
                 <h2 class="text-base font-medium text-gray-800 dark:text-white/90">Detalle por jornada</h2>
             </div>
 
-            <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+            <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>

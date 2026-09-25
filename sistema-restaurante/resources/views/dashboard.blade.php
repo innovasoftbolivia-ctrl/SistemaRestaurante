@@ -22,8 +22,27 @@
         'series' => $graficos[$clave]['series'],
         'colores' => ['#0a5cff', '#98a2b3'],
         'leyenda' => count($graficos[$clave]['series']) > 1,
+        // La segunda serie es la referencia (la semana anterior, un día
+        // normal): va en contorno, para que no pese lo mismo que lo de ahora.
+        'referencia' => true,
         'alto' => 260,
     ];
+
+    // La curva de la jornada, en miniatura, dentro de «Vendido hoy»: las mismas
+    // horas del gráfico grande, solo la serie de hoy. Si todavía no se vendió
+    // nada, no se dibuja una línea plana en cero.
+    $chispa = null;
+    if ($graficos && array_sum($graficos['hoy']['series'][0]['data']) > 0) {
+        $chispa = [
+            'tipo' => 'area',
+            'moneda' => $moneda,
+            'chispa' => true,
+            'categorias' => $graficos['hoy']['categorias'],
+            'series' => [$graficos['hoy']['series'][0]],
+            'colores' => ['#0a5cff'],
+            'alto' => 44,
+        ];
+    }
 
     $totalPagos = $pagos ? (float) $pagos->sum('monto') : 0;
 
@@ -150,6 +169,13 @@
                             {{ $variacion > 0 ? '+' : '' }}{{ number_format($variacion, 1) }}% que el {{ $hoy['dia'] }} pasado a esta hora
                         </p>
                     @endif
+
+                    @if ($chispa)
+                        {{-- Cómo viene la jornada, hora a hora: el número dice
+                             cuánto, la curva dice si la tarde levantó o se apagó. --}}
+                        <div class="-mx-1 mt-3" data-apexchart="{{ json_encode($chispa) }}" data-chispa-vendido></div>
+                        <p class="mt-1 text-theme-xs text-gray-400 dark:text-gray-500">la jornada, hora por hora</p>
+                    @endif
                 </div>
 
                 <div class="{{ $tarjeta }} p-4 sm:p-5" data-kpi="ventas">
@@ -261,7 +287,8 @@
                                 </div>
                             </div>
                         @empty
-                            <p class="py-6 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no se cobró nada hoy.</p>
+                            <x-common.vacio icono="caja" class="px-0 py-4" titulo="Todavía no se cobró nada hoy"
+                                detalle="Acá se reparte lo cobrado entre efectivo, tarjeta, billetera y transferencia." />
                         @endforelse
                     </div>
                 </div>
@@ -277,17 +304,30 @@
                         </span>
                     </div>
                     <ul class="divide-y divide-gray-100 border-t border-gray-100 dark:divide-gray-800 dark:border-gray-800">
-                        @forelse ($pedidos as ['pedido' => $pedido, 'estado' => $estado, 'clase' => $clase])
+                        @forelse ($pedidos as ['pedido' => $pedido, 'estado' => $estado, 'clase' => $clase, 'importe' => $importe])
                             <li class="flex items-center justify-between gap-3 px-6 py-3">
                                 <span class="min-w-0 text-theme-sm">
                                     <span class="font-semibold text-gray-800 dark:text-white/90">#{{ $pedido->numero_dia }}</span>
                                     <span class="text-gray-600 dark:text-gray-400">{{ $pedido->destino }}{{ $pedido->quien ? ' · '.$pedido->quien : '' }}</span>
                                     <span class="block text-theme-xs text-gray-400 dark:text-gray-500">{{ $pedido->fecha_apertura?->format('H:i') }}</span>
                                 </span>
-                                <span class="flex-none rounded-full px-2.5 py-0.5 text-theme-xs font-medium {{ $clasePedido($clase) }}">{{ $estado }}</span>
+                                {{-- Cuánto fue el pedido: sin esto había que irse a Ventas para saberlo. --}}
+                                <span class="flex-none text-right">
+                                    @if ($importe !== null)
+                                        <span class="block text-theme-sm font-semibold tabular-nums text-gray-800 dark:text-white/90">{{ Config::importe($importe) }}</span>
+                                    @endif
+                                    <span class="mt-0.5 inline-block rounded-full px-2.5 py-0.5 text-theme-xs font-medium {{ $clasePedido($clase) }}">{{ $estado }}</span>
+                                </span>
                             </li>
                         @empty
-                            <li class="px-6 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no hay pedidos hoy.</li>
+                            <li>
+                                <x-common.vacio titulo="Todavía no hay pedidos hoy"
+                                    detalle="Aparecen acá apenas se cobra el primero en el mostrador.">
+                                    @puede('ventas.registrar')
+                                        <x-ui.button size="xs" :href="route('pos.index')">Ir al mostrador</x-ui.button>
+                                    @endpuede
+                                </x-common.vacio>
+                            </li>
                         @endforelse
                     </ul>
                 </div>
@@ -309,7 +349,10 @@
                                 </span>
                             </li>
                         @empty
-                            <li class="px-6 py-8 text-center text-theme-sm text-gray-500 dark:text-gray-400">Todavía no se vendió nada hoy.</li>
+                            <li>
+                                <x-common.vacio icono="menu" titulo="Todavía no se vendió nada hoy"
+                                    detalle="En cuanto se cobre el primer pedido, acá salen los platos que más salieron." />
+                            </li>
                         @endforelse
                     </ol>
                 </div>

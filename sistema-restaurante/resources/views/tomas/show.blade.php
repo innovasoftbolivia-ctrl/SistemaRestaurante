@@ -150,8 +150,8 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
-                                    La planilla está vacía.
+                                <td colspan="6" class="p-0">
+                                    <x-common.vacio icono="lista" titulo="La planilla está vacía." />
                                 </td>
                             </tr>
                         @endforelse

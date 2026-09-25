@@ -293,11 +293,32 @@ class DashboardController extends Controller
     {
         return Pedido::query()
             ->where('jornada', $jornada->toDateString())
-            ->with(['detalle:id,pedido_id,pasa_por_cocina,estado_cocina', 'ultimaVenta.cliente:id,nombre'])
+            ->with(['detalle:id,pedido_id,pasa_por_cocina,estado_cocina', 'ultimaVenta.cliente:id,nombre', 'venta:id,pedido_id,total'])
+            // Lo que suma el pedido mientras no está cobrado: el importe de la
+            // venta manda en cuanto existe (lleva descuentos y ajustes), pero el
+            // que está por cobrar todavía no tiene venta.
+            ->withSum(
+                ['detalle as total_del_detalle' => fn ($q) => $q->where('estado_cocina', '<>', PedidoDetalle::CANCELADO)],
+                'importe'
+            )
             ->orderByDesc('id')
             ->limit(6)
             ->get()
-            ->map(fn (Pedido $p) => ['pedido' => $p, ...self::enQueEsta($p)]);
+            ->map(fn (Pedido $p) => ['pedido' => $p, 'importe' => self::cuantoFue($p), ...self::enQueEsta($p)]);
+    }
+
+    /**
+     * Cuánto fue el pedido: lo cobrado si ya tiene venta, y lo que lleva
+     * sumado si sigue por cobrar. El cancelado no muestra importe: no se cobró
+     * y ese número al lado de «Cancelado» se lee como plata que entró.
+     */
+    private static function cuantoFue(Pedido $pedido): ?float
+    {
+        if ($pedido->estado === Pedido::CANCELADO) {
+            return null;
+        }
+
+        return (float) ($pedido->venta?->total ?? $pedido->total_del_detalle ?? 0);
     }
 
     /** @return array{estado: string, clase: string} */

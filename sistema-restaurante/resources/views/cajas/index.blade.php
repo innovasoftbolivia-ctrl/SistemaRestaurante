@@ -51,7 +51,7 @@
         </div>
 
         <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-            <div class="max-w-full overflow-x-auto overscroll-x-contain">
+            <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
@@ -118,8 +118,8 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
-                                    Todavía no hay cajas. Sin al menos una, nadie puede abrir turno ni cobrar.
+                                <td colspan="5" class="p-0">
+                                    <x-common.vacio icono="lista" titulo="Todavía no hay cajas. Sin al menos una, nadie puede abrir turno ni cobrar." />
                                 </td>
                             </tr>
                         @endforelse

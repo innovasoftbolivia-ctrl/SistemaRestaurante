@@ -94,7 +94,7 @@
                 </p>
             </div>
 
-            <div class="max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
+            <div class="tabla-pegada max-w-full overflow-x-auto overscroll-x-contain border-t border-gray-100 dark:border-gray-800">
                 <table class="min-w-full">
                     <thead class="border-b border-gray-100 dark:border-gray-800">
                         <tr>
@@ -149,8 +149,8 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-5 py-10 text-center text-theme-sm text-gray-500 dark:text-gray-400">
-                                    Todavía no se ha abierto ninguna caja.
+                                <td colspan="8" class="p-0">
+                                    <x-common.vacio icono="lista" titulo="Todavía no se ha abierto ninguna caja." />
                                 </td>
                             </tr>
                         @endforelse

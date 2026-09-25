@@ -33,12 +33,18 @@ function formateador(moneda) {
 
 function opciones(config) {
     const { tipo = 'area', categorias = [], series = [], moneda = 'Bs', dinero = true } = config;
+    // «Chispa»: el gráfico en miniatura que acompaña a un número (la curva de
+    // la jornada en «Vendido hoy»). Sin ejes, sin grilla y sin leyenda: solo la
+    // forma. Al pasar el ratón sigue diciendo la hora y el importe.
+    const chispa = config.chispa === true;
     // Barras acostadas: el nombre de cada una va en su propio renglón y no se
     // pisa con el de al lado. Los importes pasan al eje de abajo.
     const acostado = tipo === 'bar' && config.horizontal === true;
     const importe = formateador(moneda);
     const oscuro = esOscuro();
     const tenue = oscuro ? '#98a2b3' : '#667085';
+    const colores = config.colores ?? PALETA;
+    const referencia = config.referencia === true && tipo === 'bar' && series.length > 1;
 
     return {
         chart: {
@@ -48,9 +54,10 @@ function opciones(config) {
             toolbar: { show: false },
             zoom: { enabled: false },
             background: 'transparent',
+            ...(chispa ? { sparkline: { enabled: true } } : {}),
         },
         theme: { mode: oscuro ? 'dark' : 'light' },
-        colors: config.colores ?? PALETA,
+        colors: colores,
         series,
         // Ojo: la clave debe faltar del todo cuando no hay etiquetas, no
         // valer `undefined` — con `labels: undefined` puesto explícito,
@@ -71,13 +78,16 @@ function opciones(config) {
                   axisBorder: { show: false },
                   axisTicks: { show: false },
                   labels: {
+                      show: !chispa,
                       style: { colors: tenue, fontSize: '12px' },
                       ...(acostado ? { formatter: dinero ? importe : (v) => Math.round(v) } : {}),
                   },
+                  tooltip: { enabled: false },
               },
         yaxis: config.etiquetas
             ? undefined
             : {
+                  show: !chispa,
                   labels: {
                       style: { colors: tenue, fontSize: '12px' },
                       ...(acostado
@@ -89,16 +99,30 @@ function opciones(config) {
         // `monotoneCubic` y no `smooth`: la curva suave pasaba por debajo de
         // cero entre una jornada con ventas y otra sin ninguna, y parecía que
         // se había vendido en negativo.
-        stroke: { curve: 'monotoneCubic', width: tipo === 'bar' ? 0 : 2 },
+        // `referencia`: la segunda serie es «con qué se compara» —la semana
+        // anterior, un sábado normal—, no una medición más. En barras llenas las
+        // dos pesaban igual a la vista y había que leer la leyenda para saber
+        // cuál era cuál; vacía y con el borde punteado se lee sola.
+        stroke: referencia
+            ? {
+                  show: true,
+                  curve: 'monotoneCubic',
+                  width: [0, 1.5],
+                  colors: [colores[0], colores[1]],
+                  dashArray: [0, 3],
+              }
+            : { curve: 'monotoneCubic', width: tipo === 'bar' ? 0 : 2 },
         fill:
             tipo === 'area'
                 ? { type: 'gradient', gradient: { opacityFrom: 0.35, opacityTo: 0.02 } }
-                : { opacity: 1 },
-        grid: {
-            borderColor: oscuro ? '#1d2939' : '#f2f4f7',
-            strokeDashArray: 4,
-            xaxis: { lines: { show: false } },
-        },
+                : { opacity: referencia ? [1, 0.12] : 1 },
+        grid: chispa
+            ? { show: false, padding: { top: 0, right: 0, bottom: 0, left: 0 } }
+            : {
+                  borderColor: oscuro ? '#1d2939' : '#f2f4f7',
+                  strokeDashArray: 4,
+                  xaxis: { lines: { show: false } },
+              },
         plotOptions: {
             bar: { borderRadius: 6, columnWidth: '45%', horizontal: acostado, barHeight: '60%' },
             pie: { donut: { size: '62%' } },

@@ -1032,3 +1032,45 @@ html.modo-cocina [data-migas] {
   --color-gray-950: var(--color-marino-950);
   --color-gray-dark: var(--color-marino-800);
 }
+
+/* Cabecera de tabla que no se pierde al bajar.
+
+   El contenedor de cada listado ya se desplaza a lo ancho (`overflow-x-auto`),
+   y eso hace que una cabecera pegajosa se ancle a él y no a la ventana. Así que
+   se le da al contenedor una altura máxima: el listado se desplaza dentro de su
+   tarjeta, con los títulos de columna siempre arriba, y la paginación queda
+   quieta debajo.
+
+   Desde la tableta para arriba nada más: en el teléfono, dos desplazamientos
+   uno dentro de otro estorban, y ahí las tablas ya se leen de otra forma. */
+@media (min-width: 768px) {
+  .tabla-pegada {
+    max-height: calc(100vh - 18rem);
+    overflow-y: auto;
+  }
+
+  .tabla-pegada thead th {
+    position: sticky;
+    top: 0;
+    /* Por encima de las filas, por debajo de la barra de arriba y de los
+       diálogos (que van en z-99999). */
+    z-index: 2;
+    background-color: var(--color-white);
+    /* La raya va en la celda y no en el `thead`: el borde del `thead` no se
+       mueve con la cabecera y quedaría arriba, suelto. La sombra difusa de
+       abajo es lo que hace entender que la fila a medio tapar pasa por detrás
+       de la cabecera, y no que el listado se cortó. */
+    box-shadow:
+      0 1px 0 0 var(--color-gray-100),
+      0 6px 8px -6px rgb(16 24 40 / 0.16);
+  }
+
+  /* En oscuro la tarjeta es blanco al 3 % sobre el fondo: el mismo color, o la
+     cabecera se vería como una franja más clara flotando sobre las filas. */
+  .dark .tabla-pegada thead th {
+    background-color: color-mix(in srgb, #ffffff 3%, var(--color-gray-900));
+    box-shadow:
+      0 1px 0 0 var(--color-gray-800),
+      0 6px 8px -6px rgb(0 0 0 / 0.4);
+  }
+}
