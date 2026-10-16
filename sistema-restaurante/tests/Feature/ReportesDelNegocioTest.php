@@ -92,7 +92,7 @@ class ReportesDelNegocioTest extends TestCase
     {
         // Una venta de ayer y otra de hoy.
         $ayer = $this->vender();
-        $ayer->forceFill(['fecha' => Carbon::parse(Config::jornadaActual())->subDay()->setTime(13, 0)])->saveQuietly();
+        $this->moverVenta($ayer, Carbon::parse(Config::jornadaActual())->subDay()->setTime(13, 0));
         $this->vender();
 
         $semana = collect($this->actingAs($this->admin())

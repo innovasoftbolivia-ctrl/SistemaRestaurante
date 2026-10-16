@@ -28,7 +28,7 @@ class Venta extends Model
     public const ESTADOS = ['COMPLETADA', 'ANULADA'];
 
     protected $fillable = [
-        'cliente_id', 'usuario_id', 'sesion_caja_id', 'pedido_id', 'fecha',
+        'cliente_id', 'usuario_id', 'sesion_caja_id', 'pedido_id', 'fecha', 'jornada',
         'descuento', 'estado', 'observacion',
         'impuesto_incluido', 'descuento_precio_final',
     ];
@@ -37,6 +37,9 @@ class Venta extends Model
     {
         return [
             'fecha' => 'datetime',
+            // La jornada del local a la que pertenece la venta: solo la fecha,
+            // sin hora (ver la columna en el esquema).
+            'jornada' => 'date',
             'anulada_en' => 'datetime',
             'subtotal' => 'decimal:2',
             'descuento' => 'decimal:2',

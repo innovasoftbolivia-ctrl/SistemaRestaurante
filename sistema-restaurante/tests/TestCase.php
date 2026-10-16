@@ -2,9 +2,14 @@
 
 namespace Tests;
 
+use App\Models\Venta;
 use App\Services\Pedidos;
+use App\Support\AlertasStock;
 use App\Support\Config;
+use App\Support\Notificaciones;
+use DateTimeInterface;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -18,6 +23,23 @@ abstract class TestCase extends BaseTestCase
      * que sin él se rechaza pone `$sinNumeroDeEnvio`.
      */
     protected bool $sinNumeroDeEnvio = false;
+
+    /**
+     * Mueve una venta en el tiempo, como si se hubiera cobrado entonces: la
+     * fecha y la jornada, que desde que se guarda (y no se calcula) es parte
+     * de la venta como cualquier otra columna.
+     */
+    protected function moverVenta(Venta $venta, DateTimeInterface|string $momento): Venta
+    {
+        $momento = Carbon::parse($momento);
+
+        $venta->forceFill([
+            'fecha' => $momento,
+            'jornada' => Config::jornadaDe($momento),
+        ])->saveQuietly();
+
+        return $venta;
+    }
 
     public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null)
     {
@@ -56,6 +78,10 @@ abstract class TestCase extends BaseTestCase
         // Lo mismo con qué platos llevan impuesto, que el cobro de pedidos
         // guarda en memoria.
         Pedidos::olvidar();
+        // Y con la campana, que guarda sus avisos medio minuto, y con las
+        // alertas de stock, que se calculan una sola vez por petición.
+        Notificaciones::olvidar();
+        AlertasStock::olvidar();
 
         $base = DB::connection()->getDatabaseName();
 

@@ -247,7 +247,9 @@ class CocinaController extends Controller
         // Lo que el pedido lleva además y no pasa por la cocina —la gaseosa,
         // el agua—, con su nota: quien arma el pedido y lo entrega lo tiene
         // que ver, y la nota («sin hielo») no salía en ningún otro lado.
-        $sinCocina = PedidoDetalle::query()
+        // Sin nada en la cocina no hay a qué acompañar: preguntarlo igual era
+        // una consulta por carga de pantalla que ya se sabía vacía.
+        $sinCocina = $lineas->isEmpty() ? collect() : PedidoDetalle::query()
             ->whereIn('pedido_id', $lineas->pluck('pedido_id')->unique())
             ->where('pasa_por_cocina', false)
             ->where('estado_cocina', '<>', PedidoDetalle::CANCELADO)

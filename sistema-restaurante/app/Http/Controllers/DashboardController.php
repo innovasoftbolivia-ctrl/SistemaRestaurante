@@ -77,18 +77,17 @@ class DashboardController extends Controller
     /**
      * Lo que lleva vendido en la jornada quien mira: es su propio trabajo.
      *
-     * `whereBetween` con las dos puntas de la jornada, y no `whereDate()`: esta
-     * pantalla se carga en cada login, y `whereDate('fecha', ...)` compila a
-     * `WHERE DATE(fecha) = ...`, que no puede usar `ix_ventas_fecha` como
-     * rango —envuelve la columna en una función— y obliga a MySQL a recorrer
-     * toda la tabla `ventas` (confirmado con EXPLAIN). Con el rango explícito
-     * sí es un `Index range scan`.
+     * Por `jornada`, que cada venta trae guardada: una comparación de columna
+     * contra valor, que usa `ix_ventas_jornada`. Antes había que pedir el rango
+     * de las dos puntas del día, porque `whereDate('fecha', ...)` compila a
+     * `WHERE DATE(fecha) = ...`, envuelve la columna en una función y obliga a
+     * recorrer la tabla entera.
      */
     private function ventasPropias(Usuario $usuario): array
     {
         $fila = DB::table('ventas')
             ->where('usuario_id', $usuario->id)
-            ->whereBetween('fecha', Config::momentosDeJornadas(Config::jornadaActual(), Config::jornadaActual()))
+            ->where('jornada', Config::jornadaActual())
             ->where('estado', '<>', 'ANULADA')
             ->selectRaw('COUNT(*) AS operaciones, COALESCE(SUM(total), 0) AS monto')
             ->first();
@@ -128,16 +127,17 @@ class DashboardController extends Controller
     }
 
     /**
-     * @return array<string, float|int>
+     * Los totales de una jornada; con `$hastaMomento`, solo hasta esa hora.
      *
-     * Mismo motivo que `ventasPropias()`: rango explícito y no `whereDate()`.
+     * @return array<string, float|int>
      */
     private function totalesDe(Carbon $dia, ?Carbon $hastaMomento = null): array
     {
-        [$desde, $hasta] = Config::momentosDeJornadas($dia, $dia);
-
         $fila = DB::table('ventas')
-            ->whereBetween('fecha', [$desde, $hastaMomento ? min(Carbon::parse($hasta), $hastaMomento) : $hasta])
+            ->where('jornada', $dia->toDateString())
+            // La comparativa mira hasta la misma hora: el día se corta por la
+            // hora de la venta, pero a qué jornada pertenece ya está decidido.
+            ->when($hastaMomento, fn ($q) => $q->where('fecha', '<=', $hastaMomento))
             ->where('estado', '<>', 'ANULADA')
             ->selectRaw('COUNT(*) AS operaciones, COALESCE(SUM(total), 0) AS monto')
             ->first();
@@ -198,18 +198,18 @@ class DashboardController extends Controller
     }
 
     /**
-     * Lo vendido por jornada, con la misma fórmula que los reportes
-     * (`Config::jornadaSql`) contra la tabla base, filtrando antes de agrupar.
+     * Lo vendido por jornada, leyendo la columna `jornada` que cada venta trae
+     * guardada: cambiar la hora de corte ya no reescribe los días pasados.
      *
      * @return Collection<string, float>
      */
     private function ventasPorDia(Carbon $desde, Carbon $hasta): Collection
     {
         return DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('estado', '<>', 'ANULADA')
-            ->groupBy(DB::raw(Config::jornadaSql('fecha')))
-            ->selectRaw(Config::jornadaSql('fecha').' AS dia, SUM(total) AS monto')
+            ->groupBy('jornada')
+            ->selectRaw('jornada AS dia, SUM(total) AS monto')
             ->pluck('monto', 'dia')
             ->mapWithKeys(fn ($m, $d) => [(string) $d => (float) $m]);
     }
@@ -223,8 +223,8 @@ class DashboardController extends Controller
     private function porHora(Carbon $jornada, string $dia): array
     {
         $sumar = fn (Carbon $desde, Carbon $hasta, ?array $dias = null) => DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
-            ->when($dias, fn ($q) => $q->whereIn(DB::raw(Config::jornadaSql('fecha')), $dias))
+            ->whereBetween('jornada', [$desde->toDateString(), $hasta->toDateString()])
+            ->when($dias, fn ($q) => $q->whereIn('jornada', $dias))
             ->where('estado', '<>', 'ANULADA')
             ->groupBy(DB::raw('HOUR(fecha)'))
             ->selectRaw('HOUR(fecha) AS hora, SUM(total) AS monto')
@@ -244,11 +244,10 @@ class DashboardController extends Controller
         // semanas de historia, dividir por cuatro dejaba «un lunes normal» muy
         // por debajo de lo real.
         $conVentas = max(1, DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($jornada->copy()->subWeeks(self::SEMANAS_PROMEDIO), $jornada->copy()->subWeek()))
-            ->whereIn(DB::raw(Config::jornadaSql('fecha')), $dias)
+            ->whereIn('jornada', $dias)
             ->where('estado', '<>', 'ANULADA')
             ->distinct()
-            ->count(DB::raw(Config::jornadaSql('fecha'))));
+            ->count('jornada'));
 
         $corte = Config::horaCorteJornada();
         $orden = array_map(fn ($i) => ($corte + $i) % 24, range(0, 23));
@@ -276,7 +275,7 @@ class DashboardController extends Controller
                 $join->on('v.id', '=', 'vp.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
             ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($jornada, $jornada))
+            ->where('v.jornada', $jornada->toDateString())
             ->groupBy('mp.nombre')
             ->selectRaw('mp.nombre AS metodo, SUM(vp.monto) AS monto')
             ->orderByDesc('monto')
@@ -375,7 +374,7 @@ class DashboardController extends Controller
                 $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
             ->join('productos as p', 'p.id', '=', 'd.producto_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($jornada, $jornada))
+            ->where('v.jornada', $jornada->toDateString())
             ->groupBy('p.id', 'p.nombre')
             // Lo cobrado por la línea: con el descuento de la venta repartido,
             // como «Vendido hoy». Sin esto, un ítem de una venta con descuento

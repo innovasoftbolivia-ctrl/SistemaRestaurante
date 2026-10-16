@@ -53,6 +53,11 @@ class NotificacionesTest extends TestCase
     /** @return array<int, string> los títulos de un grupo, para quien mira */
     private function titulos(string $quien, string $grupo): array
     {
+        // Los avisos se guardan medio minuto (`Notificaciones::SEGUNDOS`): la
+        // prueba cambia los datos y quiere ver el resultado de ahora, como el
+        // navegador medio minuto después.
+        Notificaciones::olvidar();
+
         $avisos = Notificaciones::para($this->usuario($quien));
 
         return array_column($avisos['grupos'][$grupo]['avisos'] ?? [], 'titulo');
@@ -69,6 +74,7 @@ class NotificacionesTest extends TestCase
 
         $this->assertSame(["#{$numero} espera hace 25 min"], $this->titulos('admin', 'cocina'));
         $this->assertSame(["#{$numero} espera hace 25 min"], $this->titulos('cajero1', 'cocina'));
+        Notificaciones::olvidar();
         $this->assertTrue(Notificaciones::para($this->usuario('admin'))['grave']);
 
         // Sale de la cocina: el aviso se va solo.
@@ -123,6 +129,7 @@ class NotificacionesTest extends TestCase
         Cajas::cerrar($turno->fresh(), $admin, 90, 'Faltó cambio', fondo: 0, conCuentasAbiertas: true);
 
         $this->assertSame(['Caja avisos cerró con faltante de Bs 10.00'], $this->titulos('admin', 'caja'));
+        Notificaciones::olvidar();
         $this->assertTrue(Notificaciones::para($admin)['grave']);
     }
 
@@ -142,6 +149,7 @@ class NotificacionesTest extends TestCase
 
     public function test_cada_rol_ve_lo_suyo_y_la_cocina_nada(): void
     {
+        Notificaciones::olvidar();
         $this->assertNull(Notificaciones::para($this->usuario('cocina1')), 'la cocina ya mira su pantalla');
 
         $this->actingAs($this->usuario('cocina1'))->get(route('cocina.index'))

@@ -149,7 +149,7 @@ class CompraSugerida
                 $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
             ->whereIn('d.producto_id', $ids)
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->groupBy('d.producto_id')
             ->selectRaw('d.producto_id, SUM(d.cantidad) AS unidades')
             ->pluck('unidades', 'producto_id');

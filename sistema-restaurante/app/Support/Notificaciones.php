@@ -9,6 +9,7 @@ use App\Models\PedidoDetalle;
 use App\Models\SesionCaja;
 use App\Models\Usuario;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -44,6 +45,16 @@ class Notificaciones
     public const MOSTRAR = 5;
 
     /**
+     * Segundos que se guarda lo calculado.
+     *
+     * Armar los avisos son diez consultas, y la campana está en la cabecera de
+     * TODAS las pantallas: cada vez que alguien abría cualquier pantalla, el
+     * sistema las repetía. La campana se refresca sola cada minuto, así que
+     * medio minuto de retraso no se nota; diez consultas por carga, sí.
+     */
+    public const SEGUNDOS = 30;
+
+    /**
      * Los avisos de quien mira, por grupo, más el total y si alguno es grave.
      * `null` si su rol no tiene nada que vigilar (la cocina ya mira su pantalla).
      *
@@ -55,6 +66,33 @@ class Notificaciones
             return null;
         }
 
+        return Cache::remember(self::clave($usuario), self::SEGUNDOS, fn () => self::calcular($usuario));
+    }
+
+    /** La clave de este usuario: cada rol ve lo suyo. */
+    private static function clave(Usuario $usuario): string
+    {
+        return 'avisos:'.$usuario->id;
+    }
+
+    /**
+     * Vuelve a calcularlos en la próxima vuelta. Lo usan las pruebas y quien
+     * necesite que un cambio se vea en la campana sin esperar.
+     */
+    public static function olvidar(?Usuario $usuario = null): void
+    {
+        $usuario === null
+            ? Cache::flush()
+            : Cache::forget(self::clave($usuario));
+    }
+
+    /**
+     * Los avisos de verdad, sin pasar por lo guardado.
+     *
+     * @return array{total: int, grave: bool, grupos: array<string, array{titulo: string, avisos: array<int, array{nivel: string, titulo: string, detalle: ?string, url: ?string}>, stock?: int}>}|null
+     */
+    private static function calcular(Usuario $usuario): ?array
+    {
         $gestion = $usuario->tienePermiso('reportes.ver');
         $vende = $usuario->tienePermiso('ventas.registrar');
         $entrega = $usuario->tienePermiso('cocina.entregar') || $usuario->tienePermiso('cocina.ver');
@@ -230,7 +268,7 @@ class Notificaciones
             // Por la fecha de la VENTA, como el listado al que lleva el aviso y el
             // reporte: con la de anulación, una venta de anoche anulada de
             // madrugada salía acá y en el listado no.
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($jornada, $jornada))
+            ->where('v.jornada', $jornada)
             ->groupBy('u.usuario')
             ->selectRaw('u.usuario, COUNT(*) AS cuantas, SUM(v.total) AS monto')
             ->orderByDesc('cuantas')

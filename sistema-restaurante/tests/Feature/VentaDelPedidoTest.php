@@ -16,6 +16,7 @@ use App\Services\CobrosQr;
 use App\Services\Comprobantes;
 use App\Services\Pedidos;
 use App\Services\Ventas;
+use App\Support\Config;
 use Closure;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -121,6 +122,9 @@ class VentaDelPedidoTest extends TestCase
             'sesion_caja_id' => $venta->sesion_caja_id,
             'pedido_id' => $venta->pedido_id,
             'fecha' => now(),
+            // Como cualquier venta: con la lógica en la base el trigger la
+            // calcula igual, sin ella la columna es obligatoria.
+            'jornada' => Config::jornadaActual(),
         ]));
     }
 

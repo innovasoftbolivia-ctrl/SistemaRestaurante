@@ -234,6 +234,7 @@ class ConfiguracionYJornadaTest extends TestCase
         $vendida = $this->vender();
         $ventaId = DB::table('ventas')->insertGetId([
             'usuario_id' => $vendida->usuario_id, 'sesion_caja_id' => $vendida->sesion_caja_id,
+            'jornada' => Config::jornadaActual(),
         ]);
         $plato = Producto::where('codigo', 'P-0009')->firstOrFail();
         $tasa = Config::tasaImpuesto();
@@ -301,7 +302,9 @@ class ConfiguracionYJornadaTest extends TestCase
     {
         $this->assertSame(5, Config::horaCorteJornada());
         $venta = $this->vender();
-        DB::table('ventas')->where('id', $venta->id)->update(['fecha' => '2031-05-10 01:30:00']);
+        // La venta de la 01:30: su jornada es la noche anterior, y se guarda
+        // con ella (el sistema la pone al cobrar; acá se simula el momento).
+        $this->moverVenta($venta, '2031-05-10 01:30:00');
         $total = (float) $venta->fresh()->total;
 
         $reporte = fn (string $dia) => $this->actingAs($this->admin())

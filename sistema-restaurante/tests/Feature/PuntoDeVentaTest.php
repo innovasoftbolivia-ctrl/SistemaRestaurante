@@ -1033,6 +1033,7 @@ class PuntoDeVentaTest extends TestCase
         // admite ninguna línea más.
         $ventaId = DB::table('ventas')->insertGetId([
             'usuario_id' => $this->cajero()->id, 'sesion_caja_id' => $sesion->id,
+            'jornada' => Config::jornadaActual(),
         ]);
         $venta = (object) ['id' => $ventaId];
         VentaDetalle::create([

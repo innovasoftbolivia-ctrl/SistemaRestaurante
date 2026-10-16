@@ -147,7 +147,7 @@ foráneas, 44 restricciones `CHECK` y 17 columnas generadas.
 | 14 | `tipos_comprobante` | `id` | 3FN — la serie por omisión pasó de `configuracion` a una FK |
 | 15 | `series_comprobante` | `id` | 3FN |
 | 16 | `metodos_pago` | `id` | 3FN |
-| 17 | `ventas` | `id` | 3FN — `total` corregido a columna generada |
+| 17 | `ventas` | `id` | 3FN + `jornada` guardada (justificada) — `total` corregido a columna generada |
 | 18 | `venta_detalle` | `id` | 3FN + copias históricas (justificadas) |
 | 19 | `venta_pagos` | `id` | 3FN — `vuelto` corregido a columna generada |
 | 20 | `cobros_qr` | `id` | 3FN — el cobro pendiente, con su propio ciclo de vida |
@@ -225,6 +225,7 @@ que se calcularía hoy, y eso es justamente lo que se quiere.
 |------|----------------------|-------------------|
 | `pedido_detalle.descripcion`, `precio_unitario` | `productos` | Es el nombre y el precio **del momento en que el cliente pidió**. Si la carta sube a media tarde, el pedido conserva lo que se le cobró al pedir. |
 | `pedido_detalle.pasa_por_cocina` | `productos` → `categorias.pasa_por_cocina` | Si la línea va a la cocina **según su sección el día que se pidió**. Cambiar la sección después no hace aparecer ni desaparecer de la cocina lo ya pedido. |
+| `ventas.jornada` | `fecha` y `configuracion.hora_corte_jornada` | La jornada **en la que se cobró**. Calcularla al leer ataba la historia a la configuración de hoy: al cambiar la hora de corte, las ventas de la madrugada se mudaban de día y los reportes de meses pasados cambiaban sus totales, dejando de cuadrar con los cierres de caja ya firmados. La escribe `trg_ventas_before_insert` (y `Ventas::registrar` cuando la lógica corre en PHP). |
 | `pedidos.jornada` | `fecha_apertura` y `configuracion.hora_corte_jornada` | La jornada **con la que se numeró** el pedido. Si el administrador cambia la hora de corte, los pedidos ya numerados no se mudan de jornada: sus números están impresos en tickets que el cliente se llevó, y recalcularlos podía juntar dos "pedido 1" en la misma jornada y romper `uq_pedido_numero_dia`. |
 | `venta_detalle.descripcion`, `precio_unitario`, `afecto_impuesto`, `tasa_impuesto`, `impuesto_incluido` | `productos`, `configuracion` y `ventas` | Es el precio, el nombre y el régimen de impuesto **del día de la venta**. Un comprobante reimpreso tiene que decir lo mismo que el que se entregó en mano. |
 | `comprobantes.*` (nombre, documento, dirección, importes del cliente) | `clientes` y `ventas` | Un documento contable es inmutable: si el cliente cambia de razón social, la factura emitida no se altera. |
@@ -479,6 +480,7 @@ sin recorrer el camino de arriba: se entrega con el ticket.
 | `sesion_caja_id` | INT FK | No | Turno de caja al que pertenece (HU-28) |
 | `pedido_id` | BIGINT FK | Sí | El pedido que cobró. Lo conserva aunque se anule; `NULL` solo en las ventas de antes de los pedidos |
 | `fecha` | DATETIME | No | Fecha y hora del servidor |
+| `jornada` | DATE | No | La jornada del local a la que pertenece la venta: la fecha menos `hora_corte_jornada`. Se **guarda** al cobrar y no se recalcula |
 | `subtotal` | DECIMAL(12,2) | No | Base imponible: suma del detalle, **sin impuesto** |
 | `descuento` | DECIMAL(12,2) | No | La parte del descuento que baja la base |
 | `impuesto` | DECIMAL(12,2) | No | Impuesto de las líneas, en la proporción de la base que deja el descuento |

@@ -19,6 +19,18 @@ class AlertasStock
     /** Cuántos se listan en el desplegable; el resto, en el inventario. */
     public const MOSTRAR = 8;
 
+    /** Lo calculado en esta petición, y para qué usuario (ver `para`). */
+    private static ?array $memo = null;
+
+    private static ?int $memoDe = null;
+
+    /** Lo vuelve a calcular: lo usan las pruebas y quien mueve el stock. */
+    public static function olvidar(): void
+    {
+        self::$memo = null;
+        self::$memoDe = null;
+    }
+
     public static function puedeVer(?Usuario $usuario): bool
     {
         return $usuario?->tienePermiso('inventario.gestionar') ?? false;
@@ -36,11 +48,19 @@ class AlertasStock
             return null;
         }
 
+        // En la portada esto se pedía dos veces —la campana y el panel—, y son
+        // tres consultas cada vez. Se calcula una sola vez por petición.
+        if (self::$memo !== null && self::$memoDe === $usuario->id) {
+            return self::$memo;
+        }
+
         $alertas = Producto::conStock()->activos()->whereColumn('stock_actual', '<=', 'stock_minimo');
 
         $total = (clone $alertas)->count();
 
-        return [
+        self::$memoDe = $usuario->id;
+
+        return self::$memo = [
             'total' => $total,
             'agotados' => (clone $alertas)->where('stock_actual', '<=', 0)->count(),
             'productos' => $total === 0 ? collect() : $alertas

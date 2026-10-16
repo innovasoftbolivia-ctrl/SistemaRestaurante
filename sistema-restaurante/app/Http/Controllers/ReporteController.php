@@ -27,7 +27,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * Todo va por JORNADA, no por día de calendario: el local cierra pasada la
  * medianoche y la venta de la 01:30 es de la noche anterior, igual que el
  * número de su pedido (`Config::jornadaDe`). El período elige jornadas, y se
- * filtra con `Config::momentosDeJornadas` y se agrupa con `Config::jornadaSql`.
+ * filtra y se agrupa por `ventas.jornada`, la que cada venta trae guardada.
  */
 class ReporteController extends Controller
 {
@@ -461,7 +461,7 @@ class ReporteController extends Controller
     private function resumenVentas(Carbon $desde, Carbon $hasta): array
     {
         $ventas = DB::table('ventas as v')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->selectRaw("SUM(v.estado <> 'ANULADA') AS operaciones")
             ->selectRaw("COALESCE(SUM(IF(v.estado <> 'ANULADA', v.total, 0)), 0) AS vendido")
             ->selectRaw("COALESCE(SUM(IF(v.estado <> 'ANULADA', v.impuesto, 0)), 0) AS impuesto")
@@ -503,7 +503,7 @@ class ReporteController extends Controller
         $ventas = (float) DB::table('venta_pagos as vp')
             ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
             ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('v.estado', '<>', 'ANULADA')
             ->where('mp.afecta_caja', 1)
             ->sum('vp.monto');
@@ -576,10 +576,10 @@ class ReporteController extends Controller
     private function porDia(Carbon $desde, Carbon $hasta): array
     {
         $filas = DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('estado', '<>', 'ANULADA')
-            ->groupBy(DB::raw(Config::jornadaSql('fecha')))
-            ->selectRaw(Config::jornadaSql('fecha').' AS dia')
+            ->groupBy('jornada')
+            ->selectRaw('jornada AS dia')
             ->selectRaw('COUNT(*) AS cantidad_ventas')
             ->selectRaw('SUM(total) AS monto_total')
             ->selectRaw('ROUND(AVG(total), 2) AS ticket_promedio')
@@ -620,7 +620,7 @@ class ReporteController extends Controller
                 $join->on('v.id', '=', 'vp.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
             ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->groupBy('mp.nombre')
             ->selectRaw('mp.nombre AS metodo_pago')
             ->selectRaw('COUNT(DISTINCT v.id) AS ventas')
@@ -635,7 +635,7 @@ class ReporteController extends Controller
         return DB::table('ventas as v')
             ->join('usuarios as u', 'u.id', '=', 'v.usuario_id')
             ->join('empleados as e', 'e.id', '=', 'u.empleado_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('v.estado', '<>', 'ANULADA')
             ->groupBy('u.id', 'u.usuario', 'e.nombre_completo')
             ->selectRaw('u.usuario, e.nombre_completo AS empleado')
@@ -670,7 +670,7 @@ class ReporteController extends Controller
     private function porHora(Carbon $desde, Carbon $hasta): array
     {
         $filas = DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('estado', '<>', 'ANULADA')
             ->groupBy(DB::raw('HOUR(fecha)'))
             ->selectRaw('HOUR(fecha) AS hora, COUNT(*) AS ventas, SUM(total) AS monto')
@@ -705,8 +705,6 @@ class ReporteController extends Controller
      */
     private function porDiaSemana(Carbon $desde, Carbon $hasta): array
     {
-        $jornada = Config::jornadaSql('fecha');
-
         // Solo jornadas terminadas: la de hoy va a medias y las futuras no
         // pasaron, y contarlas bajaba el promedio de ese día. (Si el período es
         // solo hoy, se muestra hoy.)
@@ -717,10 +715,10 @@ class ReporteController extends Controller
 
         // WEEKDAY: 0 = lunes … 6 = domingo, sobre la fecha de la JORNADA.
         $filas = DB::table('ventas')
-            ->whereBetween('fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('estado', '<>', 'ANULADA')
-            ->groupBy(DB::raw("WEEKDAY({$jornada})"))
-            ->selectRaw("WEEKDAY({$jornada}) AS dia, COUNT(*) AS ventas, SUM(total) AS monto")
+            ->groupBy(DB::raw('WEEKDAY(jornada)'))
+            ->selectRaw('WEEKDAY(jornada) AS dia, COUNT(*) AS ventas, SUM(total) AS monto')
             ->get()
             ->keyBy(fn ($f) => (int) $f->dia);
 
@@ -746,7 +744,7 @@ class ReporteController extends Controller
     {
         return DB::table('ventas as v')
             ->leftJoin('pedidos as p', 'p.id', '=', 'v.pedido_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('v.estado', '<>', 'ANULADA')
             ->groupBy('p.tipo')
             ->selectRaw('p.tipo, COUNT(*) AS ventas, SUM(v.total) AS monto, ROUND(AVG(v.total), 2) AS ticket')
@@ -776,7 +774,7 @@ class ReporteController extends Controller
         return DB::table('ventas as v')
             ->join('usuarios as cobro', 'cobro.id', '=', 'v.usuario_id')
             ->leftJoin('usuarios as anulo', 'anulo.id', '=', 'v.anulada_por')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->where('v.estado', 'ANULADA')
             ->orderByDesc('v.fecha')
             ->select('v.id', 'v.fecha', 'v.total', 'v.motivo_anulacion')
@@ -825,7 +823,7 @@ class ReporteController extends Controller
             ->join('ventas as v', function ($join) {
                 $join->on('v.id', '=', 'd.venta_id')->where('v.estado', '<>', 'ANULADA');
             })
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->selectRaw('COALESCE(SUM(ROUND(d.importe * IF(v.subtotal > 0, (v.subtotal - v.descuento) / v.subtotal, 1), 2)), 0) AS total')
             ->value('total');
     }
@@ -844,7 +842,7 @@ class ReporteController extends Controller
             })
             ->join('productos as p', 'p.id', '=', 'd.producto_id')
             ->join('categorias as c', 'c.id', '=', 'p.categoria_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->groupBy('p.id', 'p.codigo', 'p.nombre', 'c.nombre')
             ->selectRaw('p.id, p.codigo, p.nombre, c.nombre AS categoria')
             ->selectRaw("SUM({$unidades}) AS unidades_vendidas")
@@ -900,7 +898,7 @@ class ReporteController extends Controller
             })
             ->join('productos as p', 'p.id', '=', 'd.producto_id')
             ->join('categorias as c', 'c.id', '=', 'p.categoria_id')
-            ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta))
+            ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()])
             ->groupBy('c.id', 'c.nombre')
             ->selectRaw('c.nombre AS categoria')
             ->selectRaw('SUM(d.cantidad) AS unidades')
@@ -922,7 +920,7 @@ class ReporteController extends Controller
                 ->join('ventas as v', 'v.id', '=', 'd.venta_id')
                 ->whereColumn('d.producto_id', 'p.id')
                 ->where('v.estado', '<>', 'ANULADA')
-                ->whereBetween('v.fecha', Config::momentosDeJornadas($desde, $hasta)))
+                ->whereBetween('v.jornada', [$desde->toDateString(), $hasta->toDateString()]))
             ->orderBy('c.nombre')
             ->orderBy('p.nombre')
             ->select('p.id', 'p.codigo', 'p.nombre')

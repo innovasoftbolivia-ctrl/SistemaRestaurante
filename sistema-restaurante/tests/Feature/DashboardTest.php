@@ -215,9 +215,9 @@ class DashboardTest extends TestCase
         // la hora de ahora (a esa hora, hoy todavía no llegamos).
         $jornada = Carbon::parse(Config::jornadaActual());
         [$inicio] = Config::momentosDeJornadas($jornada, $jornada);
-        $antes->forceFill(['fecha' => Carbon::parse($inicio)->subWeek()])->saveQuietly();
-        $masTarde->forceFill(['fecha' => now()->subWeek()->addMinutes(5)])->saveQuietly();
-        $ayer->forceFill(['fecha' => now()->subDay()])->saveQuietly();
+        $this->moverVenta($antes, Carbon::parse($inicio)->subWeek());
+        $this->moverVenta($masTarde, now()->subWeek()->addMinutes(5));
+        $this->moverVenta($ayer, now()->subDay());
 
         $datos = $this->actingAs($this->admin())->get('/inicio')->viewData('hoy');
 
@@ -277,7 +277,7 @@ class DashboardTest extends TestCase
         $hoy = $this->vender($sesion, 2);
         $antes = $this->vender($sesion, 1);
         $jornada = Carbon::parse(Config::jornadaActual());
-        $antes->forceFill(['fecha' => $jornada->copy()->subWeek()->setTime(20, 0)])->saveQuietly();
+        $this->moverVenta($antes, $jornada->copy()->subWeek()->setTime(20, 0));
 
         $respuesta = $this->actingAs($this->admin())->get('/inicio');
         $graficos = $respuesta->viewData('graficos');

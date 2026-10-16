@@ -6,6 +6,7 @@ use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\Usuario;
 use App\Models\Venta;
+use App\Support\AlertasStock;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -115,6 +116,17 @@ class Inventario
             $movimiento = self::registrar($producto->id, abs($diferencia), $diferencia > 0 ? 'ENTRADA' : 'SALIDA', 'AJUSTE',
                 $actual, $contado, $usuario->id, ['motivo' => mb_substr($motivo, 0, 255), 'costo_unitario' => $producto->costo]);
 
+            // El kardex ya guarda el movimiento, pero el ajuste a mano es la
+            // forma de tapar un faltante, y eso se busca en la bitácora —donde
+            // está todo lo demás que hace una persona—, no en el kardex.
+            Auditor::registrar('INVENTARIO_AJUSTADO', 'productos', $producto->id, [
+                'producto' => $producto->nombre,
+                'antes' => $actual,
+                'contado' => $contado,
+                'diferencia' => $diferencia,
+                'motivo' => mb_substr($motivo, 0, 255),
+            ], $usuario->id);
+
             TomasInventario::olvidarConteoDe($producto);
 
             return $movimiento;
@@ -165,6 +177,9 @@ class Inventario
         array $extra = [],
     ): MovimientoInventario {
         Producto::whereKey($productoId)->update(['stock_actual' => $resultante]);
+
+        // Lo que la campana haya calculado en esta petición ya no vale.
+        AlertasStock::olvidar();
 
         return MovimientoInventario::create([
             ...$extra,

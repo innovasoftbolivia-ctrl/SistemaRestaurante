@@ -183,8 +183,8 @@ class VentaController extends Controller
             // aquí, y la venta de la 01:30 es de la noche anterior. Rango
             // explícito y no `whereDate`: envolver la columna en una función
             // anula el índice de fecha y obliga a recorrer la tabla entera.
-            ->when($filtros['desde'], fn ($q, $d) => $q->where('fecha', '>=', Config::momentosDeJornadas($d, $d)[0]))
-            ->when($filtros['hasta'], fn ($q, $h) => $q->where('fecha', '<=', Config::momentosDeJornadas($h, $h)[1]));
+            ->when($filtros['desde'], fn ($q, $d) => $q->where('jornada', '>=', $d))
+            ->when($filtros['hasta'], fn ($q, $h) => $q->where('jornada', '<=', $h));
     }
 
     private function resumen(array $filtros): array

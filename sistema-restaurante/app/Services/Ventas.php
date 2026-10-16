@@ -100,6 +100,11 @@ class Ventas
                 'sesion_caja_id' => $sesion->id,
                 'pedido_id' => $pedido?->id,
                 'fecha' => now(),
+                // La jornada se GUARDA, no se calcula después: si mañana cambia
+                // la hora de corte, esta venta sigue siendo de esta noche y los
+                // reportes de los meses pasados no se mueven. Con la lógica en
+                // la base, el trigger la vuelve a calcular igual.
+                'jornada' => Config::jornadaActual(),
                 'descuento' => 0, // se aplica después: la base exige descuento <= subtotal
                 // El modo de precio queda con la venta: si mañana cambia la
                 // configuración, esta venta se sigue calculando igual.

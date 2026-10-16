@@ -187,7 +187,7 @@ class RevisionDelVeinteTest extends TestCase
         }
 
         $venta = $this->venderEnMostrador(Producto::where('codigo', 'P-0004')->firstOrFail());
-        DB::table('ventas')->where('id', $venta->id)->update(['fecha' => now()->startOfDay()->addHours(2)]);
+        $this->moverVenta($venta, now()->startOfDay()->addHours(2));
 
         $porDia = DB::table('v_ventas_por_dia')->pluck('monto_total', 'dia')->map(fn ($m) => round((float) $m, 2));
         $porMetodo = DB::table('v_ventas_por_metodo_pago')

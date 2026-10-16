@@ -347,6 +347,9 @@ CREATE TABLE sesiones_caja (
     KEY ix_sesiones_caja      (caja_id, estado),
     KEY ix_sesiones_usuario   (usuario_apertura_id),
     KEY ix_sesiones_fecha     (fecha_apertura),
+    -- El aviso de «arqueos con diferencia» busca por el cierre del día: sin
+    -- esto recorría la tabla entera.
+    KEY ix_sesiones_cierre (fecha_cierre),
     CONSTRAINT fk_sesion_caja      FOREIGN KEY (caja_id)             REFERENCES cajas (id),
     CONSTRAINT fk_sesion_usr_ap    FOREIGN KEY (usuario_apertura_id) REFERENCES usuarios (id),
     CONSTRAINT fk_sesion_usr_ci    FOREIGN KEY (usuario_cierre_id)   REFERENCES usuarios (id),
@@ -495,6 +498,14 @@ CREATE TABLE ventas (
     sesion_caja_id      INT UNSIGNED NOT NULL,
     pedido_id           BIGINT UNSIGNED NULL,       -- el pedido que cobró
     fecha               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- La jornada a la que pertenece la venta, GUARDADA y no calculada: el local
+    -- cierra pasada la medianoche y la venta de la 01:30 es de la noche
+    -- anterior. Calcularla al vuelo con `hora_corte_jornada` ataba la historia
+    -- a la configuración de hoy: al cambiar la hora de corte, los reportes de
+    -- meses pasados se reagrupaban solos y dejaban de cuadrar con los cierres
+    -- de caja ya firmados. La fija `trg_ventas_before_insert` (y `Ventas`
+    -- cuando la lógica corre en PHP): lo que venga en el INSERT no manda.
+    jornada             DATE         NOT NULL,
     -- En los dos modos de precio, las columnas guardan lo mismo:
     --   subtotal = base imponible (suma del detalle, sin impuesto)
     --   descuento = la parte del descuento que baja la base
@@ -527,6 +538,7 @@ CREATE TABLE ventas (
     PRIMARY KEY (id),
     UNIQUE KEY uq_venta_pedido_cobrado (pedido_cobrado_uk),
     KEY ix_ventas_fecha    (fecha),
+    KEY ix_ventas_jornada  (jornada),
     KEY ix_ventas_cliente  (cliente_id),
     KEY ix_ventas_sesion   (sesion_caja_id),
     KEY ix_ventas_estado   (estado, fecha),
@@ -1219,6 +1231,13 @@ BEGIN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'La venta debe registrarse en un turno de caja abierto';
     END IF;
+
+    -- La jornada sale de la fecha y de la hora de corte de AHORA, y se guarda
+    -- con la venta: lo que venga en el INSERT no manda, para que nadie pueda
+    -- mover una venta de día escribiendo otra fecha.
+    SET NEW.jornada = DATE(NEW.fecha - INTERVAL IFNULL((SELECT CAST(NULLIF(c.valor, '') AS UNSIGNED)
+                                                          FROM configuracion c
+                                                         WHERE c.clave = 'hora_corte_jornada'), 5) HOUR);
 END$$
 
 -- 9.5 El comprobante debe corresponder al tipo de persona del cliente:
@@ -1772,19 +1791,13 @@ DELIMITER ;
 -- `App\Support\Config::jornadaSql()` y que numera los pedidos. La columna se
 -- sigue llamando `dia`: es la fecha de la jornada.
 CREATE OR REPLACE VIEW v_ventas_por_dia AS
-SELECT j.dia                  AS dia,
-       COUNT(*)               AS cantidad_ventas,
-       SUM(j.total)           AS monto_total,
-       ROUND(AVG(j.total), 2) AS ticket_promedio
-  FROM (
-        SELECT DATE(v.fecha - INTERVAL IFNULL((SELECT CAST(NULLIF(c.valor, '') AS UNSIGNED)
-                                                  FROM configuracion c
-                                                 WHERE c.clave = 'hora_corte_jornada'), 5) HOUR) AS dia,
-               v.total
-          FROM ventas v
-         WHERE v.estado <> 'ANULADA'
-       ) AS j
- GROUP BY j.dia;
+SELECT v.jornada             AS dia,
+       COUNT(*)              AS cantidad_ventas,
+       SUM(v.total)          AS monto_total,
+       ROUND(AVG(v.total), 2) AS ticket_promedio
+  FROM ventas v
+ WHERE v.estado <> 'ANULADA'
+ GROUP BY v.jornada;
 
 -- Productos más vendidos (HU-33)
 -- El importe de cada línea va neto del descuento de la venta, repartido entre
@@ -1850,6 +1863,7 @@ INSERT INTO parches_aplicados (archivo) VALUES
     ('2026_09_21_cocina_entregar.sql'),
     ('2026_09_22_inventario_de_bebidas.sql'),
     ('2026_09_22_arqueo_por_billetes.sql'),
-    ('2026_09_22_auditoria.sql');
+    ('2026_09_22_auditoria.sql'),
+    ('2026_10_16_jornada_en_ventas.sql');
 
 
